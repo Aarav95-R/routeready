@@ -56,11 +56,14 @@ Native stack transitions; shared-element transition route card → detail (Phase
 
 ## 5. Data model
 
-User-provided schema (test_centres, routes, hazards, user_progress, manoeuvres, show_me_tell_me + RLS policies) stands as written, with three deltas:
+User-provided schema (test_centres, routes, hazards, user_progress, manoeuvres, show_me_tell_me + RLS policies) stands as written, with four deltas:
 
 1. `routes.speed_profile jsonb` — array of `{ startIdx, endIdx, limitMph }` segments over the LineString coordinates. Derived at seed time from OSRM speed annotations banded to UK limits (20/30/40/60/70 mph, urban default 30).
 2. `routes.observation_zones jsonb` — array of `{ lat, lng, radiusM, kind }` (`roundabout` | `junction` | `pedestrian`) where the mock test expects a mirror-check tap.
 3. New table `favourites (id uuid pk, user_id uuid references auth.users on delete cascade, route_id uuid references routes on delete cascade, created_at timestamptz default now(), unique(user_id, route_id))` with RLS `for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id)`.
+4. `test_centres.pass_rate_history jsonb` (default `'[]'`) — 8 quarterly pass-rate values, generated deterministically at seed time, feeding the centre-detail sparkline.
+
+Voice turn-by-turn instructions are **not** stored in the DB: they are derived client-side at route load from the LineString geometry (bearing changes) by `src/lib/instructions.ts`, keeping the schema lean and instructions tunable without a reseed.
 
 RLS note: since login is required, public-read policies may be restricted to `authenticated` only; keep `anon` read anyway so the app can render marketing/preview states cheaply — no harm, data is non-sensitive.
 
