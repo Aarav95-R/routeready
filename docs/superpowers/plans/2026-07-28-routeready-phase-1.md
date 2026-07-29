@@ -345,6 +345,7 @@ export function SegmentedControl({
         <Pressable
           key={label}
           onPress={() => onChange(i)}
+          hitSlop={{ top: 8, bottom: 8 }}
           className={`min-h-[32px] flex-1 items-center justify-center rounded-[7px] ${i === selectedIndex ? "bg-card" : ""}`}
           style={i === selectedIndex ? { shadowColor: "#0F172A", shadowOpacity: 0.14, shadowRadius: 2.5, shadowOffset: { width: 0, height: 1 } } : undefined}
         >
