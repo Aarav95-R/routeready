@@ -1,25 +1,41 @@
 // Loads supabase/seed.sql into a Supabase project over a direct Postgres
 // connection — used when the file is too large for the browser SQL editor.
 //
-// Usage:
-//   npx tsx scripts/seed/push.ts "<postgres-connection-string>"
+// Two ways to provide credentials:
 //
-// Get the connection string from Supabase:
-//   Project Settings -> Database -> Connection string -> "Session pooler" (URI),
-//   then replace [YOUR-PASSWORD] with your database password.
+//   A) Separate values via env vars (best when your password has special
+//      characters like / ? @ # — no URL-encoding needed):
+//        $env:PGHOST="db.<ref>.supabase.co"
+//        $env:PGPORT="5432"
+//        $env:PGUSER="postgres"
+//        $env:PGPASSWORD="your-password-verbatim"
+//        $env:PGDATABASE="postgres"
+//        npx tsx scripts/seed/push.ts
+//
+//   B) A full connection string (only if the password has no URL-special chars):
+//        npx tsx scripts/seed/push.ts "postgresql://user:pass@host:5432/postgres"
 //
 // Re-running is safe: it clears the seeded tables first, then reloads.
 import { readFileSync } from "node:fs";
-import { Client } from "pg";
+import { Client, type ClientConfig } from "pg";
 
 const conn = process.argv[2] ?? process.env.DATABASE_URL;
-if (!conn) {
-  console.error('Usage: npx tsx scripts/seed/push.ts "<postgres-connection-string>"');
+if (!conn && !process.env.PGHOST) {
+  console.error(
+    "No credentials found.\n" +
+      "Either set PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE env vars, or pass a\n" +
+      'connection string: npx tsx scripts/seed/push.ts "postgresql://user:pass@host:5432/postgres"'
+  );
   process.exit(1);
 }
 
+// When conn is absent, node-postgres reads PGHOST/PGUSER/PGPASSWORD/... from env.
+const config: ClientConfig = conn
+  ? { connectionString: conn, ssl: { rejectUnauthorized: false } }
+  : { ssl: { rejectUnauthorized: false } };
+
 async function main() {
-  const client = new Client({ connectionString: conn, ssl: { rejectUnauthorized: false } });
+  const client = new Client(config);
   await client.connect();
   console.log("Connected. Clearing any existing seed data…");
   await client.query("truncate test_centres, manoeuvres, show_me_tell_me restart identity cascade;");
