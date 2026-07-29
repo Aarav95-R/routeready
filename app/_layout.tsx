@@ -7,6 +7,7 @@ import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "
 import { View } from "react-native";
 import { supabase } from "@/lib/supabase";
 import { useSession } from "@/stores/sessionStore";
+import { useNetwork } from "@/stores/networkStore";
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
@@ -14,7 +15,7 @@ export default function RootLayout() {
   const segments = useSegments();
   const router = useRouter();
 
-  useEffect(() => { init(); }, [init]);
+  useEffect(() => { init(); useNetwork.getState().init(); }, [init]);
 
   // Magic-link deep link: routeready://auth-callback#access_token=…&refresh_token=…
   useEffect(() => {
