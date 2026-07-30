@@ -37,3 +37,37 @@ export function remainingM(steps: NavStep[], pos: LatLng, index: number): number
   for (let k = i; k < steps.length; k++) sum += steps[k].distanceM;
   return Math.round(sum);
 }
+
+// Camera zoom by distance to the next maneuver: tight near turns, wide on straights.
+export function navZoom(distanceToManeuverM: number): number {
+  if (distanceToManeuverM < 120) return 18.5;
+  if (distanceToManeuverM > 600) return 16;
+  return 17;
+}
+
+// Nearest vertex of the route to the position, never rewinding below minIdx.
+// The traveled portion is coords[0..idx]; the remaining is coords[idx..].
+export function trailIndex(coords: LatLng[], pos: LatLng, minIdx = 0): number {
+  if (!coords.length) return 0;
+  const start = Math.min(Math.max(minIdx, 0), coords.length - 1);
+  let idx = start;
+  let best = Infinity;
+  for (let i = start; i < coords.length; i++) {
+    const d = haversineM(coords[i], pos);
+    if (d < best) { best = d; idx = i; }
+  }
+  return idx;
+}
+
+// A point `distanceM` metres from `from` along `bearing` (deg). Used to place
+// the camera ahead of the driver so they sit low with the road ahead in view.
+export function destinationPoint(from: LatLng, bearing: number, distanceM: number): LatLng {
+  const R = 6371000;
+  const br = (bearing * Math.PI) / 180;
+  const lat1 = (from.lat * Math.PI) / 180;
+  const lng1 = (from.lng * Math.PI) / 180;
+  const dr = distanceM / R;
+  const lat2 = Math.asin(Math.sin(lat1) * Math.cos(dr) + Math.cos(lat1) * Math.sin(dr) * Math.cos(br));
+  const lng2 = lng1 + Math.atan2(Math.sin(br) * Math.sin(dr) * Math.cos(lat1), Math.cos(dr) - Math.sin(lat1) * Math.sin(lat2));
+  return { lat: (lat2 * 180) / Math.PI, lng: (lng2 * 180) / Math.PI };
+}
