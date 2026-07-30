@@ -62,8 +62,8 @@ const line = Array.from({ length: 11 }, (_, i) => ({ lat: 51.5 + i * 0.001, lng:
 test("navZoom tightens near turns, widens on straights", () => {
   expect(navZoom(80)).toBeGreaterThan(navZoom(300));
   expect(navZoom(300)).toBeGreaterThan(navZoom(900));
-  expect(navZoom(80)).toBe(18.5);
-  expect(navZoom(900)).toBe(16);
+  expect(navZoom(80)).toBe(19);
+  expect(navZoom(900)).toBe(17.5);
 });
 
 test("trailIndex tracks the nearest vertex and never rewinds", () => {

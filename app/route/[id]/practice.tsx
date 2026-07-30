@@ -177,7 +177,7 @@ export default function Practice() {
       const d = haversineM(p, start);
       setDirectDist(Math.round(d));
       setCrowRot(bearingDeg(p, start) - heading);
-      moveCamera(destinationPoint(p, heading, LOOK_AHEAD_M), heading, 16.5);
+      moveCamera(destinationPoint(p, heading, LOOK_AHEAD_M), heading, 17.5);
       if (d <= ARRIVE_M) beginRoute();
       return;
     }
@@ -227,7 +227,7 @@ export default function Practice() {
       const p = { lat: f.coords.latitude, lng: f.coords.longitude };
       prevPosRef.current = p;
       setPos(p);
-      moveCamera(destinationPoint(p, headingRef.current, LOOK_AHEAD_M), headingRef.current, 17);
+      moveCamera(destinationPoint(p, headingRef.current, LOOK_AHEAD_M), headingRef.current, 18);
       return p;
     } catch { return null; }
   };
@@ -351,7 +351,9 @@ export default function Practice() {
         ))}
         {(phase === "approach" || phase === "route") && pos && (
           <MarkerView id="puck" coordinate={toPos(pos)} anchor={{ x: 0.5, y: 0.5 }}>
-            <View className="h-8 w-8 items-center justify-center rounded-full border-[3px] border-white bg-accent"><Ionicons name="caret-up" size={16} color="#fff" /></View>
+            <View className="h-[56px] w-[56px] items-center justify-center rounded-full border-[4px] border-white bg-accent" style={{ shadowColor: "#059669", shadowOpacity: 0.6, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 6 }}>
+              <Ionicons name="navigate" size={30} color="#fff" style={{ transform: [{ rotate: "-45deg" }], marginLeft: 2 }} />
+            </View>
           </MarkerView>
         )}
       </MapView>

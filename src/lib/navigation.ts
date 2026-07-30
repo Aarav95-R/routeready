@@ -38,11 +38,12 @@ export function remainingM(steps: NavStep[], pos: LatLng, index: number): number
   return Math.round(sum);
 }
 
-// Camera zoom by distance to the next maneuver: tight near turns, wide on straights.
+// Camera zoom by distance to the next maneuver: tight near turns, wide on
+// straights. Kept close (Waze-style) so the driver's puck stays prominent.
 export function navZoom(distanceToManeuverM: number): number {
-  if (distanceToManeuverM < 120) return 18.5;
-  if (distanceToManeuverM > 600) return 16;
-  return 17;
+  if (distanceToManeuverM < 150) return 19;
+  if (distanceToManeuverM > 600) return 17.5;
+  return 18;
 }
 
 // Nearest vertex of the route to the position, never rewinding below minIdx.
