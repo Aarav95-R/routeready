@@ -72,6 +72,21 @@ export default function Practice() {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") { setPermissionDenied(true); return; }
+
+      // Zoom straight to the driver the moment navigation starts (like "Start").
+      try {
+        const first = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+        const fp = { lat: first.coords.latitude, lng: first.coords.longitude };
+        lastPosRef.current = fp;
+        prevPosRef.current = fp;
+        mapRef.current?.animateCamera(
+          { center: { latitude: fp.lat, longitude: fp.lng }, heading: headingRef.current, pitch: NAV_PITCH, zoom: NAV_ZOOM },
+          { duration: 600 }
+        );
+      } catch {
+        // no initial fix yet — the watcher below will lock on shortly
+      }
+
       sub = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 3, timeInterval: 1000 },
         (pos) => {
