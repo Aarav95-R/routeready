@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import MapView, { Marker, Polyline } from "react-native-maps";
 import * as Location from "expo-location";
@@ -7,21 +8,40 @@ import * as Speech from "expo-speech";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
-import { deriveInstructions, Instruction, nextInstruction } from "@/lib/instructions";
-import type { Hazard, Route } from "@/types/db";
-import { Button } from "@/ui/Button";
+import { advance, ANNOUNCE_M, formatDistance, remainingM } from "@/lib/navigation";
+import type { Hazard, NavStep, Route } from "@/types/db";
 import { colors } from "@/ui/theme";
+
+function maneuverIcon(step?: NavStep): keyof typeof Ionicons.glyphMap {
+  if (!step) return "navigate";
+  if (step.type === "arrive") return "flag";
+  if (step.type === "depart") return "navigate";
+  if (step.type.includes("roundabout") || step.type === "rotary") return "sync";
+  const m = step.modifier;
+  if (m.includes("uturn")) return "arrow-undo";
+  if (m.includes("left")) return "arrow-back";
+  if (m.includes("right")) return "arrow-forward";
+  return "arrow-up";
+}
 
 export default function Practice() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [route, setRoute] = useState<Route | null>(null);
   const [hazards, setHazards] = useState<Hazard[]>([]);
-  const [current, setCurrent] = useState<Instruction | null>(null);
   const [selectedHazard, setSelectedHazard] = useState<Hazard | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
-  const spokenRef = useRef(new Set<number>());
+  const [stepIndex, setStepIndex] = useState(1);
+  const [distanceM, setDistanceM] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const [arrived, setArrived] = useState(false);
+
+  const indexRef = useRef(1);
+  const preparedRef = useRef(new Set<number>());
+  const executedRef = useRef(new Set<number>());
   const sheetRef = useRef<BottomSheet>(null);
+  const mapRef = useRef<MapView>(null);
 
   useEffect(() => {
     getRoute(id).then((r) => { setRoute(r.data.route); setHazards(r.data.hazards); }).catch(() => {});
@@ -31,71 +51,117 @@ export default function Practice() {
     () => (route?.geometry.coordinates ?? []).map(([lng, lat]) => ({ latitude: lat, longitude: lng })),
     [route]
   );
-  const instructions = useMemo(
-    () => (route ? deriveInstructions(route.geometry.coordinates.map(([lng, lat]) => ({ lat, lng }))) : []),
-    [route]
-  );
+  const steps = useMemo(() => route?.steps ?? [], [route]);
 
   useEffect(() => {
-    if (!instructions.length) return;
+    if (!steps.length) return;
     let sub: Location.LocationSubscription | undefined;
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") { setPermissionDenied(true); return; }
       sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 },
+        { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 4 },
         (pos) => {
           const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          const ins = nextInstruction(p, instructions, spokenRef.current);
-          if (ins) {
-            spokenRef.current.add(ins.idx);
-            setCurrent(ins);
-            Speech.speak(ins.text, { language: "en-GB" });
+          const st = advance(steps, p, indexRef.current);
+          indexRef.current = st.index;
+          setStepIndex(st.index);
+          setDistanceM(st.distanceToManeuverM);
+          setRemaining(remainingM(steps, p, st.index));
+          setArrived(st.arrived);
+
+          const cur = steps[st.index];
+          if (cur && cur.type !== "depart") {
+            const d = st.distanceToManeuverM;
+            if (d <= ANNOUNCE_M && d > 40 && !preparedRef.current.has(st.index)) {
+              preparedRef.current.add(st.index);
+              Speech.speak(`In ${formatDistance(d)}, ${cur.instruction}`, { language: "en-GB" });
+            }
+            if (d <= 40 && !executedRef.current.has(st.index)) {
+              executedRef.current.add(st.index);
+              Speech.speak(cur.instruction, { language: "en-GB" });
+            }
           }
         }
       );
     })();
     return () => { sub?.remove(); Speech.stop(); };
-  }, [instructions]);
+  }, [steps]);
 
   if (permissionDenied) {
     return (
       <View className="flex-1 items-center justify-center gap-3 bg-surface px-8">
         <Text className="text-center text-[15px] font-semibold text-primary">Location access is needed to guide you along the route.</Text>
         <Text className="text-center text-[12px] text-slate-500">Enable it in Settings → Privacy → Location Services → Expo Go.</Text>
-        <Button title="Back" variant="ghost" onPress={() => router.back()} />
+        <Pressable onPress={() => router.back()} className="mt-2 min-h-[44px] items-center justify-center rounded-full border-[1.5px] border-slate-200 px-6">
+          <Text className="text-[14px] font-semibold text-primary">Back</Text>
+        </Pressable>
       </View>
     );
   }
 
+  const current = steps[stepIndex];
+  const next = steps[stepIndex + 1];
+  const bigDistance = arrived ? "Arrived" : distanceM === null ? "" : formatDistance(distanceM);
+
   return (
     <View className="flex-1">
       <MapView
-        style={{ flex: 1 }} mapType="mutedStandard" showsUserLocation followsUserLocation
-        initialRegion={coords[0] && { ...coords[0], latitudeDelta: 0.02, longitudeDelta: 0.02 }}
+        ref={mapRef}
+        style={{ flex: 1 }} mapType="mutedStandard" showsUserLocation followsUserLocation showsCompass={false}
+        initialRegion={coords[0] && { ...coords[0], latitudeDelta: 0.01, longitudeDelta: 0.01 }}
       >
-        <Polyline coordinates={coords} strokeColor={colors.accent} strokeWidth={5} lineCap="round" lineJoin="round" />
+        <Polyline coordinates={coords} strokeColor={colors.accent} strokeWidth={6} lineCap="round" lineJoin="round" />
         {hazards.map((h) => (
           <Marker key={h.id} coordinate={{ latitude: h.lat, longitude: h.lng }} pinColor={colors.warning}
             onPress={() => { setSelectedHazard(h); sheetRef.current?.snapToIndex(0); }} />
         ))}
       </MapView>
 
-      <View className="absolute left-4 right-4 top-14 rounded-xl bg-card p-3 shadow-lg" style={{ shadowColor: "#0F172A", shadowOpacity: 0.12, shadowRadius: 12 }}>
-        <View className="flex-row items-center gap-3">
-          <View className="h-10 w-10 items-center justify-center rounded-[10px] bg-primary">
-            <Ionicons name="navigate" size={18} color="#fff" />
+      {/* Turn-by-turn instruction card */}
+      <View className="absolute left-3 right-3" style={{ top: insets.top + 6 }}>
+        <View className="overflow-hidden rounded-2xl bg-primary" style={{ shadowColor: "#0F172A", shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } }}>
+          <View className="flex-row items-center gap-3 px-4 py-3.5">
+            <View className="h-12 w-12 items-center justify-center rounded-xl bg-accent">
+              <Ionicons name={maneuverIcon(current)} size={26} color="#fff" />
+            </View>
+            <View className="flex-1">
+              {!arrived && bigDistance !== "" && (
+                <Text className="text-[13px] font-semibold text-emerald-300">{bigDistance}</Text>
+              )}
+              <Text className="text-[17px] font-semibold leading-[21px] text-white" numberOfLines={2}>
+                {current?.instruction ?? "Follow the green route"}
+              </Text>
+            </View>
           </View>
-          <Text className="flex-1 text-[13px] font-semibold text-primary">
-            {current?.text ?? "Follow the green route — guidance starts as you approach the first turn"}
-          </Text>
+          {next && !arrived && (
+            <View className="flex-row items-center gap-2 border-t border-white/10 bg-white/5 px-4 py-2">
+              <Ionicons name={maneuverIcon(next)} size={14} color="#94A3B8" />
+              <Text className="flex-1 text-[12px] text-slate-300" numberOfLines={1}>then {next.instruction}</Text>
+            </View>
+          )}
         </View>
       </View>
 
-      <Pressable onPress={() => router.back()} className="absolute right-4 top-28 min-h-[44px] flex-row items-center gap-1.5 rounded-full bg-card px-3 py-2" style={{ shadowColor: "#0F172A", shadowOpacity: 0.12, shadowRadius: 8 }}>
-        <Ionicons name="close" size={14} color={colors.ink2} />
-        <Text className="text-[11px] font-semibold text-primary">End practice</Text>
+      {/* Recenter */}
+      <Pressable
+        onPress={() => { if (coords[0]) mapRef.current?.animateToRegion({ ...coords[0], latitudeDelta: 0.01, longitudeDelta: 0.01 }, 400); }}
+        className="absolute right-4 h-11 w-11 items-center justify-center rounded-full bg-card"
+        style={{ bottom: 96, shadowColor: "#0F172A", shadowOpacity: 0.15, shadowRadius: 8 }}
+      >
+        <Ionicons name="locate" size={20} color={colors.primary} />
       </Pressable>
+
+      {/* Bottom bar: remaining + end */}
+      <View className="absolute bottom-0 left-0 right-0 flex-row items-center gap-3 bg-card px-4 pt-3" style={{ paddingBottom: insets.bottom + 12, shadowColor: "#0F172A", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -3 } }}>
+        <View className="flex-1">
+          <Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{arrived ? "Route complete" : "Remaining"}</Text>
+          <Text className="text-[18px] font-semibold text-primary">{remaining === null ? "—" : formatDistance(remaining)}</Text>
+        </View>
+        <Pressable onPress={() => router.back()} className="min-h-[44px] items-center justify-center rounded-full bg-danger px-6">
+          <Text className="text-[14px] font-semibold text-white">End</Text>
+        </Pressable>
+      </View>
 
       <BottomSheet ref={sheetRef} index={-1} snapPoints={["25%", "50%", "90%"]} enablePanDownToClose handleIndicatorStyle={{ backgroundColor: "#CBD5E1" }}>
         <BottomSheetView style={{ paddingHorizontal: 16, paddingBottom: 24 }}>

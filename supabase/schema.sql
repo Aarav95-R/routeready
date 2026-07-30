@@ -86,6 +86,7 @@ create policy "Own progress" on user_progress
 alter table test_centres add column if not exists pass_rate_history jsonb default '[]';
 alter table routes add column if not exists speed_profile jsonb default '[]';
 alter table routes add column if not exists observation_zones jsonb default '[]';
+alter table routes add column if not exists steps jsonb default '[]';
 
 create table if not exists favourites (
   id uuid primary key default gen_random_uuid(),

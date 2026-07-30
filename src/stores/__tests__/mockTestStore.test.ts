@@ -7,6 +7,7 @@ const route: Route = {
   estimated_minutes: 30, distance_km: 5, difficulty: 2,
   speed_profile: [{ startIdx: 0, endIdx: 2, limitMph: 30 }],
   observation_zones: [{ lat: 51.51, lng: -0.1, radiusM: 60, kind: "roundabout" }],
+  steps: [],
 };
 const sample = (lat: number, mph: number, t: number) => ({ lat, lng: -0.1, speedMps: mph / 2.23694, t });
 

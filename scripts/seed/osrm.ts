@@ -1,15 +1,19 @@
 import type { LatLng } from "../../src/lib/geo";
 
+export type OsrmManeuver = { type: string; modifier?: string; location: [number, number]; exit?: number };
+export type OsrmStep = { name: string; distance: number; maneuver: OsrmManeuver };
+
 export type OsrmRoute = {
   coords: LatLng[];            // decoded geometry
   distanceM: number;
   durationS: number;
   speedsMps: (number | null)[]; // per geometry edge, from annotations
+  steps: OsrmStep[];            // turn-by-turn maneuvers across all legs
 };
 
 export async function fetchRoute(waypoints: LatLng[]): Promise<OsrmRoute> {
   const path = waypoints.map((w) => `${w.lng},${w.lat}`).join(";");
-  const url = `https://router.project-osrm.org/route/v1/driving/${path}?overview=full&geometries=geojson&annotations=speed&steps=false`;
+  const url = `https://router.project-osrm.org/route/v1/driving/${path}?overview=full&geometries=geojson&annotations=speed&steps=true`;
   const res = await fetch(url, { headers: { "User-Agent": "routeready-seed/1.0" } });
   if (!res.ok) throw new Error(`OSRM ${res.status} for ${path}`);
   const json = (await res.json()) as any;
@@ -20,5 +24,17 @@ export async function fetchRoute(waypoints: LatLng[]): Promise<OsrmRoute> {
     distanceM: r.distance,
     durationS: r.duration,
     speedsMps: r.legs.flatMap((l: any) => l.annotation.speed as (number | null)[]),
+    steps: r.legs.flatMap((l: any) =>
+      (l.steps as any[]).map((s) => ({
+        name: s.name ?? "",
+        distance: s.distance ?? 0,
+        maneuver: {
+          type: s.maneuver?.type ?? "",
+          modifier: s.maneuver?.modifier,
+          location: s.maneuver?.location as [number, number],
+          exit: s.maneuver?.exit,
+        },
+      }))
+    ),
   };
 }
