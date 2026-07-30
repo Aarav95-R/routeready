@@ -16,7 +16,7 @@ import type { Hazard, NavStep, Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
 import { colors } from "@/ui/theme";
 
-const NAV_STYLE = "mapbox://styles/mapbox/navigation-day-v1";
+const NAV_STYLE = "mapbox://styles/mapbox/light-v11";
 const NAV_PITCH = 55;
 const LOOK_AHEAD_M = 60;
 const AT_START_M = 60;
