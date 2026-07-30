@@ -13,7 +13,7 @@ module.exports = {
   newArchEnabled: true,
   ios: {
     supportsTablet: true,
-    bundleIdentifier: "com.routeready.app",
+    bundleIdentifier: "com.sumeetraheja.routeready",
     infoPlist: {
       NSLocationWhenInUseUsageDescription:
         "RouteReady uses your location to guide you along practice routes and score mock tests.",
