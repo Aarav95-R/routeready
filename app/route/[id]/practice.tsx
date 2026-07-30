@@ -9,8 +9,13 @@ import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { advance, ANNOUNCE_M, formatDistance, remainingM } from "@/lib/navigation";
+import { bearingDeg, haversineM, LatLng } from "@/lib/geo";
 import type { Hazard, NavStep, Route } from "@/types/db";
 import { colors } from "@/ui/theme";
+
+// Navigation camera: zoomed in, tilted into 3D, rotated to heading.
+const NAV_PITCH = 50;
+const NAV_ZOOM = 17;
 
 function maneuverIcon(step?: NavStep): keyof typeof Ionicons.glyphMap {
   if (!step) return "navigate";
@@ -40,6 +45,9 @@ export default function Practice() {
   const indexRef = useRef(1);
   const preparedRef = useRef(new Set<number>());
   const executedRef = useRef(new Set<number>());
+  const headingRef = useRef(0);
+  const prevPosRef = useRef<LatLng | null>(null);
+  const lastPosRef = useRef<LatLng | null>(null);
   const sheetRef = useRef<BottomSheet>(null);
   const mapRef = useRef<MapView>(null);
 
@@ -53,6 +61,11 @@ export default function Practice() {
   );
   const steps = useMemo(() => route?.steps ?? [], [route]);
 
+  const recenter = (heading = headingRef.current) => {
+    const p = lastPosRef.current;
+    if (p) mapRef.current?.animateCamera({ center: { latitude: p.lat, longitude: p.lng }, heading, pitch: NAV_PITCH, zoom: NAV_ZOOM }, { duration: 500 });
+  };
+
   useEffect(() => {
     if (!steps.length) return;
     let sub: Location.LocationSubscription | undefined;
@@ -60,9 +73,27 @@ export default function Practice() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") { setPermissionDenied(true); return; }
       sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 4 },
+        { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 3, timeInterval: 1000 },
         (pos) => {
           const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+
+          // Heading: prefer the GPS course; fall back to travel bearing; else keep last.
+          let heading = headingRef.current;
+          if (pos.coords.heading != null && pos.coords.heading >= 0 && (pos.coords.speed ?? 0) > 0.5) {
+            heading = pos.coords.heading;
+          } else if (prevPosRef.current && haversineM(prevPosRef.current, p) > 3) {
+            heading = bearingDeg(prevPosRef.current, p);
+          }
+          headingRef.current = heading;
+          prevPosRef.current = p;
+          lastPosRef.current = p;
+
+          // Drive the navigation camera: locked to you, tilted, heading-up.
+          mapRef.current?.animateCamera(
+            { center: { latitude: p.lat, longitude: p.lng }, heading, pitch: NAV_PITCH, zoom: NAV_ZOOM },
+            { duration: 900 }
+          );
+
           const st = advance(steps, p, indexRef.current);
           indexRef.current = st.index;
           setStepIndex(st.index);
@@ -108,10 +139,10 @@ export default function Practice() {
     <View className="flex-1">
       <MapView
         ref={mapRef}
-        style={{ flex: 1 }} mapType="mutedStandard" showsUserLocation followsUserLocation showsCompass={false}
-        initialRegion={coords[0] && { ...coords[0], latitudeDelta: 0.01, longitudeDelta: 0.01 }}
+        style={{ flex: 1 }} mapType="mutedStandard" showsUserLocation showsMyLocationButton={false} showsCompass={false}
+        initialCamera={coords[0] ? { center: coords[0], heading: 0, pitch: NAV_PITCH, zoom: NAV_ZOOM, altitude: 0 } : undefined}
       >
-        <Polyline coordinates={coords} strokeColor={colors.accent} strokeWidth={6} lineCap="round" lineJoin="round" />
+        <Polyline coordinates={coords} strokeColor={colors.accent} strokeWidth={7} lineCap="round" lineJoin="round" />
         {hazards.map((h) => (
           <Marker key={h.id} coordinate={{ latitude: h.lat, longitude: h.lng }} pinColor={colors.warning}
             onPress={() => { setSelectedHazard(h); sheetRef.current?.snapToIndex(0); }} />
@@ -145,11 +176,11 @@ export default function Practice() {
 
       {/* Recenter */}
       <Pressable
-        onPress={() => { if (coords[0]) mapRef.current?.animateToRegion({ ...coords[0], latitudeDelta: 0.01, longitudeDelta: 0.01 }, 400); }}
+        onPress={() => recenter()}
         className="absolute right-4 h-11 w-11 items-center justify-center rounded-full bg-card"
         style={{ bottom: 96, shadowColor: "#0F172A", shadowOpacity: 0.15, shadowRadius: 8 }}
       >
-        <Ionicons name="locate" size={20} color={colors.primary} />
+        <Ionicons name="navigate" size={19} color={colors.accent} />
       </Pressable>
 
       {/* Bottom bar: remaining + end */}
