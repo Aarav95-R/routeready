@@ -67,6 +67,7 @@ export default function Practice() {
   const [directDist, setDirectDist] = useState<number | null>(null);
   const [crowRot, setCrowRot] = useState(0);
   const [followZoom, setFollowZoom] = useState(18);
+  const [following, setFollowing] = useState(true);
 
   const phaseRef = useRef<Phase>("preview");
   const approachRef = useRef<Directions | null>(null);
@@ -158,6 +159,13 @@ export default function Practice() {
     Speech.speak("You've reached the start. Beginning the route.", { language: "en-GB" });
   }, []);
 
+  // Re-lock the camera onto the driver after they've panned the map.
+  const recenter = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setFollowing(false);
+    setTimeout(() => setFollowing(true), 30);
+  };
+
   const onPosition = useCallback((c: Location.LocationObjectCoords) => {
     const p = { lat: c.latitude, lng: c.longitude };
     setPos(p);
@@ -231,7 +239,7 @@ export default function Practice() {
       if (hd != null && hd >= 0) headingRef.current = hd;
     });
     subRef.current = await Location.watchPositionAsync(
-      { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 3, timeInterval: 1000 },
+      { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 1, timeInterval: 500 },
       (loc) => onPosition(loc.coords)
     );
   };
@@ -307,10 +315,11 @@ export default function Practice() {
       >
         <Camera
           ref={cameraRef}
-          followUserLocation={phase === "approach" || phase === "route"}
+          followUserLocation={(phase === "approach" || phase === "route") && following}
           followUserMode={UserTrackingMode.FollowWithHeading}
           followZoomLevel={followZoom}
           followPitch={NAV_PITCH}
+          onUserTrackingModeChange={(e: any) => { if (e?.nativeEvent?.payload?.followUserLocation === false) setFollowing(false); }}
         />
 
         {phase === "preview" ? (
@@ -324,8 +333,8 @@ export default function Practice() {
           <>
             {traveled.length > 1 && (
               <ShapeSource id="trail" shape={lineFeature(traveled)}>
-                <LineLayer id="trailCasing" style={{ lineColor: "rgba(148,163,184,0.45)", lineWidth: 9, lineCap: "round", lineJoin: "round" }} />
-                <LineLayer id="trailCore" style={{ lineColor: "#CBD5E1", lineWidth: 5, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="trailCasing" style={{ lineColor: "#047857", lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="trailCore" style={{ lineColor: colors.accent, lineWidth: 7.5, lineCap: "round", lineJoin: "round" }} />
               </ShapeSource>
             )}
             {ahead.length > 1 && (
@@ -446,6 +455,10 @@ export default function Practice() {
               <Text className="text-[8px] font-bold tracking-wider text-slate-500">MPH</Text>
             </View>
           )}
+
+          <Pressable onPress={recenter} className="absolute right-4 h-12 w-12 items-center justify-center rounded-full bg-card" style={{ bottom: 100, shadowColor: "#0F172A", shadowOpacity: 0.18, shadowRadius: 8 }}>
+            <Ionicons name="navigate" size={20} color={colors.accent} />
+          </Pressable>
 
           <View className="absolute bottom-0 left-0 right-0 flex-row items-center gap-3 bg-card px-4 pt-3" style={{ paddingBottom: insets.bottom + 12, shadowColor: "#0F172A", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -3 } }}>
             <View className="flex-1">
