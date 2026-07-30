@@ -9,16 +9,20 @@ import * as Haptics from "expo-haptics";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
+import { fetchDirections, Directions } from "@/services/directions";
 import { advance, ANNOUNCE_M, destinationPoint, formatDistance, navZoom, remainingM, trailIndex } from "@/lib/navigation";
-import { bearingDeg, haversineM, LatLng } from "@/lib/geo";
+import { bearingDeg, haversineM, LatLng, mpsToMph } from "@/lib/geo";
 import type { Hazard, NavStep, Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
 import { colors } from "@/ui/theme";
 
 const NAV_PITCH = 55;
-const LOOK_AHEAD_M = 60; // camera sits this far ahead of the driver
+const LOOK_AHEAD_M = 60;
+const AT_START_M = 60;   // within this of the start you're "at" it
+const ARRIVE_M = 30;     // fallback: within this of the start, begin the route
 
-type Phase = "preview" | "navigating" | "finished";
+type Phase = "preview" | "approach" | "route" | "finished";
+const toMap = (c: LatLng) => ({ latitude: c.lat, longitude: c.lng });
 
 function maneuverIcon(step?: NavStep): keyof typeof Ionicons.glyphMap {
   if (!step) return "navigate";
@@ -32,22 +36,49 @@ function maneuverIcon(step?: NavStep): keyof typeof Ionicons.glyphMap {
   return "arrow-up";
 }
 
+// A glowing polyline: soft wide halo under a crisp line (Apple/Google trail look).
+function GlowLine({ coords, color, glow, width }: { coords: { latitude: number; longitude: number }[]; color: string; glow: string; width: number }) {
+  if (coords.length < 2) return null;
+  return (
+    <>
+      <Polyline coordinates={coords} strokeColor={glow} strokeWidth={width + 10} lineCap="round" lineJoin="round" />
+      <Polyline coordinates={coords} strokeColor={color} strokeWidth={width} lineCap="round" lineJoin="round" />
+    </>
+  );
+}
+
 export default function Practice() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
   const [route, setRoute] = useState<Route | null>(null);
   const [hazards, setHazards] = useState<Hazard[]>([]);
   const [selectedHazard, setSelectedHazard] = useState<Hazard | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
 
   const [phase, setPhase] = useState<Phase>("preview");
+  const [approach, setApproach] = useState<Directions | null>(null);
+  const [fallback, setFallback] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [previewLoc, setPreviewLoc] = useState<LatLng | null>(null);
+
   const [pos, setPos] = useState<LatLng | null>(null);
   const [stepIndex, setStepIndex] = useState(1);
   const [distanceM, setDistanceM] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [trailIdx, setTrailIdx] = useState(0);
+  const [speedMph, setSpeedMph] = useState(0);
+  const [directDist, setDirectDist] = useState<number | null>(null);
+  const [crowRot, setCrowRot] = useState(0);
 
+  // Refs the single GPS callback reads, so it stays stable across the approach→route handoff.
+  const phaseRef = useRef<Phase>("preview");
+  const approachRef = useRef<Directions | null>(null);
+  const fallbackRef = useRef(false);
+  const routeLLRef = useRef<LatLng[]>([]);
+  const routeStepsRef = useRef<NavStep[]>([]);
+  const startRef = useRef<LatLng | null>(null);
   const indexRef = useRef(1);
   const trailRef = useRef(0);
   const preparedRef = useRef(new Set<number>());
@@ -62,64 +93,112 @@ export default function Practice() {
     getRoute(id).then((r) => { setRoute(r.data.route); setHazards(r.data.hazards); }).catch(() => {});
   }, [id]);
 
-  const coords = useMemo(
-    () => (route?.geometry.coordinates ?? []).map(([lng, lat]) => ({ latitude: lat, longitude: lng })),
+  const routeLL = useMemo(
+    () => (route?.geometry.coordinates ?? []).map(([lng, lat]) => ({ lat, lng })),
     [route]
   );
-  const steps = useMemo(() => route?.steps ?? [], [route]);
+  const routeSteps = useMemo(() => route?.steps ?? [], [route]);
   const isLoop = useMemo(
-    () => coords.length > 1 && haversineM(
-      { lat: coords[0].latitude, lng: coords[0].longitude },
-      { lat: coords[coords.length - 1].latitude, lng: coords[coords.length - 1].longitude }
-    ) < 30,
-    [coords]
+    () => routeLL.length > 1 && haversineM(routeLL[0], routeLL[routeLL.length - 1]) < 30,
+    [routeLL]
   );
 
+  useEffect(() => {
+    routeLLRef.current = routeLL;
+    routeStepsRef.current = routeSteps;
+    startRef.current = routeLL[0] ?? null;
+  }, [routeLL, routeSteps]);
+
+  // Preview: get a location fix so we can show distance-to-start and the right buttons.
+  useEffect(() => {
+    if (!routeLL.length) return;
+    (async () => {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== "granted") return;
+      const p = await Location.getLastKnownPositionAsync();
+      if (p) setPreviewLoc({ lat: p.coords.latitude, lng: p.coords.longitude });
+    })();
+  }, [routeLL.length]);
+
   const fitPreview = useCallback(() => {
-    if (coords.length > 1) {
-      mapRef.current?.fitToCoordinates(coords, {
-        edgePadding: { top: 100, right: 60, bottom: 240, left: 60 },
+    if (routeLL.length > 1) {
+      mapRef.current?.fitToCoordinates(routeLL.map(toMap), {
+        edgePadding: { top: 100, right: 60, bottom: 280, left: 60 },
         animated: true,
       });
     }
-  }, [coords]);
+  }, [routeLL]);
 
-  useEffect(() => {
-    if (phase === "preview") fitPreview();
-  }, [phase, fitPreview]);
+  useEffect(() => { if (phase === "preview") fitPreview(); }, [phase, fitPreview]);
 
   const stopWatching = useCallback(() => {
     subRef.current?.remove();
     subRef.current = null;
     Speech.stop();
   }, []);
-
   useEffect(() => stopWatching, [stopWatching]);
 
-  const onPosition = useCallback((coordsIn: Location.LocationObjectCoords, ts: number) => {
-    const p = { lat: coordsIn.latitude, lng: coordsIn.longitude };
+  const resetLeg = (startIndex: number) => {
+    indexRef.current = startIndex;
+    trailRef.current = 0;
+    preparedRef.current = new Set();
+    executedRef.current = new Set();
+    setStepIndex(startIndex);
+    setTrailIdx(0);
+    setDistanceM(null);
+  };
+
+  const beginRoute = useCallback(() => {
+    phaseRef.current = "route";
+    fallbackRef.current = false;
+    setPhase("route");
+    setFallback(false);
+    resetLeg(1);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Speech.speak("You've reached the start. Beginning the route.", { language: "en-GB" });
+  }, []);
+
+  const onPosition = useCallback((c: Location.LocationObjectCoords) => {
+    const p = { lat: c.latitude, lng: c.longitude };
 
     let heading = headingRef.current;
-    if (coordsIn.heading != null && coordsIn.heading >= 0 && (coordsIn.speed ?? 0) > 0.5) heading = coordsIn.heading;
+    if (c.heading != null && c.heading >= 0 && (c.speed ?? 0) > 0.5) heading = c.heading;
     else if (prevPosRef.current && haversineM(prevPosRef.current, p) > 3) heading = bearingDeg(prevPosRef.current, p);
     headingRef.current = heading;
     prevPosRef.current = p;
     setPos(p);
+    setSpeedMph(Math.round(mpsToMph(Math.max(0, c.speed ?? 0))));
+
+    const ph = phaseRef.current;
+    const start = startRef.current;
+
+    // Fallback: no computed path to the start — steer by bearing until we reach it.
+    if (ph === "approach" && fallbackRef.current && start) {
+      const d = haversineM(p, start);
+      setDirectDist(Math.round(d));
+      setCrowRot(bearingDeg(p, start) - heading);
+      const centre = destinationPoint(p, heading, LOOK_AHEAD_M);
+      mapRef.current?.animateCamera({ center: toMap(centre), heading, pitch: NAV_PITCH, zoom: 16.5 }, { duration: 900 });
+      if (d <= ARRIVE_M) beginRoute();
+      return;
+    }
+
+    const steps = ph === "route" ? routeStepsRef.current : approachRef.current?.steps ?? [];
+    const coords = ph === "route" ? routeLLRef.current : approachRef.current?.coords ?? [];
+    if (!steps.length) return;
 
     const st = advance(steps, p, indexRef.current);
     indexRef.current = st.index;
     setStepIndex(st.index);
     setDistanceM(st.distanceToManeuverM);
     setRemaining(remainingM(steps, p, st.index));
-
-    const ti = trailIndex(coords.map((c) => ({ lat: c.latitude, lng: c.longitude })), p, trailRef.current);
+    const ti = trailIndex(coords, p, trailRef.current);
     trailRef.current = ti;
     setTrailIdx(ti);
 
-    // Look-ahead navigation camera: locked ahead of you, tilted, heading-up.
     const centre = destinationPoint(p, heading, LOOK_AHEAD_M);
     mapRef.current?.animateCamera(
-      { center: { latitude: centre.lat, longitude: centre.lng }, heading, pitch: NAV_PITCH, zoom: navZoom(st.distanceToManeuverM) },
+      { center: toMap(centre), heading, pitch: NAV_PITCH, zoom: navZoom(st.distanceToManeuverM) },
       { duration: 900 }
     );
 
@@ -137,36 +216,69 @@ export default function Practice() {
     }
 
     if (st.arrived) {
-      stopWatching();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setPhase("finished");
+      if (ph === "approach") beginRoute();
+      else {
+        stopWatching();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        phaseRef.current = "finished";
+        setPhase("finished");
+      }
     }
-  }, [steps, coords, stopWatching]);
+  }, [beginRoute, stopWatching]);
 
-  const startNavigation = useCallback(async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") { setPermissionDenied(true); return; }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setPhase("navigating");
-
+  const zoomToMe = async () => {
     try {
-      const first = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
-      const p = { lat: first.coords.latitude, lng: first.coords.longitude };
+      const f = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+      const p = { lat: f.coords.latitude, lng: f.coords.longitude };
       prevPosRef.current = p;
       setPos(p);
       const centre = destinationPoint(p, headingRef.current, LOOK_AHEAD_M);
-      mapRef.current?.animateCamera(
-        { center: { latitude: centre.lat, longitude: centre.lng }, heading: headingRef.current, pitch: NAV_PITCH, zoom: 17 },
-        { duration: 700 }
-      );
-    } catch {
-      /* the watcher will lock on shortly */
-    }
+      mapRef.current?.animateCamera({ center: toMap(centre), heading: headingRef.current, pitch: NAV_PITCH, zoom: 17 }, { duration: 700 });
+      return p;
+    } catch { return null; }
+  };
 
+  const startWatch = async () => {
     subRef.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 3, timeInterval: 1000 },
-      (loc) => onPosition(loc.coords, loc.timestamp)
+      (loc) => onPosition(loc.coords)
     );
+  };
+
+  const ensurePermission = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== "granted") { setPermissionDenied(true); return false; }
+    return true;
+  };
+
+  const startDirectly = useCallback(async () => {
+    if (!(await ensurePermission())) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    phaseRef.current = "route"; setPhase("route");
+    resetLeg(1);
+    await zoomToMe();
+    await startWatch();
+  }, [onPosition]);
+
+  const guideToStart = useCallback(async () => {
+    if (!(await ensurePermission())) return;
+    setBusy(true);
+    const me = await zoomToMe();
+    const start = startRef.current;
+    try {
+      if (!me || !start) throw new Error("no fix");
+      const dirs = await fetchDirections(me, start);
+      approachRef.current = dirs; setApproach(dirs);
+      fallbackRef.current = false; setFallback(false);
+    } catch {
+      approachRef.current = null; setApproach(null);
+      fallbackRef.current = true; setFallback(true);
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    phaseRef.current = "approach"; setPhase("approach");
+    resetLeg(1);
+    setBusy(false);
+    await startWatch();
   }, [onPosition]);
 
   if (permissionDenied) {
@@ -181,12 +293,18 @@ export default function Practice() {
     );
   }
 
-  const current = steps[stepIndex];
-  const next = steps[stepIndex + 1];
-  const start = coords[0];
-  const finish = coords[coords.length - 1];
-  const traveled = coords.slice(0, Math.max(trailIdx, 1) + 1);
-  const ahead = coords.slice(trailIdx);
+  const start = routeLL[0];
+  const finish = routeLL[routeLL.length - 1];
+  const distToStart = previewLoc && start ? haversineM(previewLoc, start) : null;
+  const atStart = distToStart !== null && distToStart < AT_START_M;
+
+  const activeLL = phase === "approach" && approach ? approach.coords : routeLL;
+  const activeMap = activeLL.map(toMap);
+  const traveled = activeMap.slice(0, Math.max(trailIdx, 1) + 1);
+  const ahead = activeMap.slice(trailIdx);
+  const isApproach = phase === "approach";
+  const current = (isApproach ? approach?.steps : routeSteps)?.[stepIndex];
+  const next = (isApproach ? approach?.steps : routeSteps)?.[stepIndex + 1];
 
   return (
     <View className="flex-1">
@@ -197,38 +315,32 @@ export default function Practice() {
         onMapReady={() => { if (phase === "preview") fitPreview(); }}
       >
         {phase === "preview" ? (
-          <Polyline coordinates={coords} strokeColor={colors.accent} strokeWidth={6} lineCap="round" lineJoin="round" />
+          <GlowLine coords={routeLL.map(toMap)} color={colors.accent} glow="rgba(5,150,105,0.22)" width={6} />
         ) : (
           <>
-            <Polyline coordinates={traveled} strokeColor="#CBD5E1" strokeWidth={6} lineCap="round" lineJoin="round" />
-            <Polyline coordinates={ahead} strokeColor={colors.accent} strokeWidth={7} lineCap="round" lineJoin="round" />
+            <GlowLine coords={traveled} color="#CBD5E1" glow="rgba(148,163,184,0.25)" width={6} />
+            <GlowLine coords={ahead} color={isApproach ? "#94A3B8" : colors.accent} glow={isApproach ? "rgba(148,163,184,0.28)" : "rgba(5,150,105,0.30)"} width={7} />
           </>
         )}
 
-        {/* Start / Finish markers */}
         {start && (
-          <Marker coordinate={start} anchor={{ x: 0.5, y: 0.5 }}>
+          <Marker coordinate={toMap(start)} anchor={{ x: 0.5, y: 0.5 }}>
             <View className="h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-accent" style={{ shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 3 }}>
               <View className="h-2 w-2 rounded-full bg-white" />
             </View>
           </Marker>
         )}
         {finish && !isLoop && (
-          <Marker coordinate={finish} anchor={{ x: 0.5, y: 1 }}>
-            <View className="items-center">
-              <View className="h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-primary"><Ionicons name="flag" size={14} color="#fff" /></View>
-            </View>
+          <Marker coordinate={toMap(finish)} anchor={{ x: 0.5, y: 1 }}>
+            <View className="h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-primary"><Ionicons name="flag" size={14} color="#fff" /></View>
           </Marker>
         )}
-
         {hazards.map((h) => (
           <Marker key={h.id} coordinate={{ latitude: h.lat, longitude: h.lng }} pinColor={colors.warning}
             onPress={() => { setSelectedHazard(h); sheetRef.current?.snapToIndex(0); }} />
         ))}
-
-        {/* Directional puck (points up = your heading, since the camera is heading-up) */}
-        {phase === "navigating" && pos && (
-          <Marker coordinate={{ latitude: pos.lat, longitude: pos.lng }} anchor={{ x: 0.5, y: 0.5 }} flat>
+        {(phase === "approach" || phase === "route") && pos && (
+          <Marker coordinate={toMap(pos)} anchor={{ x: 0.5, y: 0.5 }} flat>
             <View className="h-8 w-8 items-center justify-center rounded-full border-[3px] border-white bg-accent" style={{ shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 4 }}>
               <Ionicons name="caret-up" size={16} color="#fff" />
             </View>
@@ -238,7 +350,7 @@ export default function Practice() {
 
       {/* ---------- PREVIEW ---------- */}
       {phase === "preview" && route && (
-        <View className="absolute bottom-0 left-0 right-0 gap-3 rounded-t-3xl bg-card px-4 pt-4" style={{ paddingBottom: insets.bottom + 16, shadowColor: "#0F172A", shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } }}>
+        <View className="absolute bottom-0 left-0 right-0 gap-2.5 rounded-t-3xl bg-card px-4 pt-4" style={{ paddingBottom: insets.bottom + 14, shadowColor: "#0F172A", shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } }}>
           <Text className="text-[18px] font-semibold tracking-tight text-primary" style={{ fontFamily: "Inter_600SemiBold" }}>{route.name}</Text>
           <View className="flex-row items-center gap-5">
             <View><Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Distance</Text><Text className="text-[15px] font-semibold text-primary">{route.distance_km?.toFixed(1)} km</Text></View>
@@ -246,45 +358,92 @@ export default function Practice() {
             <View><Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Difficulty</Text><View className="mt-1"><DifficultyPips level={route.difficulty} /></View></View>
             {isLoop && <View className="flex-1 items-end"><Text className="text-[11px] font-semibold text-slate-400">Loop · start = finish</Text></View>}
           </View>
-          <Pressable onPress={startNavigation} className="mt-1 min-h-[52px] flex-row items-center justify-center gap-2 rounded-full bg-accent active:bg-accent-pressed">
-            <Ionicons name="navigate" size={18} color="#fff" />
-            <Text className="text-[16px] font-semibold text-white">Start</Text>
-          </Pressable>
-          <Pressable onPress={() => router.back()} className="min-h-[44px] items-center justify-center">
-            <Text className="text-[13px] font-semibold text-slate-500">Back</Text>
-          </Pressable>
+
+          {atStart ? (
+            <Pressable disabled={busy} onPress={startDirectly} className="mt-1 min-h-[52px] flex-row items-center justify-center gap-2 rounded-full bg-accent active:bg-accent-pressed">
+              <Ionicons name="navigate" size={18} color="#fff" /><Text className="text-[16px] font-semibold text-white">Start</Text>
+            </Pressable>
+          ) : (
+            <>
+              <View className="mt-0.5 flex-row items-center gap-2 rounded-xl border border-slate-200 bg-surface px-3 py-2.5">
+                <Ionicons name="location-outline" size={15} color={colors.accent} />
+                <Text className="text-[12px] font-semibold text-slate-600">
+                  {distToStart !== null ? `You're ${formatDistance(distToStart)} from the start` : "You're away from the start point"}
+                </Text>
+              </View>
+              <Pressable disabled={busy} onPress={guideToStart} className="min-h-[52px] flex-row items-center justify-center gap-2 rounded-full bg-accent active:bg-accent-pressed">
+                <Ionicons name="navigate" size={18} color="#fff" /><Text className="text-[16px] font-semibold text-white">{busy ? "Finding route…" : "Guide me to the start"}</Text>
+              </Pressable>
+              <Pressable disabled={busy} onPress={startDirectly} className="min-h-[50px] flex-row items-center justify-center gap-2 rounded-full border-[1.5px] border-slate-200 bg-card">
+                <Ionicons name="arrow-forward" size={17} color={colors.primary} /><Text className="text-[15px] font-semibold text-primary">Start directly from here</Text>
+              </Pressable>
+            </>
+          )}
+          <Pressable onPress={() => router.back()} className="min-h-[40px] items-center justify-center"><Text className="text-[13px] font-semibold text-slate-500">Back</Text></Pressable>
         </View>
       )}
 
-      {/* ---------- NAVIGATING ---------- */}
-      {phase === "navigating" && (
+      {/* ---------- APPROACH FALLBACK: bearing arrow ---------- */}
+      {phase === "approach" && fallback && (
+        <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
+          <View style={{ transform: [{ rotate: `${crowRot}deg` }] }}>
+            <Ionicons name="navigate" size={96} color="rgba(5,150,105,0.85)" />
+          </View>
+        </View>
+      )}
+
+      {/* ---------- APPROACH / ROUTE: turn card ---------- */}
+      {(phase === "approach" || phase === "route") && (
         <>
           <View className="absolute left-3 right-3" style={{ top: insets.top + 6 }}>
             <View className="overflow-hidden rounded-2xl bg-primary" style={{ shadowColor: "#0F172A", shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } }}>
+              {isApproach && (
+                <View className="flex-row items-center gap-1.5 px-4 py-1.5" style={{ backgroundColor: "#064E3B" }}>
+                  <Ionicons name="flag-outline" size={12} color="#6EE7B7" />
+                  <Text className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-300">Heading to the start</Text>
+                </View>
+              )}
               <View className="flex-row items-center gap-3 px-4 py-3.5">
-                <View className="h-12 w-12 items-center justify-center rounded-xl bg-accent">
-                  <Ionicons name={maneuverIcon(current)} size={26} color="#fff" />
+                <View className={`h-12 w-12 items-center justify-center rounded-xl ${fallback ? "bg-slate-600" : "bg-accent"}`}>
+                  <Ionicons name={fallback ? "navigate" : maneuverIcon(current)} size={26} color="#fff" />
                 </View>
                 <View className="flex-1">
-                  {distanceM !== null && <Text className="text-[13px] font-semibold text-emerald-300">{formatDistance(distanceM)}</Text>}
+                  {fallback ? (
+                    directDist !== null && <Text className="text-[13px] font-semibold text-emerald-300">{formatDistance(directDist)}</Text>
+                  ) : (
+                    distanceM !== null && <Text className="text-[13px] font-semibold text-emerald-300">{formatDistance(distanceM)}</Text>
+                  )}
                   <Text className="text-[17px] font-semibold leading-[21px] text-white" numberOfLines={2}>
-                    {current?.instruction ?? "Follow the green route"}
+                    {fallback ? "Head toward the start point" : current?.instruction ?? "Follow the route"}
                   </Text>
                 </View>
               </View>
-              {next && (
+              {!fallback && next && (
                 <View className="flex-row items-center gap-2 border-t border-white/10 bg-white/5 px-4 py-2">
                   <Ionicons name={maneuverIcon(next)} size={14} color="#94A3B8" />
-                  <Text className="flex-1 text-[12px] text-slate-300" numberOfLines={1}>then {next.instruction}</Text>
+                  <Text className="flex-1 text-[12px] text-slate-300" numberOfLines={1}>
+                    {isApproach && next.type === "arrive" ? "then the route begins" : `then ${next.instruction}`}
+                  </Text>
                 </View>
               )}
             </View>
           </View>
 
+          {phase === "route" && (
+            <View className="absolute left-4 items-center rounded-2xl bg-card px-3 py-2" style={{ bottom: 100, shadowColor: "#0F172A", shadowOpacity: 0.15, shadowRadius: 8 }}>
+              <Text className="text-[20px] font-bold leading-5 text-primary" style={{ fontVariant: ["tabular-nums"] }}>{speedMph}</Text>
+              <Text className="text-[8px] font-bold tracking-wider text-slate-500">MPH</Text>
+            </View>
+          )}
+
           <View className="absolute bottom-0 left-0 right-0 flex-row items-center gap-3 bg-card px-4 pt-3" style={{ paddingBottom: insets.bottom + 12, shadowColor: "#0F172A", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -3 } }}>
             <View className="flex-1">
-              <Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Remaining</Text>
-              <Text className="text-[18px] font-semibold text-primary">{remaining === null ? "—" : formatDistance(remaining)}</Text>
+              <Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{isApproach ? "To the start" : "Remaining"}</Text>
+              <Text className="text-[18px] font-semibold text-primary">
+                {isApproach
+                  ? (fallback ? (directDist === null ? "—" : formatDistance(directDist)) : (remaining === null ? "—" : formatDistance(remaining)))
+                  : (remaining === null ? "—" : formatDistance(remaining))}
+              </Text>
             </View>
             <Pressable onPress={() => { stopWatching(); router.back(); }} className="min-h-[44px] items-center justify-center rounded-full bg-danger px-7">
               <Text className="text-[14px] font-semibold text-white">Stop</Text>
