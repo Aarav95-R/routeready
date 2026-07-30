@@ -313,7 +313,7 @@ export default function Practice() {
         {phase === "preview" ? (
           routeLL.length > 1 && (
             <ShapeSource id="route" shape={lineFeature(routeLL)}>
-              <LineLayer id="routeGlow" style={{ lineColor: "rgba(5,150,105,0.22)", lineWidth: 15, lineCap: "round", lineJoin: "round" }} />
+              <LineLayer id="routeGlow" style={{ lineColor: "rgba(5,150,105,0.18)", lineWidth: 9, lineCap: "round", lineJoin: "round" }} />
               <LineLayer id="routeLine" style={{ lineColor: colors.accent, lineWidth: 6, lineCap: "round", lineJoin: "round" }} />
             </ShapeSource>
           )
@@ -321,13 +321,13 @@ export default function Practice() {
           <>
             {traveled.length > 1 && (
               <ShapeSource id="trail" shape={lineFeature(traveled)}>
-                <LineLayer id="trailGlow" style={{ lineColor: "rgba(148,163,184,0.25)", lineWidth: 15, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="trailGlow" style={{ lineColor: "rgba(148,163,184,0.2)", lineWidth: 9, lineCap: "round", lineJoin: "round" }} />
                 <LineLayer id="trailLine" style={{ lineColor: "#CBD5E1", lineWidth: 6, lineCap: "round", lineJoin: "round" }} />
               </ShapeSource>
             )}
             {ahead.length > 1 && (
               <ShapeSource id="ahead" shape={lineFeature(ahead)}>
-                <LineLayer id="aheadGlow" style={{ lineColor: aheadGlow, lineWidth: 18, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="aheadGlow" style={{ lineColor: aheadGlow, lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
                 <LineLayer id="aheadLine" style={{ lineColor: aheadColor, lineWidth: 7, lineCap: "round", lineJoin: "round" }} />
               </ShapeSource>
             )}
