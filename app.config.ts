@@ -2,7 +2,8 @@
 // environment (an EAS secret) rather than being committed.
 export default {
   name: "RouteReady",
-  slug: "routeready",
+  slug: "routeready-app",
+  owner: "ar3063",
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
@@ -47,5 +48,10 @@ export default {
   ],
   experiments: {
     typedRoutes: true,
+  },
+  extra: {
+    eas: {
+      projectId: "dfbca2a8-f268-47af-b81a-3fc9e9c58f01",
+    },
   },
 };
