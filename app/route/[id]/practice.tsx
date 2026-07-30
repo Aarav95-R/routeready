@@ -298,8 +298,8 @@ export default function Practice() {
   const isApproach = phase === "approach";
   const current = (isApproach ? approach?.steps : routeSteps)?.[stepIndex];
   const next = (isApproach ? approach?.steps : routeSteps)?.[stepIndex + 1];
-  const aheadColor = isApproach ? "#94A3B8" : colors.accent;
-  const aheadGlow = isApproach ? "rgba(148,163,184,0.28)" : "rgba(5,150,105,0.30)";
+  const aheadCore = isApproach ? "#94A3B8" : colors.accent;
+  const aheadCasing = isApproach ? "#64748B" : "#047857";
 
   return (
     <View className="flex-1">
@@ -313,22 +313,24 @@ export default function Practice() {
         {phase === "preview" ? (
           routeLL.length > 1 && (
             <ShapeSource id="route" shape={lineFeature(routeLL)}>
-              <LineLayer id="routeGlow" style={{ lineColor: "rgba(5,150,105,0.18)", lineWidth: 9, lineCap: "round", lineJoin: "round" }} />
-              <LineLayer id="routeLine" style={{ lineColor: colors.accent, lineWidth: 6, lineCap: "round", lineJoin: "round" }} />
+              <LineLayer id="routeCasing" style={{ lineColor: "#047857", lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
+              <LineLayer id="routeCore" style={{ lineColor: colors.accent, lineWidth: 7, lineCap: "round", lineJoin: "round" }} />
+              <LineLayer id="routeSheen" style={{ lineColor: "rgba(255,255,255,0.45)", lineWidth: 2, lineCap: "round", lineJoin: "round" }} />
             </ShapeSource>
           )
         ) : (
           <>
             {traveled.length > 1 && (
               <ShapeSource id="trail" shape={lineFeature(traveled)}>
-                <LineLayer id="trailGlow" style={{ lineColor: "rgba(148,163,184,0.2)", lineWidth: 9, lineCap: "round", lineJoin: "round" }} />
-                <LineLayer id="trailLine" style={{ lineColor: "#CBD5E1", lineWidth: 6, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="trailCasing" style={{ lineColor: "rgba(148,163,184,0.45)", lineWidth: 9, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="trailCore" style={{ lineColor: "#CBD5E1", lineWidth: 5, lineCap: "round", lineJoin: "round" }} />
               </ShapeSource>
             )}
             {ahead.length > 1 && (
               <ShapeSource id="ahead" shape={lineFeature(ahead)}>
-                <LineLayer id="aheadGlow" style={{ lineColor: aheadGlow, lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
-                <LineLayer id="aheadLine" style={{ lineColor: aheadColor, lineWidth: 7, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="aheadCasing" style={{ lineColor: aheadCasing, lineWidth: 12.5, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="aheadCore" style={{ lineColor: aheadCore, lineWidth: 7.5, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="aheadSheen" style={{ lineColor: isApproach ? "transparent" : "rgba(255,255,255,0.5)", lineWidth: 2.2, lineCap: "round", lineJoin: "round" }} />
               </ShapeSource>
             )}
           </>
