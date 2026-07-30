@@ -314,8 +314,7 @@ export default function Practice() {
           routeLL.length > 1 && (
             <ShapeSource id="route" shape={lineFeature(routeLL)}>
               <LineLayer id="routeCasing" style={{ lineColor: "#047857", lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
-              <LineLayer id="routeCore" style={{ lineColor: colors.accent, lineWidth: 7, lineCap: "round", lineJoin: "round" }} />
-              <LineLayer id="routeSheen" style={{ lineColor: "rgba(255,255,255,0.45)", lineWidth: 2, lineCap: "round", lineJoin: "round" }} />
+              <LineLayer id="routeCore" style={{ lineColor: colors.accent, lineWidth: 8, lineCap: "round", lineJoin: "round" }} />
             </ShapeSource>
           )
         ) : (
@@ -328,9 +327,8 @@ export default function Practice() {
             )}
             {ahead.length > 1 && (
               <ShapeSource id="ahead" shape={lineFeature(ahead)}>
-                <LineLayer id="aheadCasing" style={{ lineColor: aheadCasing, lineWidth: 12.5, lineCap: "round", lineJoin: "round" }} />
-                <LineLayer id="aheadCore" style={{ lineColor: aheadCore, lineWidth: 7.5, lineCap: "round", lineJoin: "round" }} />
-                <LineLayer id="aheadSheen" style={{ lineColor: isApproach ? "transparent" : "rgba(255,255,255,0.5)", lineWidth: 2.2, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="aheadCasing" style={{ lineColor: aheadCasing, lineWidth: 12, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="aheadCore" style={{ lineColor: aheadCore, lineWidth: 8.5, lineCap: "round", lineJoin: "round" }} />
               </ShapeSource>
             )}
           </>
