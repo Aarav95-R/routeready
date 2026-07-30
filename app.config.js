@@ -1,6 +1,7 @@
-// Dynamic Expo config so the Mapbox build-time download token comes from the
+// Dynamic Expo config (plain JS/CommonJS for maximum compatibility with the
+// EAS build config reader). The Mapbox build-time download token comes from the
 // environment (an EAS secret) rather than being committed.
-export default {
+module.exports = {
   name: "RouteReady",
   slug: "routeready",
   owner: "ar3063",
@@ -16,6 +17,7 @@ export default {
     infoPlist: {
       NSLocationWhenInUseUsageDescription:
         "RouteReady uses your location to guide you along practice routes and score mock tests.",
+      ITSAppUsesNonExemptEncryption: false,
     },
   },
   android: {
@@ -44,7 +46,7 @@ export default {
     "expo-font",
     "expo-asset",
     "expo-web-browser",
-    ["@rnmapbox/maps", { RNMapboxMapsDownloadToken: process.env.MAPBOX_DOWNLOAD_TOKEN ?? "" }],
+    ["@rnmapbox/maps", { RNMapboxMapsDownloadToken: process.env.MAPBOX_DOWNLOAD_TOKEN || "" }],
   ],
   experiments: {
     typedRoutes: true,
