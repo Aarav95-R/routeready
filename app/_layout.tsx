@@ -5,9 +5,13 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
 import { View } from "react-native";
+import Mapbox from "@rnmapbox/maps";
 import { supabase } from "@/lib/supabase";
 import { useSession } from "@/stores/sessionStore";
 import { useNetwork } from "@/stores/networkStore";
+
+// Runtime token for displaying the Mapbox map.
+Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? null);
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });

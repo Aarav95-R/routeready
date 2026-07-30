@@ -40,7 +40,8 @@
       "expo-secure-store",
       "expo-font",
       "expo-asset",
-      "expo-web-browser"
+      "expo-web-browser",
+      "@rnmapbox/maps"
     ],
     "experiments": {
       "typedRoutes": true

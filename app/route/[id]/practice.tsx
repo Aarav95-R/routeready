@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import MapView, { Marker, Polyline } from "react-native-maps";
+import Mapbox, { Camera, LineLayer, MapView, MarkerView, PointAnnotation, ShapeSource } from "@rnmapbox/maps";
 import * as Location from "expo-location";
 import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
@@ -16,13 +16,20 @@ import type { Hazard, NavStep, Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
 import { colors } from "@/ui/theme";
 
+const NAV_STYLE = "mapbox://styles/mapbox/navigation-day-v1";
 const NAV_PITCH = 55;
 const LOOK_AHEAD_M = 60;
-const AT_START_M = 60;   // within this of the start you're "at" it
-const ARRIVE_M = 30;     // fallback: within this of the start, begin the route
+const AT_START_M = 60;
+const ARRIVE_M = 30;
 
 type Phase = "preview" | "approach" | "route" | "finished";
-const toMap = (c: LatLng) => ({ latitude: c.lat, longitude: c.lng });
+type Lng = [number, number];
+const toPos = (c: LatLng): Lng => [c.lng, c.lat];
+const lineFeature = (coords: LatLng[]) => ({
+  type: "Feature" as const,
+  properties: {},
+  geometry: { type: "LineString" as const, coordinates: coords.map(toPos) },
+});
 
 function maneuverIcon(step?: NavStep): keyof typeof Ionicons.glyphMap {
   if (!step) return "navigate";
@@ -34,17 +41,6 @@ function maneuverIcon(step?: NavStep): keyof typeof Ionicons.glyphMap {
   if (m.includes("left")) return "arrow-back";
   if (m.includes("right")) return "arrow-forward";
   return "arrow-up";
-}
-
-// A glowing polyline: soft wide halo under a crisp line (Apple/Google trail look).
-function GlowLine({ coords, color, glow, width }: { coords: { latitude: number; longitude: number }[]; color: string; glow: string; width: number }) {
-  if (coords.length < 2) return null;
-  return (
-    <>
-      <Polyline coordinates={coords} strokeColor={glow} strokeWidth={width + 10} lineCap="round" lineJoin="round" />
-      <Polyline coordinates={coords} strokeColor={color} strokeWidth={width} lineCap="round" lineJoin="round" />
-    </>
-  );
 }
 
 export default function Practice() {
@@ -72,7 +68,6 @@ export default function Practice() {
   const [directDist, setDirectDist] = useState<number | null>(null);
   const [crowRot, setCrowRot] = useState(0);
 
-  // Refs the single GPS callback reads, so it stays stable across the approach→route handoff.
   const phaseRef = useRef<Phase>("preview");
   const approachRef = useRef<Directions | null>(null);
   const fallbackRef = useRef(false);
@@ -87,7 +82,7 @@ export default function Practice() {
   const prevPosRef = useRef<LatLng | null>(null);
   const subRef = useRef<Location.LocationSubscription | null>(null);
   const sheetRef = useRef<BottomSheet>(null);
-  const mapRef = useRef<MapView>(null);
+  const cameraRef = useRef<Camera>(null);
 
   useEffect(() => {
     getRoute(id).then((r) => { setRoute(r.data.route); setHazards(r.data.hazards); }).catch(() => {});
@@ -109,7 +104,6 @@ export default function Practice() {
     startRef.current = routeLL[0] ?? null;
   }, [routeLL, routeSteps]);
 
-  // Preview: get a location fix so we can show distance-to-start and the right buttons.
   useEffect(() => {
     if (!routeLL.length) return;
     (async () => {
@@ -121,12 +115,15 @@ export default function Practice() {
   }, [routeLL.length]);
 
   const fitPreview = useCallback(() => {
-    if (routeLL.length > 1) {
-      mapRef.current?.fitToCoordinates(routeLL.map(toMap), {
-        edgePadding: { top: 100, right: 60, bottom: 280, left: 60 },
-        animated: true,
-      });
-    }
+    if (routeLL.length < 2) return;
+    const lats = routeLL.map((c) => c.lat);
+    const lngs = routeLL.map((c) => c.lng);
+    cameraRef.current?.fitBounds(
+      [Math.max(...lngs), Math.max(...lats)],
+      [Math.min(...lngs), Math.min(...lats)],
+      [100, 60, 300, 60],
+      600
+    );
   }, [routeLL]);
 
   useEffect(() => { if (phase === "preview") fitPreview(); }, [phase, fitPreview]);
@@ -158,6 +155,10 @@ export default function Practice() {
     Speech.speak("You've reached the start. Beginning the route.", { language: "en-GB" });
   }, []);
 
+  const moveCamera = (centre: LatLng, heading: number, zoom: number) => {
+    cameraRef.current?.setCamera({ centerCoordinate: toPos(centre), heading, pitch: NAV_PITCH, zoomLevel: zoom, animationDuration: 900 });
+  };
+
   const onPosition = useCallback((c: Location.LocationObjectCoords) => {
     const p = { lat: c.latitude, lng: c.longitude };
 
@@ -172,13 +173,11 @@ export default function Practice() {
     const ph = phaseRef.current;
     const start = startRef.current;
 
-    // Fallback: no computed path to the start — steer by bearing until we reach it.
     if (ph === "approach" && fallbackRef.current && start) {
       const d = haversineM(p, start);
       setDirectDist(Math.round(d));
       setCrowRot(bearingDeg(p, start) - heading);
-      const centre = destinationPoint(p, heading, LOOK_AHEAD_M);
-      mapRef.current?.animateCamera({ center: toMap(centre), heading, pitch: NAV_PITCH, zoom: 16.5 }, { duration: 900 });
+      moveCamera(destinationPoint(p, heading, LOOK_AHEAD_M), heading, 16.5);
       if (d <= ARRIVE_M) beginRoute();
       return;
     }
@@ -196,11 +195,7 @@ export default function Practice() {
     trailRef.current = ti;
     setTrailIdx(ti);
 
-    const centre = destinationPoint(p, heading, LOOK_AHEAD_M);
-    mapRef.current?.animateCamera(
-      { center: toMap(centre), heading, pitch: NAV_PITCH, zoom: navZoom(st.distanceToManeuverM) },
-      { duration: 900 }
-    );
+    moveCamera(destinationPoint(p, heading, LOOK_AHEAD_M), heading, navZoom(st.distanceToManeuverM));
 
     const cur = steps[st.index];
     if (cur && cur.type !== "depart") {
@@ -232,8 +227,7 @@ export default function Practice() {
       const p = { lat: f.coords.latitude, lng: f.coords.longitude };
       prevPosRef.current = p;
       setPos(p);
-      const centre = destinationPoint(p, headingRef.current, LOOK_AHEAD_M);
-      mapRef.current?.animateCamera({ center: toMap(centre), heading: headingRef.current, pitch: NAV_PITCH, zoom: 17 }, { duration: 700 });
+      moveCamera(destinationPoint(p, headingRef.current, LOOK_AHEAD_M), headingRef.current, 17);
       return p;
     } catch { return null; }
   };
@@ -285,7 +279,7 @@ export default function Practice() {
     return (
       <View className="flex-1 items-center justify-center gap-3 bg-surface px-8">
         <Text className="text-center text-[15px] font-semibold text-primary">Location access is needed to guide you along the route.</Text>
-        <Text className="text-center text-[12px] text-slate-500">Enable it in Settings → Privacy → Location Services → Expo Go.</Text>
+        <Text className="text-center text-[12px] text-slate-500">Enable it in Settings → Privacy → Location Services.</Text>
         <Pressable onPress={() => router.back()} className="mt-2 min-h-[44px] items-center justify-center rounded-full border-[1.5px] border-slate-200 px-6">
           <Text className="text-[14px] font-semibold text-primary">Back</Text>
         </Pressable>
@@ -299,52 +293,66 @@ export default function Practice() {
   const atStart = distToStart !== null && distToStart < AT_START_M;
 
   const activeLL = phase === "approach" && approach ? approach.coords : routeLL;
-  const activeMap = activeLL.map(toMap);
-  const traveled = activeMap.slice(0, Math.max(trailIdx, 1) + 1);
-  const ahead = activeMap.slice(trailIdx);
+  const traveled = activeLL.slice(0, Math.max(trailIdx, 1) + 1);
+  const ahead = activeLL.slice(trailIdx);
   const isApproach = phase === "approach";
   const current = (isApproach ? approach?.steps : routeSteps)?.[stepIndex];
   const next = (isApproach ? approach?.steps : routeSteps)?.[stepIndex + 1];
+  const aheadColor = isApproach ? "#94A3B8" : colors.accent;
+  const aheadGlow = isApproach ? "rgba(148,163,184,0.28)" : "rgba(5,150,105,0.30)";
 
   return (
     <View className="flex-1">
       <MapView
-        ref={mapRef}
-        style={{ flex: 1 }} mapType="mutedStandard"
-        showsUserLocation={false} showsMyLocationButton={false} showsCompass={false}
-        onMapReady={() => { if (phase === "preview") fitPreview(); }}
+        style={{ flex: 1 }} styleURL={NAV_STYLE} scaleBarEnabled={false} compassEnabled={false}
+        logoPosition={{ bottom: 92, left: 8 }} attributionPosition={{ bottom: 92, right: 8 }}
+        onDidFinishLoadingMap={() => { if (phaseRef.current === "preview") fitPreview(); }}
       >
+        <Camera ref={cameraRef} />
+
         {phase === "preview" ? (
-          <GlowLine coords={routeLL.map(toMap)} color={colors.accent} glow="rgba(5,150,105,0.22)" width={6} />
+          routeLL.length > 1 && (
+            <ShapeSource id="route" shape={lineFeature(routeLL)}>
+              <LineLayer id="routeGlow" style={{ lineColor: "rgba(5,150,105,0.22)", lineWidth: 15, lineCap: "round", lineJoin: "round" }} />
+              <LineLayer id="routeLine" style={{ lineColor: colors.accent, lineWidth: 6, lineCap: "round", lineJoin: "round" }} />
+            </ShapeSource>
+          )
         ) : (
           <>
-            <GlowLine coords={traveled} color="#CBD5E1" glow="rgba(148,163,184,0.25)" width={6} />
-            <GlowLine coords={ahead} color={isApproach ? "#94A3B8" : colors.accent} glow={isApproach ? "rgba(148,163,184,0.28)" : "rgba(5,150,105,0.30)"} width={7} />
+            {traveled.length > 1 && (
+              <ShapeSource id="trail" shape={lineFeature(traveled)}>
+                <LineLayer id="trailGlow" style={{ lineColor: "rgba(148,163,184,0.25)", lineWidth: 15, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="trailLine" style={{ lineColor: "#CBD5E1", lineWidth: 6, lineCap: "round", lineJoin: "round" }} />
+              </ShapeSource>
+            )}
+            {ahead.length > 1 && (
+              <ShapeSource id="ahead" shape={lineFeature(ahead)}>
+                <LineLayer id="aheadGlow" style={{ lineColor: aheadGlow, lineWidth: 18, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="aheadLine" style={{ lineColor: aheadColor, lineWidth: 7, lineCap: "round", lineJoin: "round" }} />
+              </ShapeSource>
+            )}
           </>
         )}
 
         {start && (
-          <Marker coordinate={toMap(start)} anchor={{ x: 0.5, y: 0.5 }}>
-            <View className="h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-accent" style={{ shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 3 }}>
-              <View className="h-2 w-2 rounded-full bg-white" />
-            </View>
-          </Marker>
+          <MarkerView id="start" coordinate={toPos(start)} anchor={{ x: 0.5, y: 0.5 }}>
+            <View className="h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-accent"><View className="h-2 w-2 rounded-full bg-white" /></View>
+          </MarkerView>
         )}
         {finish && !isLoop && (
-          <Marker coordinate={toMap(finish)} anchor={{ x: 0.5, y: 1 }}>
+          <MarkerView id="finish" coordinate={toPos(finish)} anchor={{ x: 0.5, y: 1 }}>
             <View className="h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-primary"><Ionicons name="flag" size={14} color="#fff" /></View>
-          </Marker>
+          </MarkerView>
         )}
         {hazards.map((h) => (
-          <Marker key={h.id} coordinate={{ latitude: h.lat, longitude: h.lng }} pinColor={colors.warning}
-            onPress={() => { setSelectedHazard(h); sheetRef.current?.snapToIndex(0); }} />
+          <PointAnnotation key={h.id} id={h.id} coordinate={[h.lng, h.lat]} onSelected={() => { setSelectedHazard(h); sheetRef.current?.snapToIndex(0); }}>
+            <View className="h-4 w-4 rounded-full border-2 border-white bg-warning" />
+          </PointAnnotation>
         ))}
         {(phase === "approach" || phase === "route") && pos && (
-          <Marker coordinate={toMap(pos)} anchor={{ x: 0.5, y: 0.5 }} flat>
-            <View className="h-8 w-8 items-center justify-center rounded-full border-[3px] border-white bg-accent" style={{ shadowColor: "#000", shadowOpacity: 0.35, shadowRadius: 4 }}>
-              <Ionicons name="caret-up" size={16} color="#fff" />
-            </View>
-          </Marker>
+          <MarkerView id="puck" coordinate={toPos(pos)} anchor={{ x: 0.5, y: 0.5 }}>
+            <View className="h-8 w-8 items-center justify-center rounded-full border-[3px] border-white bg-accent"><Ionicons name="caret-up" size={16} color="#fff" /></View>
+          </MarkerView>
         )}
       </MapView>
 
@@ -383,7 +391,7 @@ export default function Practice() {
         </View>
       )}
 
-      {/* ---------- APPROACH FALLBACK: bearing arrow ---------- */}
+      {/* ---------- APPROACH FALLBACK ---------- */}
       {phase === "approach" && fallback && (
         <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
           <View style={{ transform: [{ rotate: `${crowRot}deg` }] }}>
@@ -392,7 +400,7 @@ export default function Practice() {
         </View>
       )}
 
-      {/* ---------- APPROACH / ROUTE: turn card ---------- */}
+      {/* ---------- APPROACH / ROUTE ---------- */}
       {(phase === "approach" || phase === "route") && (
         <>
           <View className="absolute left-3 right-3" style={{ top: insets.top + 6 }}>
@@ -408,11 +416,9 @@ export default function Practice() {
                   <Ionicons name={fallback ? "navigate" : maneuverIcon(current)} size={26} color="#fff" />
                 </View>
                 <View className="flex-1">
-                  {fallback ? (
-                    directDist !== null && <Text className="text-[13px] font-semibold text-emerald-300">{formatDistance(directDist)}</Text>
-                  ) : (
-                    distanceM !== null && <Text className="text-[13px] font-semibold text-emerald-300">{formatDistance(distanceM)}</Text>
-                  )}
+                  {fallback
+                    ? directDist !== null && <Text className="text-[13px] font-semibold text-emerald-300">{formatDistance(directDist)}</Text>
+                    : distanceM !== null && <Text className="text-[13px] font-semibold text-emerald-300">{formatDistance(distanceM)}</Text>}
                   <Text className="text-[17px] font-semibold leading-[21px] text-white" numberOfLines={2}>
                     {fallback ? "Head toward the start point" : current?.instruction ?? "Follow the route"}
                   </Text>
@@ -440,9 +446,7 @@ export default function Practice() {
             <View className="flex-1">
               <Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{isApproach ? "To the start" : "Remaining"}</Text>
               <Text className="text-[18px] font-semibold text-primary">
-                {isApproach
-                  ? (fallback ? (directDist === null ? "—" : formatDistance(directDist)) : (remaining === null ? "—" : formatDistance(remaining)))
-                  : (remaining === null ? "—" : formatDistance(remaining))}
+                {isApproach && fallback ? (directDist === null ? "—" : formatDistance(directDist)) : (remaining === null ? "—" : formatDistance(remaining))}
               </Text>
             </View>
             <Pressable onPress={() => { stopWatching(); router.back(); }} className="min-h-[44px] items-center justify-center rounded-full bg-danger px-7">
