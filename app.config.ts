@@ -2,7 +2,7 @@
 // environment (an EAS secret) rather than being committed.
 export default {
   name: "RouteReady",
-  slug: "routeready-app",
+  slug: "routeready",
   owner: "ar3063",
   version: "1.0.0",
   orientation: "portrait",
