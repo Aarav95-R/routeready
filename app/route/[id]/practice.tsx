@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import Mapbox, { Camera, LineLayer, MapView, MarkerView, PointAnnotation, ShapeSource } from "@rnmapbox/maps";
+import Mapbox, { Camera, LineLayer, MapView, MarkerView, PointAnnotation, ShapeSource, UserTrackingMode } from "@rnmapbox/maps";
 import * as Location from "expo-location";
 import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
@@ -10,7 +10,7 @@ import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
-import { advance, ANNOUNCE_M, destinationPoint, formatDistance, navZoom, remainingM, trailIndex } from "@/lib/navigation";
+import { advance, ANNOUNCE_M, formatDistance, navZoom, remainingM, trailIndex } from "@/lib/navigation";
 import { bearingDeg, haversineM, LatLng, mpsToMph } from "@/lib/geo";
 import type { Hazard, NavStep, Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
@@ -18,7 +18,6 @@ import { colors } from "@/ui/theme";
 
 const NAV_STYLE = "mapbox://styles/mapbox/light-v11";
 const NAV_PITCH = 55;
-const LOOK_AHEAD_M = 60;
 const AT_START_M = 60;
 const ARRIVE_M = 30;
 
@@ -67,6 +66,7 @@ export default function Practice() {
   const [speedMph, setSpeedMph] = useState(0);
   const [directDist, setDirectDist] = useState<number | null>(null);
   const [crowRot, setCrowRot] = useState(0);
+  const [followZoom, setFollowZoom] = useState(18);
 
   const phaseRef = useRef<Phase>("preview");
   const approachRef = useRef<Directions | null>(null);
@@ -81,6 +81,7 @@ export default function Practice() {
   const headingRef = useRef(0);
   const prevPosRef = useRef<LatLng | null>(null);
   const subRef = useRef<Location.LocationSubscription | null>(null);
+  const headingSubRef = useRef<Location.LocationSubscription | null>(null);
   const sheetRef = useRef<BottomSheet>(null);
   const cameraRef = useRef<Camera>(null);
 
@@ -131,6 +132,8 @@ export default function Practice() {
   const stopWatching = useCallback(() => {
     subRef.current?.remove();
     subRef.current = null;
+    headingSubRef.current?.remove();
+    headingSubRef.current = null;
     Speech.stop();
   }, []);
   useEffect(() => stopWatching, [stopWatching]);
@@ -155,18 +158,8 @@ export default function Practice() {
     Speech.speak("You've reached the start. Beginning the route.", { language: "en-GB" });
   }, []);
 
-  const moveCamera = (centre: LatLng, heading: number, zoom: number) => {
-    cameraRef.current?.setCamera({ centerCoordinate: toPos(centre), heading, pitch: NAV_PITCH, zoomLevel: zoom, animationDuration: 900 });
-  };
-
   const onPosition = useCallback((c: Location.LocationObjectCoords) => {
     const p = { lat: c.latitude, lng: c.longitude };
-
-    let heading = headingRef.current;
-    if (c.heading != null && c.heading >= 0 && (c.speed ?? 0) > 0.5) heading = c.heading;
-    else if (prevPosRef.current && haversineM(prevPosRef.current, p) > 3) heading = bearingDeg(prevPosRef.current, p);
-    headingRef.current = heading;
-    prevPosRef.current = p;
     setPos(p);
     setSpeedMph(Math.round(mpsToMph(Math.max(0, c.speed ?? 0))));
 
@@ -176,8 +169,8 @@ export default function Practice() {
     if (ph === "approach" && fallbackRef.current && start) {
       const d = haversineM(p, start);
       setDirectDist(Math.round(d));
-      setCrowRot(bearingDeg(p, start) - heading);
-      moveCamera(destinationPoint(p, heading, LOOK_AHEAD_M), heading, 17.5);
+      setCrowRot(bearingDeg(p, start) - headingRef.current);
+      setFollowZoom(17.5);
       if (d <= ARRIVE_M) beginRoute();
       return;
     }
@@ -194,8 +187,7 @@ export default function Practice() {
     const ti = trailIndex(coords, p, trailRef.current);
     trailRef.current = ti;
     setTrailIdx(ti);
-
-    moveCamera(destinationPoint(p, heading, LOOK_AHEAD_M), heading, navZoom(st.distanceToManeuverM));
+    setFollowZoom(navZoom(st.distanceToManeuverM));
 
     const cur = steps[st.index];
     if (cur && cur.type !== "depart") {
@@ -227,12 +219,17 @@ export default function Practice() {
       const p = { lat: f.coords.latitude, lng: f.coords.longitude };
       prevPosRef.current = p;
       setPos(p);
-      moveCamera(destinationPoint(p, headingRef.current, LOOK_AHEAD_M), headingRef.current, 18);
       return p;
     } catch { return null; }
   };
 
   const startWatch = async () => {
+    // Compass heading — updates as the phone turns, even when standing still,
+    // so the follow camera rotates with the driver (not only when moving).
+    headingSubRef.current = await Location.watchHeadingAsync((h) => {
+      const hd = h.trueHeading != null && h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+      if (hd != null && hd >= 0) headingRef.current = hd;
+    });
     subRef.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 3, timeInterval: 1000 },
       (loc) => onPosition(loc.coords)
@@ -308,7 +305,13 @@ export default function Practice() {
         logoPosition={{ bottom: 92, left: 8 }} attributionPosition={{ bottom: 92, right: 8 }}
         onDidFinishLoadingMap={() => { if (phaseRef.current === "preview") fitPreview(); }}
       >
-        <Camera ref={cameraRef} />
+        <Camera
+          ref={cameraRef}
+          followUserLocation={phase === "approach" || phase === "route"}
+          followUserMode={UserTrackingMode.FollowWithHeading}
+          followZoomLevel={followZoom}
+          followPitch={NAV_PITCH}
+        />
 
         {phase === "preview" ? (
           routeLL.length > 1 && (
