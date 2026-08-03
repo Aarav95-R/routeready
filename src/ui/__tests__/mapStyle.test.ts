@@ -40,3 +40,31 @@ test("lineWidthExpression flattens stops into a mapbox interpolate expression", 
     "interpolate", ["linear"], ["zoom"], 15, 5, 19, 24,
   ]);
 });
+
+test("all nine palette colors have exact correct values", () => {
+  expect(mapColors).toEqual({
+    land: "#EFEEE8",
+    roadFill: "#FFFFFF",
+    roadCasing: "#C3C8C1",
+    motorwayFill: "#F7DFAE",
+    park: "#DCE7CE",
+    water: "#A9D3EA",
+    building: "#E4E2DB",
+    routeCore: "#059669",
+    routeCasing: "#04684C",
+  });
+});
+
+test("road width and casing stops have exact correct values", () => {
+  expect(roadWidths).toEqual({
+    motorway: [[15, 7], [17, 15], [19, 30]],
+    primary: [[15, 5], [17, 12], [19, 24]],
+    residential: [[15, 3], [17, 8], [19, 17]],
+  });
+
+  expect(casingWidths).toEqual({
+    motorway: [[15, 9], [17, 18], [19, 35]],
+    primary: [[15, 7], [17, 15], [19, 29]],
+    residential: [[15, 5], [17, 11], [19, 22]],
+  });
+});
