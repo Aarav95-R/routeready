@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import Mapbox, { Camera, LineLayer, MapView, MarkerView, PointAnnotation, ShapeSource, UserTrackingMode } from "@rnmapbox/maps";
+import Mapbox, { BackgroundLayer, Camera, FillLayer, LineLayer, MapView, MarkerView, PointAnnotation, ShapeSource, UserTrackingMode } from "@rnmapbox/maps";
 import * as Location from "expo-location";
 import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
@@ -15,8 +15,9 @@ import { bearingDeg, haversineM, LatLng, mpsToMph } from "@/lib/geo";
 import type { Hazard, NavStep, Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
 import { colors } from "@/ui/theme";
+import { casingWidths, lineWidthExpression, mapColors, roadWidths } from "@/ui/mapStyle";
 
-const NAV_STYLE = "mapbox://styles/mapbox/light-v11";
+const NAV_STYLE = "mapbox://styles/mapbox/navigation-day-v1";
 const NAV_PITCH = 55;
 const AT_START_M = 60;
 const ARRIVE_M = 30;
@@ -29,6 +30,10 @@ const lineFeature = (coords: LatLng[]) => ({
   properties: {},
   geometry: { type: "LineString" as const, coordinates: coords.map(toPos) },
 });
+
+// lineWidthExpression returns unknown[] (see src/ui/mapStyle.ts); LineLayer's
+// style prop wants a narrower Mapbox Expression tuple — narrow it once here.
+const lineWidth = (stops: Parameters<typeof lineWidthExpression>[0]) => lineWidthExpression(stops) as any;
 
 function maneuverIcon(step?: NavStep): keyof typeof Ionicons.glyphMap {
   if (!step) return "navigate";
@@ -303,8 +308,8 @@ export default function Practice() {
   const isApproach = phase === "approach";
   const current = (isApproach ? approach?.steps : routeSteps)?.[stepIndex];
   const next = (isApproach ? approach?.steps : routeSteps)?.[stepIndex + 1];
-  const aheadCore = isApproach ? "#94A3B8" : colors.accent;
-  const aheadCasing = isApproach ? "#64748B" : "#047857";
+  const aheadCore = isApproach ? "#94A3B8" : mapColors.routeCore;
+  const aheadCasing = isApproach ? "#64748B" : mapColors.routeCasing;
 
   return (
     <View className="flex-1">
@@ -322,25 +327,48 @@ export default function Practice() {
           onUserTrackingModeChange={(e: any) => { if (e?.nativeEvent?.payload?.followUserLocation === false) setFollowing(false); }}
         />
 
+        {/* Waze-style base: wide white roads on warm off-white land, with parks
+            and water carrying the only other colour. Applied as overrides on the
+            loaded style's own layers rather than a fork of the whole style.
+            Ids are navigation-day-v1's real ones (verified against the style
+            JSON) — the background layer is called "land", not "background",
+            and every road layer carries a "-navigation" suffix plus, for
+            motorway casing and street fill, an extra low-zoom variant. */}
+        <BackgroundLayer id="land" existing style={{ backgroundColor: mapColors.land }} />
+        <FillLayer id="landuse" existing style={{ fillColor: mapColors.park }} />
+        <FillLayer id="water" existing style={{ fillColor: mapColors.water }} />
+        <FillLayer id="building" existing style={{ fillColor: mapColors.building }} />
+
+        <LineLayer id="road-motorway-trunk-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineWidth: lineWidth(casingWidths.motorway) }} />
+        <LineLayer id="road-motorway-trunk-case-low-navigation" existing style={{ lineColor: mapColors.roadCasing, lineWidth: lineWidth(casingWidths.motorway) }} />
+        <LineLayer id="road-motorway-trunk-navigation" existing style={{ lineColor: mapColors.motorwayFill, lineWidth: lineWidth(roadWidths.motorway) }} />
+        <LineLayer id="road-primary-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineWidth: lineWidth(casingWidths.primary) }} />
+        <LineLayer id="road-primary-navigation" existing style={{ lineColor: mapColors.roadFill, lineWidth: lineWidth(roadWidths.primary) }} />
+        <LineLayer id="road-secondary-tertiary-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineWidth: lineWidth(casingWidths.primary) }} />
+        <LineLayer id="road-secondary-tertiary-navigation" existing style={{ lineColor: mapColors.roadFill, lineWidth: lineWidth(roadWidths.primary) }} />
+        <LineLayer id="road-street-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineWidth: lineWidth(casingWidths.residential) }} />
+        <LineLayer id="road-street-navigation" existing style={{ lineColor: mapColors.roadFill, lineWidth: lineWidth(roadWidths.residential) }} />
+        <LineLayer id="road-street-low-navigation" existing style={{ lineColor: mapColors.roadFill, lineWidth: lineWidth(roadWidths.residential) }} />
+
         {phase === "preview" ? (
           routeLL.length > 1 && (
             <ShapeSource id="route" shape={lineFeature(routeLL)}>
-              <LineLayer id="routeCasing" style={{ lineColor: "#047857", lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
-              <LineLayer id="routeCore" style={{ lineColor: colors.accent, lineWidth: 8, lineCap: "round", lineJoin: "round" }} />
+              <LineLayer id="routeCasing" style={{ lineColor: mapColors.routeCasing, lineWidth: 15, lineCap: "round", lineJoin: "round" }} />
+              <LineLayer id="routeCore" style={{ lineColor: mapColors.routeCore, lineWidth: 10, lineCap: "round", lineJoin: "round" }} />
             </ShapeSource>
           )
         ) : (
           <>
             {traveled.length > 1 && (
               <ShapeSource id="trail" shape={lineFeature(traveled)}>
-                <LineLayer id="trailCasing" style={{ lineColor: "#047857", lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
-                <LineLayer id="trailCore" style={{ lineColor: colors.accent, lineWidth: 7.5, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="trailCasing" style={{ lineColor: mapColors.routeCasing, lineWidth: 15, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="trailCore" style={{ lineColor: mapColors.routeCore, lineWidth: 10, lineCap: "round", lineJoin: "round" }} />
               </ShapeSource>
             )}
             {ahead.length > 1 && (
               <ShapeSource id="ahead" shape={lineFeature(ahead)}>
-                <LineLayer id="aheadCasing" style={{ lineColor: aheadCasing, lineWidth: 12, lineCap: "round", lineJoin: "round" }} />
-                <LineLayer id="aheadCore" style={{ lineColor: aheadCore, lineWidth: 8.5, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="aheadCasing" style={{ lineColor: aheadCasing, lineWidth: 16, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="aheadCore" style={{ lineColor: aheadCore, lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
               </ShapeSource>
             )}
           </>
