@@ -57,3 +57,52 @@ export function bandSpeedMph(mps: number): (typeof BANDS)[number] {
   for (const b of BANDS) if (mph <= b + 2) return b;
   return 70;
 }
+
+export type Projection = { point: LatLng; t: number; distM: number };
+
+// Perpendicular projection of `p` onto segment a->b. Works in local metres
+// via an equirectangular approximation around `a` — over a single route
+// segment (tens of metres) the error is far below GPS noise.
+export function projectOnSegment(a: LatLng, b: LatLng, p: LatLng): Projection {
+  const cosLat = Math.cos(toRad(a.lat));
+  const x = (c: LatLng) => toRad(c.lng) * R * cosLat;
+  const y = (c: LatLng) => toRad(c.lat) * R;
+
+  const dx = x(b) - x(a);
+  const dy = y(b) - y(a);
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x(p) - x(a)) * dx + (y(p) - y(a)) * dy) / len2));
+
+  const point = { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+  return { point, t, distM: haversineM(point, p) };
+}
+
+export type Snap = { point: LatLng; idx: number; distM: number; bearing: number };
+
+// Snap `p` onto the polyline, searching only the segments within `windowSize`
+// vertices of `nearIdx`. The window matters: the seeded routes are loops, and
+// an unbounded search snaps the driver onto the return leg wherever the
+// outbound and inbound roads run close together.
+export function snapToPath(coords: LatLng[], p: LatLng, nearIdx = 0, windowSize = 30): Snap | null {
+  if (coords.length < 2) return null;
+  const last = coords.length - 2;
+  const centre = Math.min(Math.max(nearIdx, 0), last);
+  const lo = Math.max(0, centre - windowSize);
+  const hi = Math.min(last, centre + windowSize);
+
+  let best: Snap | null = null;
+  for (let i = lo; i <= hi; i++) {
+    const pr = projectOnSegment(coords[i], coords[i + 1], p);
+    if (!best || pr.distM < best.distM) {
+      best = { point: pr.point, idx: i, distM: pr.distM, bearing: bearingDeg(coords[i], coords[i + 1]) };
+    }
+  }
+  return best;
+}
+
+// Circular exponential moving average. Wraps correctly across 0/360 by
+// easing along the shortest signed turn rather than the raw difference.
+export function smoothHeading(prev: number, next: number, alpha = 0.15): number {
+  const delta = turnAngleDeg(prev, next);
+  return (((prev + delta * alpha) % 360) + 360) % 360;
+}

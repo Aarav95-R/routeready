@@ -1,4 +1,4 @@
-import { bandSpeedMph, bearingDeg, cumulativeM, haversineM, isInZone, mpsToMph, nearestVertex, turnAngleDeg } from "../geo";
+import { bandSpeedMph, bearingDeg, cumulativeM, haversineM, isInZone, mpsToMph, nearestVertex, turnAngleDeg, projectOnSegment, snapToPath, smoothHeading } from "../geo";
 
 const london = { lat: 51.5074, lng: -0.1278 };
 const birmingham = { lat: 52.4862, lng: -1.8904 };
@@ -45,4 +45,73 @@ test("speed conversions and banding", () => {
   expect(bandSpeedMph(16)).toBe(40);   // 35.8 mph → 40
   expect(bandSpeedMph(24)).toBe(60);   // 53.7 mph → 60
   expect(bandSpeedMph(31)).toBe(70);   // 69.3 mph → 70
+});
+
+// A due-east segment at lat 51.5. 0.001 deg of latitude is ~111 m.
+const segA = { lat: 51.5, lng: -0.1 };
+const segB = { lat: 51.5, lng: -0.09 };
+
+test("projectOnSegment drops a perpendicular onto the segment", () => {
+  const r = projectOnSegment(segA, segB, { lat: 51.501, lng: -0.095 });
+  expect(r.t).toBeCloseTo(0.5, 2);
+  expect(r.point.lat).toBeCloseTo(51.5, 5);
+  expect(r.point.lng).toBeCloseTo(-0.095, 5);
+  expect(r.distM).toBeCloseTo(111, 0);
+});
+
+test("projectOnSegment clamps past either end", () => {
+  const past = projectOnSegment(segA, segB, { lat: 51.5, lng: -0.08 });
+  expect(past.t).toBe(1);
+  expect(past.point.lng).toBeCloseTo(-0.09, 6);
+
+  const before = projectOnSegment(segA, segB, { lat: 51.5, lng: -0.11 });
+  expect(before.t).toBe(0);
+  expect(before.point.lng).toBeCloseTo(-0.1, 6);
+});
+
+test("projectOnSegment handles a zero-length segment", () => {
+  const r = projectOnSegment(segA, segA, { lat: 51.501, lng: -0.1 });
+  expect(r.t).toBe(0);
+  expect(r.distM).toBeCloseTo(111, 0);
+});
+
+// A loop: 11 vertices north up lng -0.1, then 11 back south up lng -0.1002
+// (~14 m to the east). This is the shape of the seeded test-centre routes.
+const OUT = Array.from({ length: 11 }, (_, i) => ({ lat: 51.5 + i * 0.001, lng: -0.1 }));
+const BACK = Array.from({ length: 11 }, (_, i) => ({ lat: 51.51 - i * 0.001, lng: -0.1002 }));
+const loop = [...OUT, ...BACK];
+
+// Sitting on the outbound leg but physically nearer the return leg.
+const driver = { lat: 51.5055, lng: -0.10015 };
+
+test("snapToPath stays on the outbound leg inside the window", () => {
+  const s = snapToPath(loop, driver, 5, 3)!;
+  expect(s.idx).toBe(5);
+  expect(s.distM).toBeCloseTo(10.4, 0);
+  expect(s.bearing).toBeCloseTo(0, 0); // due north
+  expect(s.point.lng).toBeCloseTo(-0.1, 5);
+});
+
+test("snapToPath without a window jumps onto the return leg", () => {
+  // Proves the window is what prevents cross-snapping on loop routes.
+  const s = snapToPath(loop, driver, 5, 100)!;
+  expect(s.idx).toBeGreaterThan(10);
+  expect(s.bearing).toBeCloseTo(180, 0);
+});
+
+test("snapToPath returns null for a path with no segments", () => {
+  expect(snapToPath([], driver, 0)).toBeNull();
+  expect(snapToPath([segA], driver, 0)).toBeNull();
+});
+
+test("smoothHeading eases toward the target", () => {
+  expect(smoothHeading(0, 90, 0.15)).toBeCloseTo(13.5, 3);
+  expect(smoothHeading(90, 90, 0.15)).toBeCloseTo(90, 3);
+});
+
+test("smoothHeading takes the short way across north", () => {
+  // 355 -> 5 must move forward through 0, not backward through 180.
+  expect(smoothHeading(355, 5, 0.5)).toBeCloseTo(0, 3);
+  expect(smoothHeading(5, 355, 0.5)).toBeCloseTo(0, 3);
+  expect(smoothHeading(350, 10, 0.25)).toBeCloseTo(355, 3);
 });
