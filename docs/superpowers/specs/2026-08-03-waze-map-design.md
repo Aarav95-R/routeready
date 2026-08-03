@@ -140,3 +140,21 @@ Extracting the puck and the style constants out of `practice.tsx` is deliberate:
 - The top instruction banner, speedometer and bottom bar keep their current design.
 - Traffic, incident reports, and anything else Waze-specific beyond the map surface.
 - A dark / night map. Worth doing, but it doubles the palette work — separate job.
+
+## 8. Known follow-ups after implementation
+
+Implemented 2026-08-03 across ten commits (`d4dd43d`..`93ecd22`). Two defects in this spec surfaced during the final review and were corrected in the code, so §1's numbers no longer match what shipped:
+
+- **The casing model in §1 was wrong.** `navigation-day-v1`'s `-case` layers use `line-gap-width` (the hole the fill sits in) with `line-width` as the per-side outline. Overriding `lineWidth` on them would have rendered every road as two grey rails around a floating stripe. The code overrides the gap and uses a single `ROAD_OUTLINE_PX`; the `casingWidths` table is gone.
+- **The width table in §1 was authored against `light-v11`** and then applied to `navigation-day-v1`, which already ships wide roads — it made roads roughly 40% *narrower* than doing nothing. The tables were re-derived from the live style JSON and now run 1.19–1.50× stock across the navigation band. `src/ui/mapStyle.ts` holds the real values; `src/ui/__tests__/mapStyle.test.ts` guards them against a `STOCK_AT_Z18` constant.
+
+Deferred, in rough priority order:
+
+1. **Bridge and tunnel layers.** 32 `bridge-*`/`tunnel-*` road layers are unstyled, so colour and width jump mid-carriageway on any flyover. Widening the fills made this more visible. Largest remaining visual defect.
+2. **`ROAD_OUTLINE_PX` is flat at 2.5** where stock interpolates 0.5 → 2, so at preview zooms streets read grey rather than white-with-an-edge. The fix is a two-stop outline expression, not a change to the width tables.
+3. **`practice.tsx` has no test coverage.** Seven of the final review's ten findings lived in that file and rest on code reading alone. A pure `navTick(state, fix) → { pos, heading, zoom, trailIdx, onRoute }` in `src/lib/` would be unit-testable without mocking Mapbox, and would have caught the two behavioural bugs that survived every per-task gate.
+4. **The layer-override block** is ~50 near-identical JSX elements; adding bridges and tunnels would roughly double it. A data-driven `.map()` over a `{id, fill, casing}` table is now clearly worth it.
+5. **`setFollowing(false)`** in the touch and `onCameraChanged` handlers does not also write `followingRef.current`, so one or two camera pushes can land before the sync effect runs. Harmless today.
+6. **`recenter` lost its distinct 500 ms ease** and now shares `CAM_ANIM_MS` (600 ms).
+
+**Nothing below has been seen on a device.** The palette, widths, casing flushness, puck, camera feel, the 10 px drag threshold, and whether touch events reach JS through Mapbox's native gesture handling are all unverified. Check in this order: road rendering, width against a stock screenshot, camera smoothness, then whether a pan cancels follow at all.
