@@ -6,9 +6,11 @@ export const PUCK_SIZE = 88;
 
 type Props = {
   /**
-   * Degrees to rotate the arrow. While the camera is following, screen-up
-   * already is the driver's heading, so this stays 0; it is only used once
-   * the driver has panned away from follow mode.
+   * Degrees to rotate the arrow, relative to the map's current bearing. On the
+   * navigation map that bearing is only ever set by setCamera — rotate gestures
+   * are disabled there — so screen-up is always the driver's heading and 0 is
+   * right whether or not the camera is following. Kept as a prop for any caller
+   * that does not control the bearing.
    */
   rotation?: number;
 };

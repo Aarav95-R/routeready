@@ -27,8 +27,15 @@ const SNAP_WINDOW = 30;         // vertices searched either side of the current 
 const ROAD_BEARING_MIN_MPH = 3; // below this a vehicle has no meaningful course
 const HEADING_ALPHA = 0.15;
 const HEADING_DEADBAND_DEG = 3;
-const CAM_TICK_MS = 250;        // at most 4 camera updates a second
-const CAM_ANIM_MS = 300;        // slightly longer than the tick, so moves blend
+// Camera pushes are driven by the GPS callback, not by a timer, so the ease has
+// to span the gap between fixes or the map steps rather than glides. That gap
+// is 500 ms at best: watchPositionAsync asks for timeInterval 500, and on
+// Android expo-location also sets minUpdateIntervalMillis to the same value
+// (node_modules/expo-location/.../LocationHelpers.kt), while on iOS
+// timeInterval is ignored entirely and CLLocationManager delivers about 1 Hz.
+// So this wants to sit a shade under the fastest realistic cadence; tune on
+// device, where the true iOS rate is measurable.
+const CAM_ANIM_MS = 600;
 const PUCK_SCREEN_FRACTION = 0.62; // how far down the screen the driver sits
 const PAN_THRESHOLD_PX = 10;    // finger movement beyond this counts as a pan, not a tap
 
@@ -102,7 +109,6 @@ export default function Practice() {
   const smoothHeadingRef = useRef(0);
   const headingSeededRef = useRef(false); // first fix of a leg snaps straight to target, no ease-in
   const zoomRef = useRef(NAV_ZOOM_MID);
-  const lastCamRef = useRef(0);
   const mapHeightRef = useRef(0);
   const followingRef = useRef(true);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -188,11 +194,11 @@ export default function Practice() {
   // Drive the camera by hand. followUserLocation would centre on the raw GPS
   // fix and rotate to the raw compass, both of which are exactly what we are
   // trying to filter out, and neither is reachable from JS.
-  const pushCamera = useCallback((centre: LatLng, heading: number, zoom: number, force = false) => {
+  // There is deliberately no throttle here: expo-location cannot deliver faster
+  // than the 500 ms it is asked for on either platform, so one would only ever
+  // drop fixes the camera needs.
+  const pushCamera = useCallback((centre: LatLng, heading: number, zoom: number) => {
     if (!followingRef.current) return;
-    const now = Date.now();
-    if (!force && now - lastCamRef.current < CAM_TICK_MS) return;
-    lastCamRef.current = now;
 
     // Padding shifts the camera centre down the screen so more road is visible
     // ahead: centreFraction = 0.5 + paddingTop / (2 * height).
@@ -204,7 +210,7 @@ export default function Practice() {
       zoomLevel: zoom,
       pitch: NAV_PITCH,
       padding: { paddingTop, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 },
-      animationDuration: force ? 500 : CAM_ANIM_MS,
+      animationDuration: CAM_ANIM_MS,
       animationMode: "easeTo",
     });
   }, []);
@@ -214,7 +220,7 @@ export default function Practice() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     followingRef.current = true;
     setFollowing(true);
-    if (pos) pushCamera(pos, smoothHeadingRef.current, zoomRef.current, true);
+    if (pos) pushCamera(pos, smoothHeadingRef.current, zoomRef.current);
   };
 
   const onPosition = useCallback((c: Location.LocationObjectCoords) => {
@@ -250,7 +256,11 @@ export default function Practice() {
     if (ph === "approach" && fallbackRef.current && start) {
       const d = haversineM(p, start);
       setDirectDist(Math.round(d));
-      setCrowRot(bearingDeg(p, start) - headingRef.current);
+      // Screen-space overlay, so subtract the bearing the map is actually
+      // rotated to — the smoothed one the camera is given below, not the raw
+      // compass, which runs tens of degrees ahead of it through a turn. This
+      // arrow is the only navigation aid the fallback path has.
+      setCrowRot(bearingDeg(p, start) - smoothHeadingRef.current);
       zoomRef.current = NAV_ZOOM_FAR;
       pushCamera(p, smoothHeadingRef.current, NAV_ZOOM_FAR);
       if (d <= ARRIVE_M) beginRoute();
@@ -258,7 +268,14 @@ export default function Practice() {
     }
 
     const steps = ph === "route" ? routeStepsRef.current : approachRef.current?.steps ?? [];
-    if (!steps.length) return;
+    if (!steps.length) {
+      // A leg can legitimately arrive with no steps (routes.steps defaults to
+      // '[]' in the schema, and an approach fetch can come back with none).
+      // Skip only the step-dependent work: the camera still has to follow, or
+      // the driver watches their puck walk off a frozen map.
+      pushCamera(p, smoothHeadingRef.current, zoomRef.current);
+      return;
+    }
 
     const st = advance(steps, p, indexRef.current);
     indexRef.current = st.index;
@@ -385,6 +402,10 @@ export default function Practice() {
     <View className="flex-1">
       <MapView
         style={{ flex: 1 }} styleURL={NAV_STYLE} scaleBarEnabled={false} compassEnabled={false}
+        // Rotate and pitch are ours to set, the way they are in Waze and Google
+        // Maps in nav mode. It also makes the puck's fixed rotation={0} correct
+        // by construction: nothing but setCamera can change the map bearing.
+        rotateEnabled={false} pitchEnabled={false}
         logoPosition={{ bottom: 92, left: 8 }} attributionPosition={{ bottom: 92, right: 8 }}
         onDidFinishLoadingMap={() => { if (phaseRef.current === "preview") fitPreview(); }}
         onLayout={(e) => { mapHeightRef.current = e.nativeEvent.layout.height; }}
@@ -402,6 +423,18 @@ export default function Practice() {
           if (!start || !t) return;
           const moved = Math.hypot(t.pageX - start.x, t.pageY - start.y);
           if (moved > PAN_THRESHOLD_PX) setFollowing(false);
+        }}
+        // Backstop for the touch handlers above, which depend on RN touch
+        // events surviving Mapbox's native gesture recognisers — unverified on
+        // device, and if they do not, the map cannot be panned at all. This
+        // signal comes from the native side instead, so it also catches a
+        // pinch, which may never deliver a JS touch move. Preview is excluded
+        // so it cannot fight fitBounds.
+        onCameraChanged={(s) => {
+          // Fires once per frame of any camera move, including our own, so bail
+          // out on two cheap ref reads before touching state.
+          if (!followingRef.current || phaseRef.current === "preview") return;
+          if (s.gestures?.isGestureActive) setFollowing(false);
         }}
       >
         <Camera ref={cameraRef} />
@@ -511,9 +544,9 @@ export default function Practice() {
         ))}
         {(phase === "approach" || phase === "route") && pos && (
           <MarkerView id="puck" coordinate={toPos(pos)} anchor={{ x: 0.5, y: 0.5 }} style={{ width: PUCK_SIZE, height: PUCK_SIZE }}>
-            {/* A pan only translates the camera centre, it never resets bearing —
-                the map is left rotated to whatever setCamera last applied, whether
-                following or not. So the puck stays heading-up either way. */}
+            {/* Rotate gestures are off and a pan only translates the centre, so
+                the map bearing is always whatever setCamera last applied —
+                the driver's smoothed heading. The puck is heading-up already. */}
             <NavPuck rotation={0} />
           </MarkerView>
         )}
