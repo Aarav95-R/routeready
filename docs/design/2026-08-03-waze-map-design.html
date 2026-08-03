@@ -1,0 +1,666 @@
+<title>Nav map — Waze treatment</title>
+<style>
+  :root {
+    --paper: #F6F7F4;
+    --card: #FFFFFF;
+    --ink: #0E1613;
+    --muted: #66716A;
+    --line: #E3E7DF;
+    --line-soft: #EFF2EC;
+    --emerald: #047857;
+    --emerald-bright: #059669;
+    --amber: #B45309;
+    --code-bg: #F0F2EC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0C110E;
+      --card: #141A16;
+      --ink: #E8EEE8;
+      --muted: #93A196;
+      --line: #26302A;
+      --line-soft: #1C241E;
+      --emerald: #34D399;
+      --emerald-bright: #6EE7B7;
+      --amber: #FBBF24;
+      --code-bg: #1A211C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E;
+    --card: #141A16;
+    --ink: #E8EEE8;
+    --muted: #93A196;
+    --line: #26302A;
+    --line-soft: #1C241E;
+    --emerald: #34D399;
+    --emerald-bright: #6EE7B7;
+    --amber: #FBBF24;
+    --code-bg: #1A211C;
+  }
+  :root[data-theme="light"] {
+    --paper: #F6F7F4;
+    --card: #FFFFFF;
+    --ink: #0E1613;
+    --muted: #66716A;
+    --line: #E3E7DF;
+    --line-soft: #EFF2EC;
+    --emerald: #047857;
+    --emerald-bright: #059669;
+    --amber: #B45309;
+    --code-bg: #F0F2EC;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 56px 24px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  h1 {
+    font-size: clamp(30px, 5vw, 42px);
+    line-height: 1.08;
+    letter-spacing: -0.025em;
+    font-weight: 680;
+    margin: 10px 0 0;
+    text-wrap: balance;
+  }
+
+  .lede {
+    margin: 14px 0 0;
+    font-size: 17px;
+    color: var(--muted);
+    max-width: 62ch;
+  }
+
+  h2 {
+    font-size: 21px;
+    letter-spacing: -0.015em;
+    font-weight: 650;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-size: 13px;
+    font-weight: 640;
+    letter-spacing: 0.02em;
+    margin: 0;
+  }
+
+  p { margin: 0; max-width: 66ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14px; }
+
+  section {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .sec-head { display: flex; flex-direction: column; gap: 6px; }
+
+  code, .mono {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 13px;
+  }
+  code {
+    background: var(--code-bg);
+    padding: 1.5px 5px;
+    border-radius: 4px;
+  }
+
+  /* --- two-up comparison --- */
+  .compare {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 18px;
+  }
+  .pane {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .pane-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .tick {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted); flex: none;
+  }
+  .pane.now .tick { background: #B9C0B6; }
+  .pane.next .tick { background: var(--emerald-bright); }
+  .pane.next .pane-label { color: var(--emerald); }
+
+  .frame {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--code-bg);
+    line-height: 0;
+  }
+  .frame svg { width: 100%; height: auto; display: block; }
+
+  /* --- swatches --- */
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    gap: 12px;
+  }
+  .sw {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .chip {
+    height: 46px;
+    border-radius: 8px;
+    border: 1px solid rgba(14, 22, 19, 0.12);
+  }
+  .sw .name { font-size: 12.5px; font-weight: 600; line-height: 1.25; }
+  .sw .hex {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+
+  /* --- table --- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 560px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  th {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    background: var(--code-bg);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.knob { font-weight: 600; white-space: nowrap; }
+  td.val { font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  td.was { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(128,140,130,0.5); }
+  td.now-v { color: var(--emerald); }
+
+  /* --- puck lab --- */
+  .pucks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+  }
+  .puckcard {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    text-align: center;
+  }
+  .stage {
+    width: 100%;
+    height: 132px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    background:
+      repeating-linear-gradient(0deg, transparent 0 30px, rgba(0,0,0,0.05) 30px 31px),
+      #FFFFFF;
+    border: 1px solid rgba(14,22,19,0.08);
+  }
+  .stage.road {
+    background:
+      linear-gradient(90deg, #C3C8C1 0 6px, #FFFFFF 6px calc(100% - 6px), #C3C8C1 calc(100% - 6px) 100%),
+      #EFEEE8;
+  }
+
+  .puckcard .cap { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  .puckcard .cap b { color: var(--ink); font-weight: 620; }
+
+  /* --- bullets --- */
+  ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; }
+  li { max-width: 64ch; }
+  li::marker { color: var(--muted); }
+
+  .files {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .file {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .file:last-child { border-bottom: none; padding-bottom: 0; }
+  .file .path {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 12.5px;
+    color: var(--emerald);
+    flex: none;
+  }
+  .file .what { font-size: 13.5px; color: var(--muted); }
+
+  .callout {
+    border-left: 3px solid var(--amber);
+    padding: 2px 0 2px 14px;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .callout b { color: var(--ink); font-weight: 620; }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    section { transition: border-color 160ms ease; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Design proposal &middot; 3 August 2026 &middot; branch phase-1</p>
+    <h1>Nav map, Waze treatment</h1>
+    <p class="lede">
+      Five changes to the practice-drive map: a coloured base with fat roads, a puck built like Waze&rsquo;s,
+      GPS snapped onto the road, and a camera that stops twitching. Route line and puck arrow stay emerald &mdash;
+      the layout is Waze, the identity is yours.
+    </p>
+  </header>
+
+  <!-- ============ 1. MAP BASE ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Map base</p>
+      <h2>Colour and road width</h2>
+      <p class="dim small">
+        Today the map is <code>light-v11</code> &mdash; near-white, thin roads, nothing to read at a glance.
+        Waze&rsquo;s map is legible at speed because roads are <em>wide and white</em> against a warm off-white land,
+        with parks, water and motorways carrying the only other colour.
+      </p>
+    </div>
+
+    <div class="compare">
+      <div class="pane now">
+        <div class="pane-label"><span class="tick"></span> Now &mdash; light-v11</div>
+        <div class="frame">
+          <svg viewBox="0 0 340 230" role="img" aria-label="Current map: near-white background with thin grey roads and a thin emerald route line">
+            <rect width="340" height="230" fill="#F8F9FA"/>
+            <g stroke="#E9EBED" stroke-width="7" stroke-linecap="round">
+              <path d="M-10 62 H350"/><path d="M-10 128 H350"/><path d="M-10 192 H350"/>
+              <path d="M58 -10 V240"/><path d="M148 -10 V240"/><path d="M248 -10 V240"/>
+            </g>
+            <g stroke="#FFFFFF" stroke-width="5" stroke-linecap="round">
+              <path d="M-10 62 H350"/><path d="M-10 128 H350"/><path d="M-10 192 H350"/>
+              <path d="M58 -10 V240"/><path d="M148 -10 V240"/><path d="M248 -10 V240"/>
+            </g>
+            <g stroke="#EDEFF1" stroke-width="3" stroke-linecap="round">
+              <path d="M-10 95 H350"/><path d="M-10 160 H350"/><path d="M103 -10 V240"/><path d="M198 -10 V240"/>
+            </g>
+            <path d="M148 240 V128 H248 V40" fill="none" stroke="#047857" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M148 240 V128 H248 V40" fill="none" stroke="#059669" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <g transform="translate(148 196)">
+              <circle r="15" fill="#059669" stroke="#FFFFFF" stroke-width="3.5"/>
+              <path d="M0 -7 L6 7 L0 3.5 L-6 7 Z" fill="#FFFFFF" transform="rotate(-45)"/>
+            </g>
+          </svg>
+        </div>
+        <p class="small dim">Roads read as faint scratches. The route is the only object with weight, so junctions ahead are invisible.</p>
+      </div>
+
+      <div class="pane next">
+        <div class="pane-label"><span class="tick"></span> Proposed</div>
+        <div class="frame">
+          <svg viewBox="0 0 340 230" role="img" aria-label="Proposed map: warm off-white land, sage park, blue water, wide white roads with grey casing, a tan motorway, and a thick emerald route line">
+            <rect width="340" height="230" fill="#EFEEE8"/>
+            <rect x="176" y="10" width="86" height="70" rx="4" fill="#DCE7CE"/>
+            <rect x="0" y="204" width="340" height="26" fill="#A9D3EA"/>
+            <g fill="#E4E2DB">
+              <rect x="16" y="14" width="26" height="20" rx="2"/>
+              <rect x="72" y="140" width="34" height="26" rx="2"/>
+              <rect x="272" y="140" width="30" height="22" rx="2"/>
+            </g>
+            <!-- casings -->
+            <g stroke="#C3C8C1" stroke-width="17" stroke-linecap="round">
+              <path d="M-10 62 H350"/><path d="M-10 128 H350"/><path d="M-10 192 H350"/>
+              <path d="M58 -10 V210"/><path d="M148 -10 V210"/><path d="M248 -10 V210"/>
+            </g>
+            <g stroke="#C3C8C1" stroke-width="10" stroke-linecap="round">
+              <path d="M-10 95 H350"/><path d="M-10 160 H350"/><path d="M103 -10 V210"/><path d="M198 -10 V210"/>
+            </g>
+            <!-- fills -->
+            <g stroke="#FFFFFF" stroke-width="13" stroke-linecap="round">
+              <path d="M-10 128 H350"/><path d="M-10 192 H350"/>
+              <path d="M58 -10 V210"/><path d="M148 -10 V210"/><path d="M248 -10 V210"/>
+            </g>
+            <path d="M-10 62 H350" stroke="#F7DFAE" stroke-width="13" stroke-linecap="round"/>
+            <g stroke="#FFFFFF" stroke-width="7" stroke-linecap="round">
+              <path d="M-10 95 H350"/><path d="M-10 160 H350"/><path d="M103 -10 V210"/><path d="M198 -10 V210"/>
+            </g>
+            <!-- route -->
+            <path d="M148 240 V128 H248 V40" fill="none" stroke="#04684C" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M148 240 V128 H248 V40" fill="none" stroke="#059669" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+            <!-- puck -->
+            <g transform="translate(148 196)">
+              <ellipse cy="2" rx="26" ry="21" fill="#0F172A" opacity="0.13"/>
+              <circle r="17" fill="#FFFFFF"/>
+              <path d="M0 -11 L9.5 11 L0 5.5 L-9.5 11 Z" fill="#059669" stroke="#04684C" stroke-width="1.6" stroke-linejoin="round"/>
+            </g>
+          </svg>
+        </div>
+        <p class="small dim">Roads carry the map; the emerald route sits on top of them rather than being the map. Junction shape is readable three blocks ahead.</p>
+      </div>
+    </div>
+
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:#EFEEE8"></div><span class="name">Land</span><span class="hex">#EFEEE8</span></div>
+      <div class="sw"><div class="chip" style="background:#FFFFFF"></div><span class="name">Road fill</span><span class="hex">#FFFFFF</span></div>
+      <div class="sw"><div class="chip" style="background:#C3C8C1"></div><span class="name">Road casing</span><span class="hex">#C3C8C1</span></div>
+      <div class="sw"><div class="chip" style="background:#F7DFAE"></div><span class="name">Motorway / A-road</span><span class="hex">#F7DFAE</span></div>
+      <div class="sw"><div class="chip" style="background:#DCE7CE"></div><span class="name">Park, green space</span><span class="hex">#DCE7CE</span></div>
+      <div class="sw"><div class="chip" style="background:#A9D3EA"></div><span class="name">Water</span><span class="hex">#A9D3EA</span></div>
+      <div class="sw"><div class="chip" style="background:#E4E2DB"></div><span class="name">Buildings</span><span class="hex">#E4E2DB</span></div>
+      <div class="sw"><div class="chip" style="background:#059669"></div><span class="name">Route core</span><span class="hex">#059669</span></div>
+      <div class="sw"><div class="chip" style="background:#04684C"></div><span class="name">Route casing</span><span class="hex">#04684C</span></div>
+    </div>
+
+    <p class="small dim">
+      Park green is pulled well down in saturation on purpose &mdash; a vivid park next to an emerald route
+      would fight it. The route stays the brightest green on screen at all times.
+    </p>
+
+    <h3>Road widths (zoom-interpolated)</h3>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Road class</th><th>Zoom 15</th><th>Zoom 17</th><th>Zoom 19 (nav)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="knob">Motorway / A-road</td><td class="val">7 px</td><td class="val">15 px</td><td class="val">30 px</td></tr>
+          <tr><td class="knob">Primary / secondary</td><td class="val">5 px</td><td class="val">12 px</td><td class="val">24 px</td></tr>
+          <tr><td class="knob">Residential</td><td class="val">3 px</td><td class="val">8 px</td><td class="val">17 px</td></tr>
+          <tr><td class="knob">Casing (each side)</td><td class="val">+1 px</td><td class="val">+1.5 px</td><td class="val">+2.5 px</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small dim">
+      How: switch the base style to <code>mapbox://styles/mapbox/navigation-day-v1</code>, which already ships wide
+      roads and nav colouring, then override the handful of land, water and road-width layers at runtime using
+      rnmapbox&rsquo;s <code>existing</code> layer prop.
+    </p>
+    <p class="callout">
+      <b>Risk, and the fallback.</b> If overriding <code>existing</code> layers turns out to be unreliable in
+      Expo Go, I&rsquo;ll author the same palette as a custom style in Mapbox Studio and point <code>NAV_STYLE</code>
+      at that URL instead. Identical result, one line of app code, but it needs your Mapbox account.
+    </p>
+  </section>
+
+  <!-- ============ 2. PUCK ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">User marker</p>
+      <h2>The puck</h2>
+      <p class="dim small">
+        Waze&rsquo;s puck is three stacked layers, not one icon: a soft grey pad on the road that gives the car
+        physical presence, a white disc, and a solid arrow. Today we render a rotated Ionicons paper-plane
+        inside an emerald circle, which reads as a pin, not a vehicle.
+      </p>
+    </div>
+
+    <div class="pucks">
+      <div class="puckcard">
+        <div class="stage road">
+          <svg width="76" height="76" viewBox="0 0 76 76" role="img" aria-label="Current puck: solid emerald circle with a white paper-plane glyph rotated 45 degrees">
+            <circle cx="38" cy="38" r="26" fill="#059669" stroke="#FFFFFF" stroke-width="5"/>
+            <path d="M38 24 L50 52 L38 45 L26 52 Z" fill="#FFFFFF" transform="rotate(-45 38 38)"/>
+          </svg>
+        </div>
+        <h3>Now</h3>
+        <p class="cap">Solid emerald disc, white ring, glyph rotated <b>&minus;45&deg;</b> as a hack. Heavy, and it hides the road under it.</p>
+      </div>
+
+      <div class="puckcard">
+        <div class="stage road">
+          <svg width="86" height="86" viewBox="0 0 86 86" role="img" aria-label="Proposed puck: soft grey presence pad, white disc, emerald arrow with darker outline">
+            <ellipse cx="43" cy="45" rx="33" ry="26" fill="#0F172A" opacity="0.10"/>
+            <ellipse cx="43" cy="45" rx="24" ry="19" fill="#0F172A" opacity="0.08"/>
+            <circle cx="43" cy="43" r="20" fill="#FFFFFF"/>
+            <path d="M43 28 L55 57 L43 50 L31 57 Z" fill="#059669" stroke="#04684C" stroke-width="2" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h3>Proposed</h3>
+        <p class="cap">Grey <b>presence pad</b> + white disc + emerald arrow with a darker outline. Sits <em>on</em> the road, and the road still shows through.</p>
+      </div>
+
+      <div class="puckcard">
+        <div class="stage road">
+          <svg width="86" height="86" viewBox="0 0 86 86" role="img" aria-label="Waze reference puck for comparison: grey pad, white disc, blue arrow">
+            <ellipse cx="43" cy="45" rx="33" ry="26" fill="#0F172A" opacity="0.10"/>
+            <ellipse cx="43" cy="45" rx="24" ry="19" fill="#0F172A" opacity="0.08"/>
+            <circle cx="43" cy="43" r="20" fill="#FFFFFF"/>
+            <path d="M43 28 L55 57 L43 50 L31 57 Z" fill="#4AA8E0" stroke="#1C6FA8" stroke-width="2" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h3>Waze, for reference</h3>
+        <p class="cap">Same three layers. Only the arrow fill differs &mdash; that&rsquo;s the one place we stay emerald.</p>
+      </div>
+    </div>
+
+    <ul class="small">
+      <li>The arrow is a real SVG chevron pointing straight up, replacing the <code>rotate(-45deg)</code> Ionicons workaround.</li>
+      <li>While the camera is following, up <em>is</em> your heading, so the arrow needs no rotation at all &mdash; it only rotates once you pan away from follow mode.</li>
+      <li>The puck moves from screen centre to roughly <b>62% down</b> the map via camera padding, so you see more road ahead. That is why Waze feels like it&rsquo;s looking forward.</li>
+    </ul>
+  </section>
+
+  <!-- ============ 3. SNAP ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Positioning</p>
+      <h2>Snap to the road</h2>
+      <p class="dim small">
+        Raw GPS wanders 5&ndash;15 m, so the puck drifts through gardens and jumps between lanes. Because we already
+        hold the full route polyline, we can project each fix onto it &mdash; no extra API, no network, works offline.
+      </p>
+    </div>
+
+    <div class="frame" style="background: var(--card);">
+      <svg viewBox="0 0 700 190" role="img" aria-label="Diagram: scattered GPS fixes are projected perpendicularly onto the route polyline, producing a clean run of snapped positions">
+        <rect width="700" height="190" fill="none"/>
+        <g stroke="#C3C8C1" stroke-width="30" stroke-linecap="round"><path d="M40 118 H400 L640 62"/></g>
+        <g stroke="#FFFFFF" stroke-width="24" stroke-linecap="round"><path d="M40 118 H400 L640 62"/></g>
+        <path d="M40 118 H400 L640 62" fill="none" stroke="#059669" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"/>
+
+        <g stroke="#94A3B8" stroke-width="1.6" stroke-dasharray="4 4">
+          <path d="M96 96 V118"/><path d="M168 141 V118"/><path d="M242 104 V118"/>
+          <path d="M318 136 V118"/><path d="M392 100 V118"/>
+          <path d="M470 118 L455 82"/><path d="M560 92 L548 61"/>
+        </g>
+
+        <g fill="#94A3B8">
+          <circle cx="96" cy="96" r="5.5"/><circle cx="168" cy="141" r="5.5"/><circle cx="242" cy="104" r="5.5"/>
+          <circle cx="318" cy="136" r="5.5"/><circle cx="392" cy="100" r="5.5"/>
+          <circle cx="470" cy="118" r="5.5"/><circle cx="560" cy="92" r="5.5"/>
+        </g>
+
+        <g fill="#FFFFFF" stroke="#047857" stroke-width="2.5">
+          <circle cx="96" cy="118" r="5"/><circle cx="168" cy="118" r="5"/><circle cx="242" cy="118" r="5"/>
+          <circle cx="318" cy="118" r="5"/><circle cx="392" cy="118" r="5"/>
+          <circle cx="455" cy="105" r="5"/><circle cx="548" cy="83" r="5"/>
+        </g>
+
+        <g font-family="ui-monospace, monospace" font-size="11" letter-spacing="0.08em">
+          <text x="40" y="36" fill="#7A8580">RAW GPS FIX</text>
+          <circle cx="150" cy="32" r="5" fill="#94A3B8"/>
+          <text x="230" y="36" fill="#7A8580">SNAPPED POSITION</text>
+          <circle cx="380" cy="32" r="5" fill="#FFFFFF" stroke="#047857" stroke-width="2.5"/>
+          <text x="470" y="36" fill="#B45309">&gt; 40 m &rarr; OFF ROUTE, USE RAW</text>
+        </g>
+      </svg>
+    </div>
+
+    <ul class="small">
+      <li>Two new pure functions in <code>src/lib/geo.ts</code>: <code>projectOnSegment()</code> and <code>snapToPath()</code>. Both unit-tested before the screen touches them.</li>
+      <li>Only segments within a <b>&plusmn;30-vertex window</b> around the current trail index are searched, so a loop route never snaps you onto the return leg.</li>
+      <li>If the perpendicular distance exceeds <b>40 m</b>, we assume you&rsquo;ve genuinely left the route and fall back to raw GPS. That threshold is also the natural hook for rerouting later.</li>
+      <li>The snap gives us the <b>road bearing</b> for free. Above 3 mph the puck points down the road instead of wherever the compass thinks the phone is facing &mdash; this alone removes most of the wobble.</li>
+    </ul>
+  </section>
+
+  <!-- ============ 4. SENSITIVITY ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Camera</p>
+      <h2>Less sensitive</h2>
+      <p class="dim small">
+        Three separate things cause the twitch: unfiltered compass, hard zoom thresholds that flip back and forth
+        while you hover near them, and lateral GPS noise. Each gets its own fix, and none of them slow down
+        how quickly a real turn registers.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Knob</th><th>Now</th><th>Proposed</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="knob">Puck heading source</td>
+            <td class="val was">raw compass, every fix</td>
+            <td class="val now-v">road bearing &gt; 3 mph</td>
+            <td class="small dim">Compass swings with hand movement; the road doesn&rsquo;t.</td>
+          </tr>
+          <tr>
+            <td class="knob">Heading filter</td>
+            <td class="val was">none</td>
+            <td class="val now-v">circular EMA &alpha;=0.15</td>
+            <td class="small dim">Smooths jitter while still turning a full 90&deg; in about a second.</td>
+          </tr>
+          <tr>
+            <td class="knob">Heading deadband</td>
+            <td class="val was">0&deg;</td>
+            <td class="val now-v">3&deg;</td>
+            <td class="small dim">Sub-3&deg; wiggle never reaches the camera at all.</td>
+          </tr>
+          <tr>
+            <td class="knob">Camera update rate</td>
+            <td class="val was">every fix (~2/s)</td>
+            <td class="val now-v">throttled to 4/s max</td>
+            <td class="small dim">Caps how often the native camera is asked to re-aim.</td>
+          </tr>
+          <tr>
+            <td class="knob">Zoom levels</td>
+            <td class="val was">19 / 18 / 17.5</td>
+            <td class="val now-v">18.6 / 18.0 / 17.5</td>
+            <td class="small dim">Smaller steps make a change barely perceptible.</td>
+          </tr>
+          <tr>
+            <td class="knob">Zoom thresholds</td>
+            <td class="val was">&lt;150 m, &gt;600 m</td>
+            <td class="val now-v">hysteresis 130/180 and 550/650</td>
+            <td class="small dim">Stops the flip-flop when you sit right on a boundary.</td>
+          </tr>
+          <tr>
+            <td class="knob">Puck position</td>
+            <td class="val was">raw GPS</td>
+            <td class="val now-v">snapped to route</td>
+            <td class="small dim">Kills sideways drift outright.</td>
+          </tr>
+          <tr>
+            <td class="knob">GPS rate</td>
+            <td class="val val">500 ms / 1 m</td>
+            <td class="val val">unchanged</td>
+            <td class="small dim">Responsiveness is kept; the noise is filtered downstream, not sampled away.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="callout">
+      <b>What stays fast.</b> Voice prompts, distance-to-manoeuvre and step advancement all keep running on the
+      unfiltered fix at full rate. Only what you <em>see move</em> is smoothed.
+    </p>
+  </section>
+
+  <!-- ============ 5. SCOPE ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Scope</p>
+      <h2>Files touched</h2>
+    </div>
+    <div class="files">
+      <div class="file"><span class="path">src/lib/geo.ts</span><span class="what">add <code>projectOnSegment</code>, <code>snapToPath</code>, <code>smoothHeading</code></span></div>
+      <div class="file"><span class="path">src/lib/navigation.ts</span><span class="what">rewrite <code>navZoom</code> with hysteresis; feed <code>trailIndex</code> from the snapped point</span></div>
+      <div class="file"><span class="path">src/lib/__tests__/</span><span class="what">tests for snapping, heading smoothing and zoom hysteresis, written first</span></div>
+      <div class="file"><span class="path">src/ui/NavPuck.tsx</span><span class="what">new &mdash; the three-layer puck, extracted out of the screen</span></div>
+      <div class="file"><span class="path">src/ui/mapStyle.ts</span><span class="what">new &mdash; palette constants and the road-width overrides in one place</span></div>
+      <div class="file"><span class="path">app/route/[id]/practice.tsx</span><span class="what">new base style, layer overrides, camera padding, snapped puck</span></div>
+    </div>
+
+    <h3 style="margin-top:6px">Not in this piece of work</h3>
+    <ul class="small dim">
+      <li>Rerouting when you leave the route &mdash; the 40 m off-route signal is added, but nothing acts on it yet.</li>
+      <li>The top instruction banner, speedometer and bottom bar keep their current design.</li>
+      <li>Traffic, reports, and anything else Waze-specific beyond the map surface.</li>
+      <li>Dark / night map. Worth doing, but it doubles the palette work &mdash; separate job.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <p class="eyebrow">Next</p>
+    <p class="small dim">
+      Approve this and I&rsquo;ll write it up as a spec, then a test-first implementation plan. If anything above is
+      wrong &mdash; especially the park green, the arrow shape, or whether you want the puck sitting that low on
+      screen &mdash; say which and I&rsquo;ll revise before any code is written.
+    </p>
+  </footer>
+
+</div>
