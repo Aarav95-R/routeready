@@ -1,0 +1,481 @@
+<title>Rotation model — map vs icon</title>
+<style>
+  :root {
+    --paper: #F6F7F4;
+    --card: #FFFFFF;
+    --ink: #0E1613;
+    --muted: #66716A;
+    --line: #E3E7DF;
+    --line-soft: #EFF2EC;
+    --emerald: #047857;
+    --emerald-bright: #059669;
+    --amber: #B45309;
+    --code-bg: #F0F2EC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+      --line: #26302A; --line-soft: #1C241E; --emerald: #34D399;
+      --emerald-bright: #6EE7B7; --amber: #FBBF24; --code-bg: #1A211C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+    --line: #26302A; --line-soft: #1C241E; --emerald: #34D399;
+    --emerald-bright: #6EE7B7; --amber: #FBBF24; --code-bg: #1A211C;
+  }
+  :root[data-theme="light"] {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --line-soft: #EFF2EC; --emerald: #047857;
+    --emerald-bright: #059669; --amber: #B45309; --code-bg: #F0F2EC;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 940px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-direction: column; gap: 40px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); margin: 0;
+  }
+
+  h1 { font-size: clamp(30px, 5vw, 42px); line-height: 1.08; letter-spacing: -0.025em; font-weight: 680; margin: 10px 0 0; text-wrap: balance; }
+  .lede { margin: 14px 0 0; font-size: 17px; color: var(--muted); max-width: 62ch; }
+  h2 { font-size: 21px; letter-spacing: -0.015em; font-weight: 650; margin: 0; text-wrap: balance; }
+  h3 { font-size: 13.5px; font-weight: 640; letter-spacing: 0.01em; margin: 0; }
+  p { margin: 0; max-width: 66ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14px; }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 18px; }
+  .sec-head { display: flex; flex-direction: column; gap: 6px; }
+
+  code, .mono { font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace; font-size: 13px; }
+  code { background: var(--code-bg); padding: 1.5px 5px; border-radius: 4px; }
+
+  /* --- the two rules --- */
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+  .rule { border: 1px solid var(--line); border-radius: 11px; padding: 18px; display: flex; flex-direction: column; gap: 9px; }
+  .rule .tag {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--emerald);
+  }
+  .rule .what { font-size: 15.5px; font-weight: 640; line-height: 1.35; }
+  .rule .src { font-size: 13.5px; color: var(--muted); }
+
+  /* --- scenarios --- */
+  .scenarios { display: flex; flex-direction: column; gap: 14px; }
+  .scn {
+    border: 1px solid var(--line); border-radius: 11px; padding: 18px;
+    display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: center;
+  }
+  @media (max-width: 620px) { .scn { grid-template-columns: 1fr; } }
+  .scn-text { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .scn-frames { display: flex; align-items: center; gap: 10px; }
+  .phone {
+    width: 116px; border: 1px solid var(--line); border-radius: 9px;
+    overflow: hidden; line-height: 0; flex: none; background: #EFEEE8;
+  }
+  .phone svg { width: 100%; height: auto; display: block; }
+  .arrowto { color: var(--muted); font-size: 19px; flex: none; }
+  .frame-cap {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); text-align: center; margin-top: 5px; line-height: 1.3;
+  }
+  .fcol { display: flex; flex-direction: column; }
+  .verdict { display: flex; gap: 7px; flex-wrap: wrap; }
+  .pill {
+    font-size: 11.5px; font-weight: 620; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+  }
+  .pill.moves { border-color: var(--emerald-bright); color: var(--emerald); }
+
+  /* --- tables --- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 540px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  th {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); font-weight: 500; background: var(--code-bg);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.k { font-weight: 620; white-space: nowrap; }
+  td.v { font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace; font-size: 12.5px; }
+
+  ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; }
+  li { max-width: 64ch; }
+  li::marker { color: var(--muted); }
+
+  .callout { border-left: 3px solid var(--amber); padding: 2px 0 2px 14px; font-size: 14px; color: var(--muted); }
+  .callout b { color: var(--ink); font-weight: 620; }
+
+  .formula {
+    background: var(--code-bg); border-radius: 10px; padding: 18px 20px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 13px; line-height: 1.85; overflow-x: auto;
+  }
+  .formula .c { color: var(--muted); }
+  .formula .hl { color: var(--emerald); font-weight: 600; }
+
+  footer { border-top: 1px solid var(--line); padding-top: 22px; display: flex; flex-direction: column; gap: 8px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Design check &middot; 3 August 2026 &middot; before I touch code</p>
+    <h1>Two rotations, two sources</h1>
+    <p class="lede">
+      What I understood from &ldquo;the icon should rotate when I turn the phone, but the map should only rotate
+      when I&rsquo;m turning around the road&rdquo;. Read the four scenarios &mdash; if any of them is wrong, say which.
+    </p>
+  </header>
+
+  <!-- ============ THE TWO RULES ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">The model</p>
+      <h2>What drives what</h2>
+      <p class="dim small">
+        These are independent. Right now the app has only one rotation, the map&rsquo;s, and the icon is
+        nailed to straight-up &mdash; which is why nothing moves when you twist the phone.
+      </p>
+    </div>
+
+    <div class="rules">
+      <div class="rule">
+        <span class="tag">Map bearing</span>
+        <span class="what">Rotates only when you travel in a new direction</span>
+        <span class="src">
+          Comes from where the <em>car</em> is going: the bearing of the road segment you&rsquo;re snapped to.
+          Turn a corner and the map swings round. Sit at a red light twisting the phone and it does not move.
+        </span>
+      </div>
+      <div class="rule">
+        <span class="tag">Icon rotation</span>
+        <span class="what">Rotates whenever the phone physically turns</span>
+        <span class="src">
+          Comes from the compass. Because the icon sits <em>on</em> an already-rotated map, its angle is the
+          compass heading <em>minus</em> the map bearing &mdash; the difference between where the phone points
+          and where the road goes.
+        </span>
+      </div>
+    </div>
+
+    <div class="formula">
+<span class="c">// map bearing &mdash; travel only, never the compass</span>
+mapBearing = <span class="hl">snapped road bearing</span>   <span class="c">when moving &ge; 3 mph and on the route</span>
+           = <span class="hl">GPS course</span>             <span class="c">when moving but off the route</span>
+           = <span class="hl">unchanged</span>              <span class="c">when stopped &mdash; this is the key line</span>
+
+<span class="c">// icon rotation &mdash; compass, expressed relative to the rotated map</span>
+iconRotation = <span class="hl">smoothedCompass &minus; mapBearing</span>
+    </div>
+
+    <p class="small dim">
+      The nice property of that subtraction: with the phone mounted facing forward, compass and map bearing
+      are the same number, so the icon lands at 0&deg; and points straight up on its own. No special case for
+      the normal driving position.
+    </p>
+  </section>
+
+  <!-- ============ SCENARIOS ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Behaviour</p>
+      <h2>Four situations</h2>
+    </div>
+
+    <div class="scenarios">
+
+      <!-- 1 -->
+      <div class="scn">
+        <div class="scn-text">
+          <h3>1. Stopped at a light, you twist the phone</h3>
+          <p class="small dim">You are not moving, so there is no new travel direction. The road stays exactly where it is; only the arrow swings.</p>
+          <div class="verdict">
+            <span class="pill">Map: still</span>
+            <span class="pill moves">Icon: rotates</span>
+          </div>
+        </div>
+        <div class="scn-frames">
+          <div class="fcol">
+            <div class="phone">
+              <svg viewBox="0 0 140 170" role="img" aria-label="Map with a vertical road, arrow pointing up">
+                <rect width="140" height="170" fill="#EFEEE8"/>
+                <path d="M70 -10 V180" stroke="#C3C8C1" stroke-width="34"/>
+                <path d="M70 -10 V180" stroke="#FFFFFF" stroke-width="27"/>
+                <path d="M-10 118 H150" stroke="#C3C8C1" stroke-width="20"/>
+                <path d="M-10 118 H150" stroke="#FFFFFF" stroke-width="14"/>
+                <path d="M70 180 V-10" stroke="#04684C" stroke-width="13" stroke-linecap="round"/>
+                <path d="M70 180 V-10" stroke="#059669" stroke-width="8.5" stroke-linecap="round"/>
+                <g transform="translate(70 112)">
+                  <ellipse cy="2" rx="22" ry="17" fill="#0F172A" opacity="0.13"/>
+                  <circle r="14" fill="#FFFFFF"/>
+                  <path d="M0 -9 L7.5 9 L0 4.5 L-7.5 9 Z" fill="#059669" stroke="#04684C" stroke-width="1.4" stroke-linejoin="round"/>
+                </g>
+              </svg>
+            </div>
+            <div class="frame-cap">Phone forward</div>
+          </div>
+          <span class="arrowto">&rarr;</span>
+          <div class="fcol">
+            <div class="phone">
+              <svg viewBox="0 0 140 170" role="img" aria-label="Same map, unchanged, but the arrow now points right">
+                <rect width="140" height="170" fill="#EFEEE8"/>
+                <path d="M70 -10 V180" stroke="#C3C8C1" stroke-width="34"/>
+                <path d="M70 -10 V180" stroke="#FFFFFF" stroke-width="27"/>
+                <path d="M-10 118 H150" stroke="#C3C8C1" stroke-width="20"/>
+                <path d="M-10 118 H150" stroke="#FFFFFF" stroke-width="14"/>
+                <path d="M70 180 V-10" stroke="#04684C" stroke-width="13" stroke-linecap="round"/>
+                <path d="M70 180 V-10" stroke="#059669" stroke-width="8.5" stroke-linecap="round"/>
+                <g transform="translate(70 112) rotate(90)">
+                  <ellipse cy="2" rx="22" ry="17" fill="#0F172A" opacity="0.13"/>
+                  <circle r="14" fill="#FFFFFF"/>
+                  <path d="M0 -9 L7.5 9 L0 4.5 L-7.5 9 Z" fill="#059669" stroke="#04684C" stroke-width="1.4" stroke-linejoin="round"/>
+                </g>
+              </svg>
+            </div>
+            <div class="frame-cap">Twisted 90&deg; right</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2 -->
+      <div class="scn">
+        <div class="scn-text">
+          <h3>2. Driving straight, phone mounted on the windscreen</h3>
+          <p class="small dim">Compass and travel direction agree, so the subtraction gives 0&deg;. Nothing rotates &mdash; the road just flows down the screen. This is the normal case, and it should be completely still.</p>
+          <div class="verdict">
+            <span class="pill">Map: still</span>
+            <span class="pill">Icon: still, points up</span>
+          </div>
+        </div>
+        <div class="scn-frames">
+          <div class="fcol">
+            <div class="phone">
+              <svg viewBox="0 0 140 170" role="img" aria-label="Vertical road, arrow up, side street low on the screen">
+                <rect width="140" height="170" fill="#EFEEE8"/>
+                <path d="M70 -10 V180" stroke="#C3C8C1" stroke-width="34"/>
+                <path d="M70 -10 V180" stroke="#FFFFFF" stroke-width="27"/>
+                <path d="M-10 132 H150" stroke="#C3C8C1" stroke-width="20"/>
+                <path d="M-10 132 H150" stroke="#FFFFFF" stroke-width="14"/>
+                <path d="M70 180 V-10" stroke="#04684C" stroke-width="13" stroke-linecap="round"/>
+                <path d="M70 180 V-10" stroke="#059669" stroke-width="8.5" stroke-linecap="round"/>
+                <g transform="translate(70 112)">
+                  <ellipse cy="2" rx="22" ry="17" fill="#0F172A" opacity="0.13"/>
+                  <circle r="14" fill="#FFFFFF"/>
+                  <path d="M0 -9 L7.5 9 L0 4.5 L-7.5 9 Z" fill="#059669" stroke="#04684C" stroke-width="1.4" stroke-linejoin="round"/>
+                </g>
+              </svg>
+            </div>
+            <div class="frame-cap">Moving</div>
+          </div>
+          <span class="arrowto">&rarr;</span>
+          <div class="fcol">
+            <div class="phone">
+              <svg viewBox="0 0 140 170" role="img" aria-label="Same view a moment later, side street has scrolled down, arrow still up">
+                <rect width="140" height="170" fill="#EFEEE8"/>
+                <path d="M70 -10 V180" stroke="#C3C8C1" stroke-width="34"/>
+                <path d="M70 -10 V180" stroke="#FFFFFF" stroke-width="27"/>
+                <path d="M-10 168 H150" stroke="#C3C8C1" stroke-width="20"/>
+                <path d="M-10 168 H150" stroke="#FFFFFF" stroke-width="14"/>
+                <path d="M-10 62 H150" stroke="#C3C8C1" stroke-width="20"/>
+                <path d="M-10 62 H150" stroke="#FFFFFF" stroke-width="14"/>
+                <path d="M70 180 V-10" stroke="#04684C" stroke-width="13" stroke-linecap="round"/>
+                <path d="M70 180 V-10" stroke="#059669" stroke-width="8.5" stroke-linecap="round"/>
+                <g transform="translate(70 112)">
+                  <ellipse cy="2" rx="22" ry="17" fill="#0F172A" opacity="0.13"/>
+                  <circle r="14" fill="#FFFFFF"/>
+                  <path d="M0 -9 L7.5 9 L0 4.5 L-7.5 9 Z" fill="#059669" stroke="#04684C" stroke-width="1.4" stroke-linejoin="round"/>
+                </g>
+              </svg>
+            </div>
+            <div class="frame-cap">A moment later</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 -->
+      <div class="scn">
+        <div class="scn-text">
+          <h3>3. You turn right at a junction</h3>
+          <p class="small dim">Now your travel direction genuinely changes, so the map swings round to put the new road ahead of you. The phone turned with the car, so compass and map bearing move together &mdash; the arrow stays pointing up throughout.</p>
+          <div class="verdict">
+            <span class="pill moves">Map: rotates</span>
+            <span class="pill">Icon: stays up</span>
+          </div>
+        </div>
+        <div class="scn-frames">
+          <div class="fcol">
+            <div class="phone">
+              <svg viewBox="0 0 140 170" role="img" aria-label="Road ahead turns right; arrow points up, approaching the corner">
+                <rect width="140" height="170" fill="#EFEEE8"/>
+                <path d="M70 180 V62 H150" fill="none" stroke="#C3C8C1" stroke-width="34" stroke-linejoin="round"/>
+                <path d="M70 180 V62 H150" fill="none" stroke="#FFFFFF" stroke-width="27" stroke-linejoin="round"/>
+                <path d="M70 62 V-10" stroke="#C3C8C1" stroke-width="20"/>
+                <path d="M70 62 V-10" stroke="#FFFFFF" stroke-width="14"/>
+                <path d="M70 180 V62 H150" fill="none" stroke="#04684C" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M70 180 V62 H150" fill="none" stroke="#059669" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <g transform="translate(70 112)">
+                  <ellipse cy="2" rx="22" ry="17" fill="#0F172A" opacity="0.13"/>
+                  <circle r="14" fill="#FFFFFF"/>
+                  <path d="M0 -9 L7.5 9 L0 4.5 L-7.5 9 Z" fill="#059669" stroke="#04684C" stroke-width="1.4" stroke-linejoin="round"/>
+                </g>
+              </svg>
+            </div>
+            <div class="frame-cap">Before the turn</div>
+          </div>
+          <span class="arrowto">&rarr;</span>
+          <div class="fcol">
+            <div class="phone">
+              <svg viewBox="0 0 140 170" role="img" aria-label="After turning, the new road runs vertically and the old one branches off left; arrow still up">
+                <rect width="140" height="170" fill="#EFEEE8"/>
+                <path d="M70 180 V-10" stroke="#C3C8C1" stroke-width="34"/>
+                <path d="M70 180 V-10" stroke="#FFFFFF" stroke-width="27"/>
+                <path d="M70 140 H-10" stroke="#C3C8C1" stroke-width="34"/>
+                <path d="M70 140 H-10" stroke="#FFFFFF" stroke-width="27"/>
+                <path d="M70 140 V-10" stroke="#04684C" stroke-width="13" stroke-linecap="round"/>
+                <path d="M70 140 V-10" stroke="#059669" stroke-width="8.5" stroke-linecap="round"/>
+                <g transform="translate(70 112)">
+                  <ellipse cy="2" rx="22" ry="17" fill="#0F172A" opacity="0.13"/>
+                  <circle r="14" fill="#FFFFFF"/>
+                  <path d="M0 -9 L7.5 9 L0 4.5 L-7.5 9 Z" fill="#059669" stroke="#04684C" stroke-width="1.4" stroke-linejoin="round"/>
+                </g>
+              </svg>
+            </div>
+            <div class="frame-cap">After the turn</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 -->
+      <div class="scn">
+        <div class="scn-text">
+          <h3>4. Driving along, but holding the phone at an angle</h3>
+          <p class="small dim">The map keeps following the road, because that is travel. The arrow tilts to show the phone is not aligned with the car. This falls straight out of the two rules &mdash; worth seeing so it isn&rsquo;t a surprise later.</p>
+          <div class="verdict">
+            <span class="pill">Map: follows the road</span>
+            <span class="pill moves">Icon: tilts</span>
+          </div>
+        </div>
+        <div class="scn-frames">
+          <div class="fcol">
+            <div class="phone">
+              <svg viewBox="0 0 140 170" role="img" aria-label="Vertical road with the arrow pointing up, phone aligned">
+                <rect width="140" height="170" fill="#EFEEE8"/>
+                <path d="M70 -10 V180" stroke="#C3C8C1" stroke-width="34"/>
+                <path d="M70 -10 V180" stroke="#FFFFFF" stroke-width="27"/>
+                <path d="M70 180 V-10" stroke="#04684C" stroke-width="13" stroke-linecap="round"/>
+                <path d="M70 180 V-10" stroke="#059669" stroke-width="8.5" stroke-linecap="round"/>
+                <g transform="translate(70 112)">
+                  <ellipse cy="2" rx="22" ry="17" fill="#0F172A" opacity="0.13"/>
+                  <circle r="14" fill="#FFFFFF"/>
+                  <path d="M0 -9 L7.5 9 L0 4.5 L-7.5 9 Z" fill="#059669" stroke="#04684C" stroke-width="1.4" stroke-linejoin="round"/>
+                </g>
+              </svg>
+            </div>
+            <div class="frame-cap">Phone aligned</div>
+          </div>
+          <span class="arrowto">&rarr;</span>
+          <div class="fcol">
+            <div class="phone">
+              <svg viewBox="0 0 140 170" role="img" aria-label="Same road, unchanged, but the arrow is tilted 40 degrees">
+                <rect width="140" height="170" fill="#EFEEE8"/>
+                <path d="M70 -10 V180" stroke="#C3C8C1" stroke-width="34"/>
+                <path d="M70 -10 V180" stroke="#FFFFFF" stroke-width="27"/>
+                <path d="M70 180 V-10" stroke="#04684C" stroke-width="13" stroke-linecap="round"/>
+                <path d="M70 180 V-10" stroke="#059669" stroke-width="8.5" stroke-linecap="round"/>
+                <g transform="translate(70 112) rotate(40)">
+                  <ellipse cy="2" rx="22" ry="17" fill="#0F172A" opacity="0.13"/>
+                  <circle r="14" fill="#FFFFFF"/>
+                  <path d="M0 -9 L7.5 9 L0 4.5 L-7.5 9 Z" fill="#059669" stroke="#04684C" stroke-width="1.4" stroke-linejoin="round"/>
+                </g>
+              </svg>
+            </div>
+            <div class="frame-cap">Held at 40&deg;</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <p class="callout">
+      <b>The one to sanity-check is number 4.</b> It is a direct consequence of what you asked for, not a
+      separate decision &mdash; but if you would rather the arrow always point up while actually driving and
+      only respond to the phone when stopped, that is a different rule and I should build that instead.
+    </p>
+  </section>
+
+  <!-- ============ WHY IT'S BROKEN ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Diagnosis</p>
+      <h2>Why nothing turns today</h2>
+      <p class="dim small">
+        The compass is running. Its readings just have nowhere to go.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Link in the chain</th><th>Where</th><th>State</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="k">Compass fires</td><td class="v">practice.tsx:329</td><td class="small">Works. Writes <code>headingRef</code> &mdash; and stops there.</td></tr>
+          <tr><td class="k">Anything reads it</td><td class="v">&mdash;</td><td class="small">Only inside the GPS callback. Nothing else consumes it.</td></tr>
+          <tr><td class="k">Camera moves</td><td class="v">practice.tsx:290</td><td class="small">Only from the GPS callback.</td></tr>
+          <tr><td class="k">GPS callback fires</td><td class="v">practice.tsx:334</td><td class="small"><code>distanceInterval: 1</code> &mdash; needs a metre of movement.</td></tr>
+          <tr><td class="k">Icon rotation</td><td class="v">practice.tsx:550</td><td class="small">Hard-coded <code>rotation={0}</code>. Cannot turn at all.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small dim">
+      Stand still and turn the phone and every link holds except the ones that matter: the compass updates a
+      value nobody reads, and the icon is pinned. Before this, the map was rotated by Mapbox&rsquo;s own
+      <code>FollowWithHeading</code> mode, which consumed the compass natively. Taking manual control of the
+      camera orphaned it, and no one caught it because none of this was ever run on a phone until you did.
+    </p>
+  </section>
+
+  <!-- ============ WHAT CHANGES ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">The work</p>
+      <h2>What I&rsquo;d change</h2>
+    </div>
+
+    <ul class="small">
+      <li><b>Icon rotation becomes live.</b> The compass reading, smoothed, minus the current map bearing, held in React state so the icon actually re-renders. Throttled to about 20 a second &mdash; the compass fires far faster than that and the arrow only needs to look continuous.</li>
+      <li><b>The map stops listening to the compass.</b> Today, below 3 mph the camera falls back to the raw compass. Under your rule that is wrong: stopped means the map holds still. Map bearing comes from travel only.</li>
+      <li><b>One seed at the start.</b> On the first fix of a leg the map takes its bearing from the compass once, so you begin facing the way the car faces rather than north. After that, travel only.</li>
+      <li><b>Both rotations get their own smoothing.</b> The map keeps the existing gentle ease. The arrow needs to feel immediate when you turn the phone in your hand, so it gets a lighter filter and a much shorter animation.</li>
+      <li><b>Bridge and tunnel layers.</b> Separate from the rotation work: 32 unstyled layers, which is why roads change colour and width mid-flyover. They get the same palette and width tables as the roads they continue.</li>
+    </ul>
+
+    <p class="callout">
+      <b>No rebuild needed.</b> All of this is JavaScript, so it reaches your phone over live reload the
+      same way the rest did.
+    </p>
+  </section>
+
+  <footer>
+    <p class="eyebrow">Next</p>
+    <p class="small dim">
+      Tell me if all four scenarios match what you pictured &mdash; especially number 4. Once you confirm,
+      I&rsquo;ll write it up and build it alongside the bridge and tunnel fix.
+    </p>
+  </footer>
+
+</div>

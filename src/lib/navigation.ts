@@ -92,3 +92,24 @@ export function destinationPoint(from: LatLng, bearing: number, distanceM: numbe
   const lng2 = lng1 + Math.atan2(Math.sin(br) * Math.sin(dr) * Math.cos(lat1), Math.cos(dr) - Math.sin(lat1) * Math.sin(lat2));
   return { lat: (lat2 * 180) / Math.PI, lng: (lng2 * 180) / Math.PI };
 }
+
+// Below this the vehicle has no meaningful course: GPS noise alone can invent
+// a bearing, and a compass reading belongs to the phone rather than the car.
+export const ROAD_BEARING_MIN_MPH = 3;
+
+// The direction the *vehicle* is travelling, or null if there isn't one.
+//
+// Null is the interesting answer: it means the map keeps whatever bearing it
+// already had. Standing still must not turn the map, however much the phone is
+// turned — that rotation belongs to the icon.
+export function travelBearing(
+  mph: number,
+  snapBearing: number | null,
+  gpsCourse: number | null
+): number | null {
+  if (mph < ROAD_BEARING_MIN_MPH) return null;
+  if (snapBearing != null) return snapBearing;
+  // CLLocationManager reports a negative course to mean "unknown".
+  if (gpsCourse != null && gpsCourse >= 0) return gpsCourse;
+  return null;
+}

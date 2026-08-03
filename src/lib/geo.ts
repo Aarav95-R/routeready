@@ -106,3 +106,15 @@ export function smoothHeading(prev: number, next: number, alpha = 0.15): number 
   const delta = turnAngleDeg(prev, next);
   return (((prev + delta * alpha) % 360) + 360) % 360;
 }
+
+// How far to rotate the user icon on a map that is itself rotated.
+//
+// The map is drawn heading-up along the direction of travel, so an icon angle
+// measured against north would double-count that rotation. What the icon shows
+// is the difference between where the phone points and where the road goes:
+// mounted on the windscreen the two agree and the arrow sits upright on its
+// own, and twisting the phone at a standstill swings the arrow while the map
+// underneath holds still.
+export function iconRotationDeg(mapBearing: number, compass: number): number {
+  return turnAngleDeg(mapBearing, compass);
+}

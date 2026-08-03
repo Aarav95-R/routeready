@@ -94,3 +94,82 @@ test("road width stops have exact correct values", () => {
     residential: [[12, 0.6], [14, 2.5], [16, 10], [18, 25], [19, 28]],
   });
 });
+
+import { roadLayers, roadWidths as widths, trafficLayerIds } from "../mapStyle";
+
+// The 13 road classes navigation-day-v1 draws identically at grade, on a
+// bridge and in a tunnel. Enumerated from the style JSON, not from the table
+// under test — that is what makes this a check rather than a mirror.
+const SHARED_FAMILIES = [
+  "minor-case-navigation",
+  "minor-navigation",
+  "street-low-navigation",
+  "street-case-navigation",
+  "street-navigation",
+  "secondary-tertiary-case-navigation",
+  "secondary-tertiary-navigation",
+  "primary-case-navigation",
+  "primary-navigation",
+  "major-link-case-navigation",
+  "major-link-navigation",
+  "motorway-trunk-case-navigation",
+  "motorway-trunk-navigation",
+];
+
+test("every road class is styled on all three surfaces", () => {
+  // The bug this prevents: styling only "road-" left bridges and tunnels at
+  // stock, so a carriageway changed colour and width halfway across a flyover.
+  const ids = new Set(roadLayers.map((l) => l.id));
+  for (const family of SHARED_FAMILIES) {
+    for (const surface of ["road", "bridge", "tunnel"]) {
+      expect(ids).toContain(`${surface}-${family}`);
+    }
+  }
+});
+
+test("the surface-specific extras are exactly the ones the style has", () => {
+  const ids = roadLayers.map((l) => l.id);
+  const shared = new Set(
+    ["road", "bridge", "tunnel"].flatMap((s) => SHARED_FAMILIES.map((f) => `${s}-${f}`))
+  );
+  expect(ids.filter((id) => !shared.has(id)).sort()).toEqual([
+    "bridge-major-link-2-case-navigation",
+    "bridge-major-link-2-navigation",
+    "bridge-motorway-trunk-2-case-navigation",
+    "bridge-motorway-trunk-2-navigation",
+    "road-motorway-trunk-case-low-navigation",
+  ]);
+});
+
+test("layer ids are unique and all belong to this style", () => {
+  const ids = roadLayers.map((l) => l.id);
+  expect(new Set(ids).size).toBe(ids.length);
+  for (const id of ids) {
+    expect(id).toMatch(/^(road|bridge|tunnel)-[a-z0-9-]+-navigation$/);
+  }
+});
+
+test("every width class named by a layer actually exists", () => {
+  for (const l of roadLayers) {
+    if (l.kind === "recolour") continue;
+    expect(Object.keys(widths)).toContain(l.width);
+  }
+});
+
+test("each casing uses the same width table as the fill it outlines", () => {
+  // A casing's gap has to track its fill's width or the outline stops sitting
+  // flush against the road.
+  const byId = new Map(roadLayers.map((l) => [l.id, l]));
+  for (const l of roadLayers) {
+    if (l.kind !== "case") continue;
+    const fill = byId.get(l.id.replace("-case-", "-"));
+    if (!fill || fill.kind !== "fill") continue; // -case-low has no fill sibling
+    expect(fill.width).toBe(l.width);
+  }
+});
+
+test("traffic layers are all congestion ribbons, and there are 15", () => {
+  expect(trafficLayerIds).toHaveLength(15);
+  expect(new Set(trafficLayerIds).size).toBe(15);
+  for (const id of trafficLayerIds) expect(id).toMatch(/^traffic-.*-navigation$/);
+});

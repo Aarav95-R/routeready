@@ -118,3 +118,30 @@ test("destinationPoint lands the right distance ahead on the given bearing", () 
   expect(east.lng).toBeGreaterThan(from.lng);
   expect(haversineM(from, east)).toBeCloseTo(500, -1);
 });
+
+import { ROAD_BEARING_MIN_MPH, travelBearing } from "../navigation";
+
+test("travelBearing is null when stopped, so the map holds its bearing", () => {
+  // The whole point: twisting the phone at a red light must not turn the map.
+  expect(travelBearing(0, 90, 90)).toBeNull();
+  expect(travelBearing(ROAD_BEARING_MIN_MPH - 0.1, 90, 90)).toBeNull();
+});
+
+test("travelBearing prefers the snapped road bearing once moving", () => {
+  expect(travelBearing(20, 137, 142)).toBe(137);
+});
+
+test("travelBearing falls back to GPS course when off the route", () => {
+  expect(travelBearing(20, null, 142)).toBe(142);
+});
+
+test("travelBearing rejects the invalid GPS course iOS reports", () => {
+  // CLLocationManager uses a negative course to mean "unknown".
+  expect(travelBearing(20, null, -1)).toBeNull();
+  expect(travelBearing(20, null, null)).toBeNull();
+});
+
+test("ROAD_BEARING_MIN_MPH is a walking-pace threshold", () => {
+  expect(ROAD_BEARING_MIN_MPH).toBeGreaterThan(0);
+  expect(ROAD_BEARING_MIN_MPH).toBeLessThan(10);
+});

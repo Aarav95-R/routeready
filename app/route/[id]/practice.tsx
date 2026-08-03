@@ -10,12 +10,12 @@ import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
-import { advance, ANNOUNCE_M, formatDistance, navZoom, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM, trailIndex } from "@/lib/navigation";
-import { bearingDeg, haversineM, LatLng, mpsToMph, smoothHeading, snapToPath, turnAngleDeg } from "@/lib/geo";
+import { advance, ANNOUNCE_M, formatDistance, navZoom, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM, trailIndex, travelBearing } from "@/lib/navigation";
+import { bearingDeg, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath, turnAngleDeg } from "@/lib/geo";
 import type { Hazard, NavStep, Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
 import { colors } from "@/ui/theme";
-import { lineWidthExpression, mapColors, ROAD_OUTLINE_PX, roadWidths } from "@/ui/mapStyle";
+import { lineWidthExpression, mapColors, ROAD_OUTLINE_PX, roadLayers, roadWidths, trafficLayerIds } from "@/ui/mapStyle";
 import { NavPuck, PUCK_SIZE } from "@/ui/NavPuck";
 
 const NAV_STYLE = "mapbox://styles/mapbox/navigation-day-v1";
@@ -24,9 +24,14 @@ const AT_START_M = 60;
 const ARRIVE_M = 30;
 const SNAP_MAX_M = 40;          // beyond this we assume you've left the route
 const SNAP_WINDOW = 30;         // vertices searched either side of the current index
-const ROAD_BEARING_MIN_MPH = 3; // below this a vehicle has no meaningful course
-const HEADING_ALPHA = 0.15;
+// Two rotations, two sources. The MAP turns only when the vehicle travels in a
+// new direction, so it holds still at a red light however the phone is waved
+// about. The ICON turns with the compass, drawn at its angle relative to the
+// map — mounted facing forward the two agree and it sits upright by itself.
+const HEADING_ALPHA = 0.15;     // map bearing: heavy filter, it should feel settled
 const HEADING_DEADBAND_DEG = 3;
+const COMPASS_ALPHA = 0.35;     // icon: lighter, so twisting the phone reads as immediate
+const ICON_TICK_MS = 66;        // ~15 icon updates a second; the compass fires far faster
 // Camera pushes are driven by the GPS callback, not by a timer, so the ease has
 // to span the gap between fixes or the map steps rather than glides. That gap
 // is 500 ms at best: watchPositionAsync asks for timeInterval 500, and on
@@ -89,6 +94,10 @@ export default function Practice() {
   const [directDist, setDirectDist] = useState<number | null>(null);
   const [crowRot, setCrowRot] = useState(0);
   const [following, setFollowing] = useState(true);
+  // Degrees to draw the user icon at, measured against the rotated map rather
+  // than against north. Held in state, not a ref, because the compass has to
+  // be able to redraw it between GPS fixes.
+  const [iconRotation, setIconRotation] = useState(0);
 
   const phaseRef = useRef<Phase>("preview");
   const approachRef = useRef<Directions | null>(null);
@@ -100,14 +109,17 @@ export default function Practice() {
   const trailRef = useRef(0);
   const preparedRef = useRef(new Set<number>());
   const executedRef = useRef(new Set<number>());
-  const headingRef = useRef(0);
+  const headingRef = useRef(0);        // raw compass, straight off the sensor
   const prevPosRef = useRef<LatLng | null>(null);
   const subRef = useRef<Location.LocationSubscription | null>(null);
   const headingSubRef = useRef<Location.LocationSubscription | null>(null);
   const sheetRef = useRef<BottomSheet>(null);
   const cameraRef = useRef<Camera>(null);
-  const smoothHeadingRef = useRef(0);
-  const headingSeededRef = useRef(false); // first fix of a leg snaps straight to target, no ease-in
+  const mapBearingRef = useRef(0);     // what the map is rotated to: travel direction only
+  const compassRef = useRef(0);        // smoothed compass, drives the icon
+  const compassSeededRef = useRef(false);
+  const lastIconRef = useRef(0);
+  const mapBearingSeededRef = useRef(false); // first fix of a leg snaps straight to target, no ease-in
   const zoomRef = useRef(NAV_ZOOM_MID);
   const mapHeightRef = useRef(0);
   const followingRef = useRef(true);
@@ -178,7 +190,7 @@ export default function Practice() {
     setDistanceM(null);
     // A new leg means a new active polyline (approach vs. route), which can
     // carry an unrelated bearing — re-seed rather than ease from the old one.
-    headingSeededRef.current = false;
+    mapBearingSeededRef.current = false;
   };
 
   const beginRoute = useCallback(() => {
@@ -220,7 +232,7 @@ export default function Practice() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     followingRef.current = true;
     setFollowing(true);
-    if (pos) pushCamera(pos, smoothHeadingRef.current, zoomRef.current);
+    if (pos) pushCamera(pos, mapBearingRef.current, zoomRef.current);
   };
 
   const onPosition = useCallback((c: Location.LocationObjectCoords) => {
@@ -239,30 +251,36 @@ export default function Practice() {
     const p = onRoute ? snap!.point : raw;
     setPos(p);
 
-    // The snap gives us the road bearing for free — pointing down the road
-    // removes most of the wobble a hand-held compass introduces.
-    const target = onRoute && mph >= ROAD_BEARING_MIN_MPH ? snap!.bearing : headingRef.current;
-    if (!headingSeededRef.current) {
-      // First fix of a leg: jump straight to the target rather than easing
-      // 15% of the way there, which would otherwise leave the camera facing
-      // up to ~180 degrees wrong for a couple of dozen fixes.
-      smoothHeadingRef.current = target;
-      headingSeededRef.current = true;
-    } else if (Math.abs(turnAngleDeg(smoothHeadingRef.current, target)) >= HEADING_DEADBAND_DEG) {
+    // The map turns only when the vehicle does. travelBearing returns null
+    // when we are not really moving, and null means "hold" — that is what
+    // stops the map swinging round when the phone is turned at a standstill.
+    // The snap gives us the road bearing for free, which is steadier than a
+    // GPS course and far steadier than a hand-held compass.
+    const target = travelBearing(mph, onRoute ? snap!.bearing : null, c.heading ?? null);
+    if (!mapBearingSeededRef.current) {
+      // First fix of a leg. There may be no travel direction yet (still
+      // stationary at the kerb), so fall back to the compass just this once,
+      // to start facing the way the car faces rather than north.
+      mapBearingRef.current = target ?? headingRef.current;
+      mapBearingSeededRef.current = true;
+    } else if (target != null && Math.abs(turnAngleDeg(mapBearingRef.current, target)) >= HEADING_DEADBAND_DEG) {
       // Deadband: sub-3-degree wiggle never reaches the camera at all.
-      smoothHeadingRef.current = smoothHeading(smoothHeadingRef.current, target, HEADING_ALPHA);
+      mapBearingRef.current = smoothHeading(mapBearingRef.current, target, HEADING_ALPHA);
     }
+    // The icon's angle is relative to the map, so a map that turned changes it
+    // even when the phone did not move.
+    setIconRotation(iconRotationDeg(mapBearingRef.current, compassRef.current));
 
     if (ph === "approach" && fallbackRef.current && start) {
       const d = haversineM(p, start);
       setDirectDist(Math.round(d));
       // Screen-space overlay, so subtract the bearing the map is actually
-      // rotated to — the smoothed one the camera is given below, not the raw
+      // rotated to — the map bearing the camera is given below, not the raw
       // compass, which runs tens of degrees ahead of it through a turn. This
       // arrow is the only navigation aid the fallback path has.
-      setCrowRot(bearingDeg(p, start) - smoothHeadingRef.current);
+      setCrowRot(bearingDeg(p, start) - mapBearingRef.current);
       zoomRef.current = NAV_ZOOM_FAR;
-      pushCamera(p, smoothHeadingRef.current, NAV_ZOOM_FAR);
+      pushCamera(p, mapBearingRef.current, NAV_ZOOM_FAR);
       if (d <= ARRIVE_M) beginRoute();
       return;
     }
@@ -273,7 +291,7 @@ export default function Practice() {
       // '[]' in the schema, and an approach fetch can come back with none).
       // Skip only the step-dependent work: the camera still has to follow, or
       // the driver watches their puck walk off a frozen map.
-      pushCamera(p, smoothHeadingRef.current, zoomRef.current);
+      pushCamera(p, mapBearingRef.current, zoomRef.current);
       return;
     }
 
@@ -287,7 +305,7 @@ export default function Practice() {
     setTrailIdx(ti);
 
     zoomRef.current = navZoom(st.distanceToManeuverM, zoomRef.current);
-    pushCamera(p, smoothHeadingRef.current, zoomRef.current);
+    pushCamera(p, mapBearingRef.current, zoomRef.current);
 
     const cur = steps[st.index];
     if (cur && cur.type !== "depart") {
@@ -324,11 +342,25 @@ export default function Practice() {
   };
 
   const startWatch = async () => {
-    // Compass heading — updates as the phone turns, even when standing still,
-    // so the follow camera rotates with the driver (not only when moving).
+    // The compass drives the icon, and only the icon. It fires as the phone
+    // turns, including standing still, which is the whole point: the map is
+    // pinned to the direction of travel and cannot answer a phone being
+    // turned on the spot.
     headingSubRef.current = await Location.watchHeadingAsync((h) => {
       const hd = h.trueHeading != null && h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
-      if (hd != null && hd >= 0) headingRef.current = hd;
+      if (hd == null || hd < 0) return;
+      headingRef.current = hd;
+      compassRef.current = compassSeededRef.current
+        ? smoothHeading(compassRef.current, hd, COMPASS_ALPHA)
+        : hd;
+      compassSeededRef.current = true;
+
+      // The sensor fires far faster than anything needs to be redrawn, and
+      // each of these re-renders the screen.
+      const now = Date.now();
+      if (now - lastIconRef.current < ICON_TICK_MS) return;
+      lastIconRef.current = now;
+      setIconRotation(iconRotationDeg(mapBearingRef.current, compassRef.current));
     });
     subRef.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 1, timeInterval: 500 },
@@ -372,6 +404,48 @@ export default function Practice() {
     await startWatch();
   }, [onPosition]);
 
+  // Waze-style base: wide white roads on warm off-white land, with parks and
+  // water carrying the only other colour. Applied as overrides on the loaded
+  // style's own layers rather than a fork of the whole style.
+  //
+  // Every road class is drawn three times by this style — at grade, on a
+  // bridge, and in a tunnel — so the table in mapStyle.ts covers all three.
+  // Styling only the "road-" set left a carriageway changing colour and width
+  // halfway across a flyover. `npm run check:map-style` verifies every id
+  // against the live style, because a wrong `existing` id is a silent no-op.
+  //
+  // Memoised: this is ~60 static elements and the compass re-renders this
+  // screen about fifteen times a second.
+  const baseLayers = useMemo(() => (
+    <>
+      <BackgroundLayer id="land" existing style={{ backgroundColor: mapColors.land }} />
+      <FillLayer id="landuse" existing style={{ fillColor: mapColors.park }} />
+      <FillLayer id="water" existing style={{ fillColor: mapColors.water }} />
+      <FillLayer id="building" existing style={{ fillColor: mapColors.building }} />
+
+      {/* On a "-case" layer lineWidth is the outline thickness per side and
+          lineGapWidth is the hole the fill sits in, so the gap carries the
+          fill's width table. It must track that fill exactly or the outline
+          stops sitting flush. */}
+      {roadLayers.map((l) =>
+        l.kind === "case" ? (
+          <LineLayer key={l.id} id={l.id} existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths[l.width]), lineWidth: ROAD_OUTLINE_PX }} />
+        ) : l.kind === "fill" ? (
+          <LineLayer key={l.id} id={l.id} existing style={{ lineColor: l.color, lineWidth: lineWidth(roadWidths[l.width]) }} />
+        ) : (
+          <LineLayer key={l.id} id={l.id} existing style={{ lineColor: l.color }} />
+        )
+      )}
+
+      {/* Congestion ribbons, hidden: traffic is out of scope, their "low"
+          green would outshine the emerald route, and their line-offset is
+          interpolated against stock widths so they no longer sit on the road. */}
+      {trafficLayerIds.map((id) => (
+        <LineLayer key={id} id={id} existing style={{ lineOpacity: 0 }} />
+      ))}
+    </>
+  ), []);
+
   if (permissionDenied) {
     return (
       <View className="flex-1 items-center justify-center gap-3 bg-surface px-8">
@@ -403,8 +477,9 @@ export default function Practice() {
       <MapView
         style={{ flex: 1 }} styleURL={NAV_STYLE} scaleBarEnabled={false} compassEnabled={false}
         // Rotate and pitch are ours to set, the way they are in Waze and Google
-        // Maps in nav mode. It also makes the puck's fixed rotation={0} correct
-        // by construction: nothing but setCamera can change the map bearing.
+        // Maps in nav mode. This is also what makes the icon's angle sound:
+        // nothing but setCamera can change the map bearing, so mapBearingRef
+        // is always exactly what the map is rotated to.
         rotateEnabled={false} pitchEnabled={false}
         logoPosition={{ bottom: 92, left: 8 }} attributionPosition={{ bottom: 92, right: 8 }}
         onDidFinishLoadingMap={() => { if (phaseRef.current === "preview") fitPreview(); }}
@@ -439,69 +514,7 @@ export default function Practice() {
       >
         <Camera ref={cameraRef} />
 
-        {/* Waze-style base: wide white roads on warm off-white land, with parks
-            and water carrying the only other colour. Applied as overrides on the
-            loaded style's own layers rather than a fork of the whole style.
-            Ids are navigation-day-v1's real ones (verified against the style
-            JSON) — the background layer is called "land", not "background",
-            and every road layer carries a "-navigation" suffix plus, for
-            motorway casing and street fill, an extra low-zoom variant. */}
-        <BackgroundLayer id="land" existing style={{ backgroundColor: mapColors.land }} />
-        <FillLayer id="landuse" existing style={{ fillColor: mapColors.park }} />
-        <FillLayer id="water" existing style={{ fillColor: mapColors.water }} />
-        <FillLayer id="building" existing style={{ fillColor: mapColors.building }} />
-
-        {/* Casings: on this style a "-case" layer draws an outline either side
-            of a hole, so lineGapWidth carries the fill's width table and
-            lineWidth is only the outline. The gap must track its fill layer's
-            width expression exactly or the outline stops sitting flush. */}
-        <LineLayer id="road-motorway-trunk-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths.motorway), lineWidth: ROAD_OUTLINE_PX }} />
-        <LineLayer id="road-motorway-trunk-case-low-navigation" existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths.motorway), lineWidth: ROAD_OUTLINE_PX }} />
-        <LineLayer id="road-motorway-trunk-navigation" existing style={{ lineColor: mapColors.motorwayFill, lineWidth: lineWidth(roadWidths.motorway) }} />
-        <LineLayer id="road-primary-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths.primary), lineWidth: ROAD_OUTLINE_PX }} />
-        <LineLayer id="road-primary-navigation" existing style={{ lineColor: mapColors.roadFill, lineWidth: lineWidth(roadWidths.primary) }} />
-        <LineLayer id="road-secondary-tertiary-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths.primary), lineWidth: ROAD_OUTLINE_PX }} />
-        <LineLayer id="road-secondary-tertiary-navigation" existing style={{ lineColor: mapColors.roadFill, lineWidth: lineWidth(roadWidths.primary) }} />
-        <LineLayer id="road-street-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths.residential), lineWidth: ROAD_OUTLINE_PX }} />
-        <LineLayer id="road-street-navigation" existing style={{ lineColor: mapColors.roadFill, lineWidth: lineWidth(roadWidths.residential) }} />
-        <LineLayer id="road-street-low-navigation" existing style={{ lineColor: mapColors.roadFill, lineWidth: lineWidth(roadWidths.residential) }} />
-
-        {/* Slip roads carry the motorway's sand fill in this style, not the
-            grey-blue of the minor roads; they are sized as residential because
-            stock draws them exactly as wide as a street. */}
-        <LineLayer id="road-major-link-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths.residential), lineWidth: ROAD_OUTLINE_PX }} />
-        <LineLayer id="road-major-link-navigation" existing style={{ lineColor: mapColors.motorwayFill, lineWidth: lineWidth(roadWidths.residential) }} />
-
-        {/* Service roads, tracks and minor links: recoloured to the palette
-            (they otherwise keep the base style's blue-grey), but left at their
-            stock widths. Widening a car-park aisle to street width would make
-            it read as a road the driver could be asked to turn into. Leaving
-            both width and gap untouched keeps the outline flush automatically. */}
-        <LineLayer id="road-minor-case-navigation" existing style={{ lineColor: mapColors.roadCasing }} />
-        <LineLayer id="road-minor-navigation" existing style={{ lineColor: mapColors.roadFill }} />
-
-        {/* Live traffic. navigation-day-v1 ships congestion ribbons that
-            light-v11 did not; the spec puts traffic out of scope, and their
-            "low" green (hsl(120,70%,60%)) would outshine the emerald route.
-            Their line-offset is also interpolated against stock road widths,
-            so with the fills rewritten above they no longer sit on the road.
-            Ids enumerated from the style JSON: every line layer on the
-            "traffic" source-layer. */}
-        <LineLayer id="traffic-tunnel-link-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-tunnel-minor-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-tunnel-street-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-tunnel-secondary-tertiary-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-tunnel-primary-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-tunnel-major-link-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-tunnel-motorway-trunk-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-bridge-road-link-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-bridge-road-minor-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-bridge-road-street-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-bridge-road-secondary-tertiary-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-bridge-road-primary-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-bridge-road-major-link-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-bridge-road-motorway-trunk-case-navigation" existing style={{ lineOpacity: 0 }} />
-        <LineLayer id="traffic-bridge-road-motorway-trunk-navigation" existing style={{ lineOpacity: 0 }} />
+        {baseLayers}
 
         {phase === "preview" ? (
           routeLL.length > 1 && (
@@ -544,10 +557,11 @@ export default function Practice() {
         ))}
         {(phase === "approach" || phase === "route") && pos && (
           <MarkerView id="puck" coordinate={toPos(pos)} anchor={{ x: 0.5, y: 0.5 }} style={{ width: PUCK_SIZE, height: PUCK_SIZE }}>
-            {/* Rotate gestures are off and a pan only translates the centre, so
-                the map bearing is always whatever setCamera last applied —
-                the driver's smoothed heading. The puck is heading-up already. */}
-            <NavPuck rotation={0} />
+            {/* Drawn at its angle relative to the map, not to north: rotate
+                gestures are off and a pan only translates the centre, so the
+                map bearing is always exactly what setCamera last applied.
+                Mounted facing forward this comes out at 0 on its own. */}
+            <NavPuck rotation={iconRotation} />
           </MarkerView>
         )}
       </MapView>

@@ -55,3 +55,92 @@ export const ROAD_OUTLINE_PX = 2.5;
 export function lineWidthExpression(stops: Stops): unknown[] {
   return ["interpolate", ["linear"], ["zoom"], ...stops.flatMap(([z, w]) => [z, w])];
 }
+
+type WidthClass = keyof typeof roadWidths;
+
+// How a layer is treated, independent of which layer it is. Kept separate from
+// the id so the same treatment can be named once and applied to the road,
+// bridge and tunnel copies of a class — and so `& { id }` distributes over the
+// union, which `Omit<RoadLayer, "id">` would not.
+type RoadStyle =
+  | { kind: "case"; width: WidthClass }
+  | { kind: "fill"; width: WidthClass; color: string }
+  | { kind: "recolour"; color: string };
+
+export type RoadLayer = RoadStyle & { id: string };
+
+// navigation-day-v1 draws every road class three times — at grade, on a
+// bridge, and in a tunnel — with ids that differ only in this prefix. All
+// three need the same treatment: styling just the "road-" set leaves a
+// carriageway changing colour and width halfway across a flyover.
+const SURFACES = ["road", "bridge", "tunnel"] as const;
+
+// The classes all three surfaces share. `-low` is the low-zoom fill variant.
+//
+// Two deliberate choices carried over from the surface roads: slip roads
+// ("major-link") take the motorway's sand fill but a street's width, because
+// that is how stock draws them; and the "minor" family — service roads,
+// car-park aisles, tracks — is recoloured to the palette but keeps its stock
+// width, since widening an aisle to street width would make it read as a
+// turning the driver could be asked to take.
+const SHARED: readonly (RoadStyle & { suffix: string })[] = [
+  { suffix: "minor-case-navigation", kind: "recolour", color: mapColors.roadCasing },
+  { suffix: "minor-navigation", kind: "recolour", color: mapColors.roadFill },
+  { suffix: "street-low-navigation", kind: "fill", width: "residential", color: mapColors.roadFill },
+  { suffix: "street-case-navigation", kind: "case", width: "residential" },
+  { suffix: "street-navigation", kind: "fill", width: "residential", color: mapColors.roadFill },
+  { suffix: "secondary-tertiary-case-navigation", kind: "case", width: "primary" },
+  { suffix: "secondary-tertiary-navigation", kind: "fill", width: "primary", color: mapColors.roadFill },
+  { suffix: "primary-case-navigation", kind: "case", width: "primary" },
+  { suffix: "primary-navigation", kind: "fill", width: "primary", color: mapColors.roadFill },
+  { suffix: "major-link-case-navigation", kind: "case", width: "residential" },
+  { suffix: "major-link-navigation", kind: "fill", width: "residential", color: mapColors.motorwayFill },
+  { suffix: "motorway-trunk-case-navigation", kind: "case", width: "motorway" },
+  { suffix: "motorway-trunk-navigation", kind: "fill", width: "motorway", color: mapColors.motorwayFill },
+];
+
+// Layers only one surface has: an extra low-zoom motorway casing at grade, and
+// the second deck bridges use where two carriageways stack.
+const EXTRAS: readonly RoadLayer[] = [
+  { id: "road-motorway-trunk-case-low-navigation", kind: "case", width: "motorway" },
+  { id: "bridge-major-link-2-case-navigation", kind: "case", width: "residential" },
+  { id: "bridge-major-link-2-navigation", kind: "fill", width: "residential", color: mapColors.motorwayFill },
+  { id: "bridge-motorway-trunk-2-case-navigation", kind: "case", width: "motorway" },
+  { id: "bridge-motorway-trunk-2-navigation", kind: "fill", width: "motorway", color: mapColors.motorwayFill },
+];
+
+// Not styled, on purpose: the three "*-construction-navigation" layers keep
+// their stock look so a road under construction still reads as one, and it
+// reads the same whether it is at grade, on a bridge or in a tunnel. The four
+// rail layers are not roads.
+export const roadLayers: readonly RoadLayer[] = [
+  ...SURFACES.flatMap((surface) =>
+    SHARED.map(({ suffix, ...rest }) => ({ id: `${surface}-${suffix}`, ...rest } as RoadLayer))
+  ),
+  ...EXTRAS,
+];
+
+// Congestion ribbons. navigation-day-v1 ships these where light-v11 did not;
+// traffic is out of scope, their "low" green (hsl(120,70%,60%)) would outshine
+// the emerald route, and their line-offset is interpolated against stock road
+// widths so with the fills rewritten they no longer sit on the road.
+// Enumerated from the style JSON: every line layer on the "traffic"
+// source-layer. The "traffic-road-oneway-arrow-*" layers are symbols on the
+// "road" source-layer and are deliberately absent.
+export const trafficLayerIds: readonly string[] = [
+  "traffic-tunnel-link-navigation",
+  "traffic-tunnel-minor-navigation",
+  "traffic-tunnel-street-navigation",
+  "traffic-tunnel-secondary-tertiary-navigation",
+  "traffic-tunnel-primary-navigation",
+  "traffic-tunnel-major-link-navigation",
+  "traffic-tunnel-motorway-trunk-navigation",
+  "traffic-bridge-road-link-navigation",
+  "traffic-bridge-road-minor-navigation",
+  "traffic-bridge-road-street-navigation",
+  "traffic-bridge-road-secondary-tertiary-navigation",
+  "traffic-bridge-road-primary-navigation",
+  "traffic-bridge-road-major-link-navigation",
+  "traffic-bridge-road-motorway-trunk-case-navigation",
+  "traffic-bridge-road-motorway-trunk-navigation",
+];

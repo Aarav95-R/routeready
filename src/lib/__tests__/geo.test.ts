@@ -115,3 +115,29 @@ test("smoothHeading takes the short way across north", () => {
   expect(smoothHeading(5, 355, 0.5)).toBeCloseTo(0, 3);
   expect(smoothHeading(350, 10, 0.25)).toBeCloseTo(355, 3);
 });
+
+import { iconRotationDeg } from "../geo";
+
+test("iconRotationDeg is zero when the phone points down the road", () => {
+  expect(iconRotationDeg(0, 0)).toBe(0);
+  expect(iconRotationDeg(217, 217)).toBe(0);
+});
+
+test("iconRotationDeg measures the phone against the rotated map", () => {
+  // Map is heading-up along 100 deg; phone points 190 deg, i.e. 90 to its right.
+  expect(iconRotationDeg(100, 190)).toBe(90);
+  expect(iconRotationDeg(100, 10)).toBe(-90);
+});
+
+test("iconRotationDeg takes the short way across north", () => {
+  expect(iconRotationDeg(350, 10)).toBe(20);
+  expect(iconRotationDeg(10, 350)).toBe(-20);
+});
+
+test("iconRotationDeg stays within a half turn either way", () => {
+  for (const [map, compass] of [[0, 0], [0, 179], [0, 181], [359, 1], [90, 271]]) {
+    const r = iconRotationDeg(map, compass);
+    expect(r).toBeGreaterThanOrEqual(-180);
+    expect(r).toBeLessThanOrEqual(180);
+  }
+});
