@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import Mapbox, { BackgroundLayer, Camera, FillLayer, LineLayer, MapView, MarkerView, PointAnnotation, ShapeSource, UserTrackingMode } from "@rnmapbox/maps";
+import Mapbox, { BackgroundLayer, Camera, FillLayer, LineLayer, MapView, MarkerView, PointAnnotation, ShapeSource } from "@rnmapbox/maps";
 import * as Location from "expo-location";
 import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
@@ -10,17 +10,26 @@ import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
-import { advance, ANNOUNCE_M, formatDistance, navZoom, remainingM, trailIndex } from "@/lib/navigation";
-import { bearingDeg, haversineM, LatLng, mpsToMph } from "@/lib/geo";
+import { advance, ANNOUNCE_M, formatDistance, navZoom, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM, trailIndex } from "@/lib/navigation";
+import { bearingDeg, haversineM, LatLng, mpsToMph, smoothHeading, snapToPath, turnAngleDeg } from "@/lib/geo";
 import type { Hazard, NavStep, Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
 import { colors } from "@/ui/theme";
 import { casingWidths, lineWidthExpression, mapColors, roadWidths } from "@/ui/mapStyle";
+import { NavPuck, PUCK_SIZE } from "@/ui/NavPuck";
 
 const NAV_STYLE = "mapbox://styles/mapbox/navigation-day-v1";
 const NAV_PITCH = 55;
 const AT_START_M = 60;
 const ARRIVE_M = 30;
+const SNAP_MAX_M = 40;          // beyond this we assume you've left the route
+const SNAP_WINDOW = 30;         // vertices searched either side of the current index
+const ROAD_BEARING_MIN_MPH = 3; // below this a vehicle has no meaningful course
+const HEADING_ALPHA = 0.15;
+const HEADING_DEADBAND_DEG = 3;
+const CAM_TICK_MS = 250;        // at most 4 camera updates a second
+const CAM_ANIM_MS = 300;        // slightly longer than the tick, so moves blend
+const PUCK_SCREEN_FRACTION = 0.62; // how far down the screen the driver sits
 
 type Phase = "preview" | "approach" | "route" | "finished";
 type Lng = [number, number];
@@ -71,7 +80,6 @@ export default function Practice() {
   const [speedMph, setSpeedMph] = useState(0);
   const [directDist, setDirectDist] = useState<number | null>(null);
   const [crowRot, setCrowRot] = useState(0);
-  const [followZoom, setFollowZoom] = useState(18);
   const [following, setFollowing] = useState(true);
 
   const phaseRef = useRef<Phase>("preview");
@@ -90,6 +98,13 @@ export default function Practice() {
   const headingSubRef = useRef<Location.LocationSubscription | null>(null);
   const sheetRef = useRef<BottomSheet>(null);
   const cameraRef = useRef<Camera>(null);
+  const smoothHeadingRef = useRef(0);
+  const zoomRef = useRef(NAV_ZOOM_MID);
+  const lastCamRef = useRef(0);
+  const mapHeightRef = useRef(0);
+  const followingRef = useRef(true);
+
+  useEffect(() => { followingRef.current = following; }, [following]);
 
   useEffect(() => {
     getRoute(id).then((r) => { setRoute(r.data.route); setHazards(r.data.hazards); }).catch(() => {});
@@ -167,14 +182,56 @@ export default function Practice() {
   // Re-lock the camera onto the driver after they've panned the map.
   const recenter = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setFollowing(false);
-    setTimeout(() => setFollowing(true), 30);
+    followingRef.current = true;
+    setFollowing(true);
+    if (pos) pushCamera(pos, smoothHeadingRef.current, zoomRef.current, true);
   };
 
+  // Drive the camera by hand. followUserLocation would centre on the raw GPS
+  // fix and rotate to the raw compass, both of which are exactly what we are
+  // trying to filter out, and neither is reachable from JS.
+  const pushCamera = useCallback((centre: LatLng, heading: number, zoom: number, force = false) => {
+    if (!followingRef.current) return;
+    const now = Date.now();
+    if (!force && now - lastCamRef.current < CAM_TICK_MS) return;
+    lastCamRef.current = now;
+
+    // Padding shifts the camera centre down the screen so more road is visible
+    // ahead: centreFraction = 0.5 + paddingTop / (2 * height).
+    const paddingTop = mapHeightRef.current * (PUCK_SCREEN_FRACTION - 0.5) * 2;
+
+    cameraRef.current?.setCamera({
+      centerCoordinate: [centre.lng, centre.lat],
+      heading,
+      zoomLevel: zoom,
+      pitch: NAV_PITCH,
+      padding: { paddingTop, paddingBottom: 0, paddingLeft: 0, paddingRight: 0 },
+      animationDuration: force ? 500 : CAM_ANIM_MS,
+      animationMode: "easeTo",
+    });
+  }, []);
+
   const onPosition = useCallback((c: Location.LocationObjectCoords) => {
-    const p = { lat: c.latitude, lng: c.longitude };
+    const raw = { lat: c.latitude, lng: c.longitude };
+    const mph = Math.round(mpsToMph(Math.max(0, c.speed ?? 0)));
+    setSpeedMph(mph);
+
+    // Snap onto the active polyline. Raw GPS wanders 5-15 m, which drifts the
+    // puck through gardens; the route is already in memory, so no API call.
+    const ph0 = phaseRef.current;
+    const activeCoords = ph0 === "route" ? routeLLRef.current : approachRef.current?.coords ?? [];
+    const snap = snapToPath(activeCoords, raw, trailRef.current, SNAP_WINDOW);
+    const onRoute = !!snap && snap.distM <= SNAP_MAX_M;
+    const p = onRoute ? snap!.point : raw;
     setPos(p);
-    setSpeedMph(Math.round(mpsToMph(Math.max(0, c.speed ?? 0))));
+
+    // The snap gives us the road bearing for free — pointing down the road
+    // removes most of the wobble a hand-held compass introduces.
+    const target = onRoute && mph >= ROAD_BEARING_MIN_MPH ? snap!.bearing : headingRef.current;
+    // Deadband: sub-3-degree wiggle never reaches the camera at all.
+    if (Math.abs(turnAngleDeg(smoothHeadingRef.current, target)) >= HEADING_DEADBAND_DEG) {
+      smoothHeadingRef.current = smoothHeading(smoothHeadingRef.current, target, HEADING_ALPHA);
+    }
 
     const ph = phaseRef.current;
     const start = startRef.current;
@@ -183,7 +240,8 @@ export default function Practice() {
       const d = haversineM(p, start);
       setDirectDist(Math.round(d));
       setCrowRot(bearingDeg(p, start) - headingRef.current);
-      setFollowZoom(17.5);
+      zoomRef.current = NAV_ZOOM_FAR;
+      pushCamera(p, smoothHeadingRef.current, NAV_ZOOM_FAR);
       if (d <= ARRIVE_M) beginRoute();
       return;
     }
@@ -197,10 +255,12 @@ export default function Practice() {
     setStepIndex(st.index);
     setDistanceM(st.distanceToManeuverM);
     setRemaining(remainingM(steps, p, st.index));
-    const ti = trailIndex(coords, p, trailRef.current);
+    const ti = onRoute ? Math.max(trailRef.current, snap!.idx) : trailIndex(coords, p, trailRef.current);
     trailRef.current = ti;
     setTrailIdx(ti);
-    setFollowZoom(navZoom(st.distanceToManeuverM));
+
+    zoomRef.current = navZoom(st.distanceToManeuverM, zoomRef.current);
+    pushCamera(p, smoothHeadingRef.current, zoomRef.current);
 
     const cur = steps[st.index];
     if (cur && cur.type !== "depart") {
@@ -224,7 +284,7 @@ export default function Practice() {
         setPhase("finished");
       }
     }
-  }, [beginRoute, stopWatching]);
+  }, [beginRoute, stopWatching, pushCamera]);
 
   const zoomToMe = async () => {
     try {
@@ -317,15 +377,10 @@ export default function Practice() {
         style={{ flex: 1 }} styleURL={NAV_STYLE} scaleBarEnabled={false} compassEnabled={false}
         logoPosition={{ bottom: 92, left: 8 }} attributionPosition={{ bottom: 92, right: 8 }}
         onDidFinishLoadingMap={() => { if (phaseRef.current === "preview") fitPreview(); }}
+        onLayout={(e) => { mapHeightRef.current = e.nativeEvent.layout.height; }}
+        onTouchStart={() => { if (phaseRef.current !== "preview") setFollowing(false); }}
       >
-        <Camera
-          ref={cameraRef}
-          followUserLocation={(phase === "approach" || phase === "route") && following}
-          followUserMode={UserTrackingMode.FollowWithHeading}
-          followZoomLevel={followZoom}
-          followPitch={NAV_PITCH}
-          onUserTrackingModeChange={(e: any) => { if (e?.nativeEvent?.payload?.followUserLocation === false) setFollowing(false); }}
-        />
+        <Camera ref={cameraRef} />
 
         {/* Waze-style base: wide white roads on warm off-white land, with parks
             and water carrying the only other colour. Applied as overrides on the
@@ -390,10 +445,8 @@ export default function Practice() {
           </PointAnnotation>
         ))}
         {(phase === "approach" || phase === "route") && pos && (
-          <MarkerView id="puck" coordinate={toPos(pos)} anchor={{ x: 0.5, y: 0.5 }}>
-            <View className="h-[56px] w-[56px] items-center justify-center rounded-full border-[4px] border-white bg-accent" style={{ shadowColor: "#059669", shadowOpacity: 0.6, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 6 }}>
-              <Ionicons name="navigate" size={30} color="#fff" style={{ transform: [{ rotate: "-45deg" }], marginLeft: 2 }} />
-            </View>
+          <MarkerView id="puck" coordinate={toPos(pos)} anchor={{ x: 0.5, y: 0.5 }} style={{ width: PUCK_SIZE, height: PUCK_SIZE }}>
+            <NavPuck rotation={following ? 0 : smoothHeadingRef.current} />
           </MarkerView>
         )}
       </MapView>
