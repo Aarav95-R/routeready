@@ -30,6 +30,7 @@ const HEADING_DEADBAND_DEG = 3;
 const CAM_TICK_MS = 250;        // at most 4 camera updates a second
 const CAM_ANIM_MS = 300;        // slightly longer than the tick, so moves blend
 const PUCK_SCREEN_FRACTION = 0.62; // how far down the screen the driver sits
+const PAN_THRESHOLD_PX = 10;    // finger movement beyond this counts as a pan, not a tap
 
 type Phase = "preview" | "approach" | "route" | "finished";
 type Lng = [number, number];
@@ -99,10 +100,12 @@ export default function Practice() {
   const sheetRef = useRef<BottomSheet>(null);
   const cameraRef = useRef<Camera>(null);
   const smoothHeadingRef = useRef(0);
+  const headingSeededRef = useRef(false); // first fix of a leg snaps straight to target, no ease-in
   const zoomRef = useRef(NAV_ZOOM_MID);
   const lastCamRef = useRef(0);
   const mapHeightRef = useRef(0);
   const followingRef = useRef(true);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => { followingRef.current = following; }, [following]);
 
@@ -167,6 +170,9 @@ export default function Practice() {
     setStepIndex(startIndex);
     setTrailIdx(0);
     setDistanceM(null);
+    // A new leg means a new active polyline (approach vs. route), which can
+    // carry an unrelated bearing — re-seed rather than ease from the old one.
+    headingSeededRef.current = false;
   };
 
   const beginRoute = useCallback(() => {
@@ -178,14 +184,6 @@ export default function Practice() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Speech.speak("You've reached the start. Beginning the route.", { language: "en-GB" });
   }, []);
-
-  // Re-lock the camera onto the driver after they've panned the map.
-  const recenter = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    followingRef.current = true;
-    setFollowing(true);
-    if (pos) pushCamera(pos, smoothHeadingRef.current, zoomRef.current, true);
-  };
 
   // Drive the camera by hand. followUserLocation would centre on the raw GPS
   // fix and rotate to the raw compass, both of which are exactly what we are
@@ -211,16 +209,26 @@ export default function Practice() {
     });
   }, []);
 
+  // Re-lock the camera onto the driver after they've panned the map.
+  const recenter = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    followingRef.current = true;
+    setFollowing(true);
+    if (pos) pushCamera(pos, smoothHeadingRef.current, zoomRef.current, true);
+  };
+
   const onPosition = useCallback((c: Location.LocationObjectCoords) => {
     const raw = { lat: c.latitude, lng: c.longitude };
     const mph = Math.round(mpsToMph(Math.max(0, c.speed ?? 0)));
     setSpeedMph(mph);
 
+    const ph = phaseRef.current;
+    const start = startRef.current;
+    const coords = ph === "route" ? routeLLRef.current : approachRef.current?.coords ?? [];
+
     // Snap onto the active polyline. Raw GPS wanders 5-15 m, which drifts the
     // puck through gardens; the route is already in memory, so no API call.
-    const ph0 = phaseRef.current;
-    const activeCoords = ph0 === "route" ? routeLLRef.current : approachRef.current?.coords ?? [];
-    const snap = snapToPath(activeCoords, raw, trailRef.current, SNAP_WINDOW);
+    const snap = snapToPath(coords, raw, trailRef.current, SNAP_WINDOW);
     const onRoute = !!snap && snap.distM <= SNAP_MAX_M;
     const p = onRoute ? snap!.point : raw;
     setPos(p);
@@ -228,13 +236,16 @@ export default function Practice() {
     // The snap gives us the road bearing for free — pointing down the road
     // removes most of the wobble a hand-held compass introduces.
     const target = onRoute && mph >= ROAD_BEARING_MIN_MPH ? snap!.bearing : headingRef.current;
-    // Deadband: sub-3-degree wiggle never reaches the camera at all.
-    if (Math.abs(turnAngleDeg(smoothHeadingRef.current, target)) >= HEADING_DEADBAND_DEG) {
+    if (!headingSeededRef.current) {
+      // First fix of a leg: jump straight to the target rather than easing
+      // 15% of the way there, which would otherwise leave the camera facing
+      // up to ~180 degrees wrong for a couple of dozen fixes.
+      smoothHeadingRef.current = target;
+      headingSeededRef.current = true;
+    } else if (Math.abs(turnAngleDeg(smoothHeadingRef.current, target)) >= HEADING_DEADBAND_DEG) {
+      // Deadband: sub-3-degree wiggle never reaches the camera at all.
       smoothHeadingRef.current = smoothHeading(smoothHeadingRef.current, target, HEADING_ALPHA);
     }
-
-    const ph = phaseRef.current;
-    const start = startRef.current;
 
     if (ph === "approach" && fallbackRef.current && start) {
       const d = haversineM(p, start);
@@ -247,7 +258,6 @@ export default function Practice() {
     }
 
     const steps = ph === "route" ? routeStepsRef.current : approachRef.current?.steps ?? [];
-    const coords = ph === "route" ? routeLLRef.current : approachRef.current?.coords ?? [];
     if (!steps.length) return;
 
     const st = advance(steps, p, indexRef.current);
@@ -378,7 +388,21 @@ export default function Practice() {
         logoPosition={{ bottom: 92, left: 8 }} attributionPosition={{ bottom: 92, right: 8 }}
         onDidFinishLoadingMap={() => { if (phaseRef.current === "preview") fitPreview(); }}
         onLayout={(e) => { mapHeightRef.current = e.nativeEvent.layout.height; }}
-        onTouchStart={() => { if (phaseRef.current !== "preview") setFollowing(false); }}
+        onTouchStart={(e) => {
+          const t = e.nativeEvent.touches[0];
+          touchStartRef.current = t ? { x: t.pageX, y: t.pageY } : null;
+        }}
+        onTouchMove={(e) => {
+          // A tap (e.g. opening a hazard callout, or the puck itself) fires
+          // touchStart/End with no real movement; only a genuine drag should
+          // cancel follow. Anything under the threshold is left alone.
+          if (phaseRef.current === "preview") return;
+          const start = touchStartRef.current;
+          const t = e.nativeEvent.touches[0];
+          if (!start || !t) return;
+          const moved = Math.hypot(t.pageX - start.x, t.pageY - start.y);
+          if (moved > PAN_THRESHOLD_PX) setFollowing(false);
+        }}
       >
         <Camera ref={cameraRef} />
 
@@ -446,7 +470,10 @@ export default function Practice() {
         ))}
         {(phase === "approach" || phase === "route") && pos && (
           <MarkerView id="puck" coordinate={toPos(pos)} anchor={{ x: 0.5, y: 0.5 }} style={{ width: PUCK_SIZE, height: PUCK_SIZE }}>
-            <NavPuck rotation={following ? 0 : smoothHeadingRef.current} />
+            {/* A pan only translates the camera centre, it never resets bearing —
+                the map is left rotated to whatever setCamera last applied, whether
+                following or not. So the puck stays heading-up either way. */}
+            <NavPuck rotation={0} />
           </MarkerView>
         )}
       </MapView>
