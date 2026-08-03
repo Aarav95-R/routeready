@@ -15,7 +15,7 @@ import { bearingDeg, haversineM, LatLng, mpsToMph, smoothHeading, snapToPath, tu
 import type { Hazard, NavStep, Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
 import { colors } from "@/ui/theme";
-import { casingWidths, lineWidthExpression, mapColors, roadWidths } from "@/ui/mapStyle";
+import { lineWidthExpression, mapColors, ROAD_OUTLINE_PX, roadWidths } from "@/ui/mapStyle";
 import { NavPuck, PUCK_SIZE } from "@/ui/NavPuck";
 
 const NAV_STYLE = "mapbox://styles/mapbox/navigation-day-v1";
@@ -418,16 +418,57 @@ export default function Practice() {
         <FillLayer id="water" existing style={{ fillColor: mapColors.water }} />
         <FillLayer id="building" existing style={{ fillColor: mapColors.building }} />
 
-        <LineLayer id="road-motorway-trunk-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineWidth: lineWidth(casingWidths.motorway) }} />
-        <LineLayer id="road-motorway-trunk-case-low-navigation" existing style={{ lineColor: mapColors.roadCasing, lineWidth: lineWidth(casingWidths.motorway) }} />
+        {/* Casings: on this style a "-case" layer draws an outline either side
+            of a hole, so lineGapWidth carries the fill's width table and
+            lineWidth is only the outline. The gap must track its fill layer's
+            width expression exactly or the outline stops sitting flush. */}
+        <LineLayer id="road-motorway-trunk-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths.motorway), lineWidth: ROAD_OUTLINE_PX }} />
+        <LineLayer id="road-motorway-trunk-case-low-navigation" existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths.motorway), lineWidth: ROAD_OUTLINE_PX }} />
         <LineLayer id="road-motorway-trunk-navigation" existing style={{ lineColor: mapColors.motorwayFill, lineWidth: lineWidth(roadWidths.motorway) }} />
-        <LineLayer id="road-primary-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineWidth: lineWidth(casingWidths.primary) }} />
+        <LineLayer id="road-primary-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths.primary), lineWidth: ROAD_OUTLINE_PX }} />
         <LineLayer id="road-primary-navigation" existing style={{ lineColor: mapColors.roadFill, lineWidth: lineWidth(roadWidths.primary) }} />
-        <LineLayer id="road-secondary-tertiary-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineWidth: lineWidth(casingWidths.primary) }} />
+        <LineLayer id="road-secondary-tertiary-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths.primary), lineWidth: ROAD_OUTLINE_PX }} />
         <LineLayer id="road-secondary-tertiary-navigation" existing style={{ lineColor: mapColors.roadFill, lineWidth: lineWidth(roadWidths.primary) }} />
-        <LineLayer id="road-street-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineWidth: lineWidth(casingWidths.residential) }} />
+        <LineLayer id="road-street-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths.residential), lineWidth: ROAD_OUTLINE_PX }} />
         <LineLayer id="road-street-navigation" existing style={{ lineColor: mapColors.roadFill, lineWidth: lineWidth(roadWidths.residential) }} />
         <LineLayer id="road-street-low-navigation" existing style={{ lineColor: mapColors.roadFill, lineWidth: lineWidth(roadWidths.residential) }} />
+
+        {/* Slip roads carry the motorway's sand fill in this style, not the
+            grey-blue of the minor roads; they are sized as residential because
+            stock draws them exactly as wide as a street. */}
+        <LineLayer id="road-major-link-case-navigation" existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths.residential), lineWidth: ROAD_OUTLINE_PX }} />
+        <LineLayer id="road-major-link-navigation" existing style={{ lineColor: mapColors.motorwayFill, lineWidth: lineWidth(roadWidths.residential) }} />
+
+        {/* Service roads, tracks and minor links: recoloured to the palette
+            (they otherwise keep the base style's blue-grey), but left at their
+            stock widths. Widening a car-park aisle to street width would make
+            it read as a road the driver could be asked to turn into. Leaving
+            both width and gap untouched keeps the outline flush automatically. */}
+        <LineLayer id="road-minor-case-navigation" existing style={{ lineColor: mapColors.roadCasing }} />
+        <LineLayer id="road-minor-navigation" existing style={{ lineColor: mapColors.roadFill }} />
+
+        {/* Live traffic. navigation-day-v1 ships congestion ribbons that
+            light-v11 did not; the spec puts traffic out of scope, and their
+            "low" green (hsl(120,70%,60%)) would outshine the emerald route.
+            Their line-offset is also interpolated against stock road widths,
+            so with the fills rewritten above they no longer sit on the road.
+            Ids enumerated from the style JSON: every line layer on the
+            "traffic" source-layer. */}
+        <LineLayer id="traffic-tunnel-link-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-tunnel-minor-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-tunnel-street-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-tunnel-secondary-tertiary-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-tunnel-primary-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-tunnel-major-link-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-tunnel-motorway-trunk-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-bridge-road-link-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-bridge-road-minor-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-bridge-road-street-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-bridge-road-secondary-tertiary-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-bridge-road-primary-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-bridge-road-major-link-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-bridge-road-motorway-trunk-case-navigation" existing style={{ lineOpacity: 0 }} />
+        <LineLayer id="traffic-bridge-road-motorway-trunk-navigation" existing style={{ lineOpacity: 0 }} />
 
         {phase === "preview" ? (
           routeLL.length > 1 && (
