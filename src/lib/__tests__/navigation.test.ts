@@ -1,4 +1,4 @@
-import { advance, ADVANCE_RADIUS_M, destinationPoint, formatDistance, navZoom, remainingM, trailIndex } from "../navigation";
+import { advance, ADVANCE_RADIUS_M, destinationPoint, formatDistance, navZoom, NAV_ZOOM_NEAR, NAV_ZOOM_MID, NAV_ZOOM_FAR, remainingM, trailIndex } from "../navigation";
 import { haversineM } from "../geo";
 import type { NavStep } from "@/types/db";
 
@@ -62,8 +62,44 @@ const line = Array.from({ length: 11 }, (_, i) => ({ lat: 51.5 + i * 0.001, lng:
 test("navZoom tightens near turns, widens on straights", () => {
   expect(navZoom(80)).toBeGreaterThan(navZoom(300));
   expect(navZoom(300)).toBeGreaterThan(navZoom(900));
-  expect(navZoom(80)).toBe(19);
-  expect(navZoom(900)).toBe(17.5);
+  expect(navZoom(80)).toBe(NAV_ZOOM_NEAR);
+  expect(navZoom(300)).toBe(NAV_ZOOM_MID);
+  expect(navZoom(900)).toBe(NAV_ZOOM_FAR);
+});
+
+test("navZoom steps are small enough to be barely visible", () => {
+  expect(NAV_ZOOM_NEAR - NAV_ZOOM_MID).toBeLessThanOrEqual(0.75);
+  expect(NAV_ZOOM_MID - NAV_ZOOM_FAR).toBeLessThanOrEqual(0.75);
+});
+
+test("navZoom does not oscillate while hovering at 150 m", () => {
+  // 150 m sits inside the near band's hysteresis gap (130 enter / 180 leave),
+  // so the answer depends on where we already are — and never flip-flops.
+  let z = NAV_ZOOM_MID;
+  z = navZoom(120, z);
+  expect(z).toBe(NAV_ZOOM_NEAR);
+  z = navZoom(150, z);
+  expect(z).toBe(NAV_ZOOM_NEAR);
+  z = navZoom(175, z);
+  expect(z).toBe(NAV_ZOOM_NEAR);
+  z = navZoom(200, z);
+  expect(z).toBe(NAV_ZOOM_MID);
+  z = navZoom(150, z);
+  expect(z).toBe(NAV_ZOOM_MID);
+});
+
+test("navZoom holds the wide level until you are clearly approaching", () => {
+  let z = navZoom(700, NAV_ZOOM_MID);
+  expect(z).toBe(NAV_ZOOM_FAR);
+  z = navZoom(600, z);
+  expect(z).toBe(NAV_ZOOM_FAR);
+  z = navZoom(500, z);
+  expect(z).toBe(NAV_ZOOM_MID);
+});
+
+test("navZoom can jump straight from wide to tight on a big distance drop", () => {
+  expect(navZoom(90, NAV_ZOOM_FAR)).toBe(NAV_ZOOM_NEAR);
+  expect(navZoom(900, NAV_ZOOM_NEAR)).toBe(NAV_ZOOM_FAR);
 });
 
 test("trailIndex tracks the nearest vertex and never rewinds", () => {

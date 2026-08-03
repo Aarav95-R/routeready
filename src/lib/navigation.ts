@@ -39,11 +39,31 @@ export function remainingM(steps: NavStep[], pos: LatLng, index: number): number
 }
 
 // Camera zoom by distance to the next maneuver: tight near turns, wide on
-// straights. Kept close (Waze-style) so the driver's puck stays prominent.
-export function navZoom(distanceToManeuverM: number): number {
-  if (distanceToManeuverM < 150) return 19;
-  if (distanceToManeuverM > 600) return 17.5;
-  return 18;
+// straights. Each band has a hysteresis gap — you enter the tight band at
+// 130 m but do not leave it until 180 m — so a driver hovering near a
+// boundary does not get the camera zooming in and out repeatedly.
+export const NAV_ZOOM_NEAR = 18.6;
+export const NAV_ZOOM_MID = 18.0;
+export const NAV_ZOOM_FAR = 17.5;
+
+const NEAR_ENTER_M = 130;
+const NEAR_LEAVE_M = 180;
+const FAR_ENTER_M = 650;
+const FAR_LEAVE_M = 550;
+
+export function navZoom(distanceToManeuverM: number, currentZoom: number = NAV_ZOOM_MID): number {
+  const d = distanceToManeuverM;
+  if (currentZoom === NAV_ZOOM_NEAR) {
+    if (d <= NEAR_LEAVE_M) return NAV_ZOOM_NEAR;
+    return d > FAR_ENTER_M ? NAV_ZOOM_FAR : NAV_ZOOM_MID;
+  }
+  if (currentZoom === NAV_ZOOM_FAR) {
+    if (d >= FAR_LEAVE_M) return NAV_ZOOM_FAR;
+    return d < NEAR_ENTER_M ? NAV_ZOOM_NEAR : NAV_ZOOM_MID;
+  }
+  if (d < NEAR_ENTER_M) return NAV_ZOOM_NEAR;
+  if (d > FAR_ENTER_M) return NAV_ZOOM_FAR;
+  return NAV_ZOOM_MID;
 }
 
 // Nearest vertex of the route to the position, never rewinding below minIdx.
