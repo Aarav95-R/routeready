@@ -464,13 +464,20 @@ export default function Practice() {
   const atStart = distToStart !== null && distToStart < AT_START_M;
 
   const activeLL = phase === "approach" && approach ? approach.coords : routeLL;
-  const traveled = activeLL.slice(0, Math.max(trailIdx, 1) + 1);
+  // Nothing is driven until the trail index has actually advanced. The old
+  // Math.max(trailIdx, 1) floor always produced a two-vertex stub, which was
+  // invisible while both halves were the same emerald and would now show as a
+  // grey tick sitting at the start line before the driver has moved.
+  const traveled = trailIdx > 0 ? activeLL.slice(0, trailIdx + 1) : [];
   const ahead = activeLL.slice(trailIdx);
   const isApproach = phase === "approach";
   const current = (isApproach ? approach?.steps : routeSteps)?.[stepIndex];
   const next = (isApproach ? approach?.steps : routeSteps)?.[stepIndex + 1];
-  const aheadCore = isApproach ? "#94A3B8" : mapColors.routeCore;
-  const aheadCasing = isApproach ? "#64748B" : mapColors.routeCasing;
+  // One rule on both legs, including the drive to the start: green is road
+  // still to drive, grey is road already driven. The approach used to be muted
+  // end to end to say "this is not the test yet", but grey cannot mean both
+  // that and "done" at once — and the banner says "Heading to the start"
+  // throughout anyway.
 
   return (
     <View className="flex-1">
@@ -527,14 +534,14 @@ export default function Practice() {
           <>
             {traveled.length > 1 && (
               <ShapeSource id="trail" shape={lineFeature(traveled)}>
-                <LineLayer id="trailCasing" style={{ lineColor: mapColors.routeCasing, lineWidth: 15, lineCap: "round", lineJoin: "round" }} />
-                <LineLayer id="trailCore" style={{ lineColor: mapColors.routeCore, lineWidth: 10, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="trailCasing" style={{ lineColor: mapColors.routeDrivenCasing, lineWidth: 14, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="trailCore" style={{ lineColor: mapColors.routeDrivenCore, lineWidth: 9, lineCap: "round", lineJoin: "round" }} />
               </ShapeSource>
             )}
             {ahead.length > 1 && (
               <ShapeSource id="ahead" shape={lineFeature(ahead)}>
-                <LineLayer id="aheadCasing" style={{ lineColor: aheadCasing, lineWidth: 16, lineCap: "round", lineJoin: "round" }} />
-                <LineLayer id="aheadCore" style={{ lineColor: aheadCore, lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="aheadCasing" style={{ lineColor: mapColors.routeCasing, lineWidth: 16, lineCap: "round", lineJoin: "round" }} />
+                <LineLayer id="aheadCore" style={{ lineColor: mapColors.routeCore, lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
               </ShapeSource>
             )}
           </>

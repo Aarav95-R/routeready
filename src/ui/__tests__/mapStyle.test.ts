@@ -73,7 +73,7 @@ test("lineWidthExpression flattens stops into a mapbox interpolate expression", 
   ]);
 });
 
-test("all nine palette colors have exact correct values", () => {
+test("all eleven palette colors have exact correct values", () => {
   expect(mapColors).toEqual({
     land: "#EFEEE8",
     roadFill: "#FFFFFF",
@@ -84,6 +84,8 @@ test("all nine palette colors have exact correct values", () => {
     building: "#E4E2DB",
     routeCore: "#059669",
     routeCasing: "#04684C",
+    routeDrivenCore: "#A7AEA5",
+    routeDrivenCasing: "#7F8880",
   });
 });
 
@@ -172,4 +174,25 @@ test("traffic layers are all congestion ribbons, and there are 15", () => {
   expect(trafficLayerIds).toHaveLength(15);
   expect(new Set(trafficLayerIds).size).toBe(15);
   for (const id of trafficLayerIds) expect(id).toMatch(/^traffic-.*-navigation$/);
+});
+
+test("the driven half of the route recedes against the half still to drive", () => {
+  // Progress has to read at a glance: bright ahead, muted behind.
+  const lum = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const sat = (hex: string) => {
+    const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    return Math.max(...c) - Math.min(...c);
+  };
+  // Driven is the paler of the two...
+  expect(lum(mapColors.routeDrivenCore)).toBeGreaterThan(lum(mapColors.routeCore));
+  // ...and, more to the point, drained of colour next to it.
+  expect(sat(mapColors.routeDrivenCore)).toBeLessThan(sat(mapColors.routeCore) / 4);
+  // Its casing stays darker than its core, so the line keeps an edge.
+  expect(lum(mapColors.routeDrivenCasing)).toBeLessThan(lum(mapColors.routeDrivenCore));
+  // And both sit darker than the road casing, or a driven route would vanish
+  // into the white roads it runs along.
+  expect(lum(mapColors.routeDrivenCore)).toBeLessThan(lum(mapColors.roadCasing));
 });

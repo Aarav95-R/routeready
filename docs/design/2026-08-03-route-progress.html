@@ -1,0 +1,262 @@
+<title>Route line — green ahead, grey behind</title>
+<style>
+  :root {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --line-soft: #EFF2EC; --emerald: #047857;
+    --emerald-bright: #059669; --amber: #B45309; --code-bg: #F0F2EC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+      --line: #26302A; --line-soft: #1C241E; --emerald: #34D399;
+      --emerald-bright: #6EE7B7; --amber: #FBBF24; --code-bg: #1A211C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+    --line: #26302A; --line-soft: #1C241E; --emerald: #34D399;
+    --emerald-bright: #6EE7B7; --amber: #FBBF24; --code-bg: #1A211C;
+  }
+  :root[data-theme="light"] {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --line-soft: #EFF2EC; --emerald: #047857;
+    --emerald-bright: #059669; --amber: #B45309; --code-bg: #F0F2EC;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-direction: column; gap: 36px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0;
+  }
+  h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.08; letter-spacing: -0.025em; font-weight: 680; margin: 10px 0 0; text-wrap: balance; }
+  .lede { margin: 14px 0 0; font-size: 17px; color: var(--muted); max-width: 60ch; }
+  h2 { font-size: 20px; letter-spacing: -0.015em; font-weight: 650; margin: 0; text-wrap: balance; }
+  h3 { font-size: 13px; font-weight: 640; margin: 0; }
+  p { margin: 0; max-width: 64ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14px; }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 18px; }
+  .sec-head { display: flex; flex-direction: column; gap: 6px; }
+  code { font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace; font-size: 13px; background: var(--code-bg); padding: 1.5px 5px; border-radius: 4px; }
+
+  .compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+  .pane { display: flex; flex-direction: column; gap: 10px; }
+  .pane-label {
+    display: flex; align-items: center; gap: 8px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  }
+  .tick { width: 7px; height: 7px; border-radius: 50%; background: #B9C0B6; flex: none; }
+  .pane.next .tick { background: var(--emerald-bright); }
+  .pane.next .pane-label { color: var(--emerald); }
+  .frame { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--code-bg); line-height: 0; }
+  .frame svg { width: 100%; height: auto; display: block; }
+
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .sw { display: flex; flex-direction: column; gap: 7px; }
+  .chip { height: 44px; border-radius: 8px; border: 1px solid rgba(14,22,19,0.12); }
+  .sw .name { font-size: 12.5px; font-weight: 600; line-height: 1.25; }
+  .sw .hex { font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace; font-size: 11.5px; color: var(--muted); }
+
+  .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+  .opt { border: 1px solid var(--line); border-radius: 11px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .opt.rec { border-color: var(--emerald-bright); }
+  .opt .tag {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  }
+  .opt.rec .tag { color: var(--emerald); }
+
+  ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; }
+  li { max-width: 62ch; }
+  li::marker { color: var(--muted); }
+
+  .callout { border-left: 3px solid var(--amber); padding: 2px 0 2px 14px; font-size: 14px; color: var(--muted); }
+  .callout b { color: var(--ink); font-weight: 620; }
+
+  footer { border-top: 1px solid var(--line); padding-top: 22px; display: flex; flex-direction: column; gap: 8px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Design check &middot; 3 August 2026</p>
+    <h1>Green ahead, grey behind</h1>
+    <p class="lede">
+      The route line should show progress: bright emerald for the road still to drive, grey for the part
+      already done. Today both halves are the same emerald, so there is nothing to read.
+    </p>
+  </header>
+
+  <!-- ============ THE CHANGE ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">The route</p>
+      <h2>What changes</h2>
+      <p class="dim small">
+        The line is already split in two at your position &mdash; a &ldquo;travelled&rdquo; piece and an
+        &ldquo;ahead&rdquo; piece, updated on every fix. They are just both painted emerald. Only the
+        travelled half&rsquo;s two colours change.
+      </p>
+    </div>
+
+    <div class="compare">
+      <div class="pane">
+        <div class="pane-label"><span class="tick"></span> Now</div>
+        <div class="frame">
+          <svg viewBox="0 0 340 220" role="img" aria-label="Current: the whole route is emerald, with no distinction between driven and remaining">
+            <rect width="340" height="220" fill="#EFEEE8"/>
+            <g stroke="#C3C8C1" stroke-width="26"><path d="M-10 60 H350"/><path d="M-10 150 H350"/><path d="M90 -10 V230"/><path d="M240 -10 V230"/></g>
+            <g stroke="#FFFFFF" stroke-width="20"><path d="M-10 60 H350"/><path d="M-10 150 H350"/><path d="M90 -10 V230"/><path d="M240 -10 V230"/></g>
+            <path d="M90 230 V150 H240 V-10" fill="none" stroke="#04684C" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M90 230 V150 H240 V-10" fill="none" stroke="#059669" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+            <g transform="translate(240 96)">
+              <ellipse cy="2" rx="26" ry="21" fill="#0F172A" opacity="0.13"/>
+              <circle r="17" fill="#FFFFFF"/>
+              <path d="M0 -11 L9.5 11 L0 5.5 L-9.5 11 Z" fill="#059669" stroke="#04684C" stroke-width="1.6" stroke-linejoin="round"/>
+            </g>
+          </svg>
+        </div>
+        <p class="small dim">One unbroken emerald ribbon. You cannot tell at a glance how far through you are.</p>
+      </div>
+
+      <div class="pane next">
+        <div class="pane-label"><span class="tick"></span> Proposed</div>
+        <div class="frame">
+          <svg viewBox="0 0 340 220" role="img" aria-label="Proposed: the driven part behind the puck is grey, the road ahead stays bright emerald">
+            <rect width="340" height="220" fill="#EFEEE8"/>
+            <g stroke="#C3C8C1" stroke-width="26"><path d="M-10 60 H350"/><path d="M-10 150 H350"/><path d="M90 -10 V230"/><path d="M240 -10 V230"/></g>
+            <g stroke="#FFFFFF" stroke-width="20"><path d="M-10 60 H350"/><path d="M-10 150 H350"/><path d="M90 -10 V230"/><path d="M240 -10 V230"/></g>
+            <path d="M90 230 V150 H240 V96" fill="none" stroke="#7F8880" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M90 230 V150 H240 V96" fill="none" stroke="#A7AEA5" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M240 96 V-10" fill="none" stroke="#04684C" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M240 96 V-10" fill="none" stroke="#059669" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+            <g transform="translate(240 96)">
+              <ellipse cy="2" rx="26" ry="21" fill="#0F172A" opacity="0.13"/>
+              <circle r="17" fill="#FFFFFF"/>
+              <path d="M0 -11 L9.5 11 L0 5.5 L-9.5 11 Z" fill="#059669" stroke="#04684C" stroke-width="1.6" stroke-linejoin="round"/>
+            </g>
+          </svg>
+        </div>
+        <p class="small dim">Progress reads instantly, and the only bright thing on the map is the road you still have to drive.</p>
+      </div>
+    </div>
+
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:#059669"></div><span class="name">Ahead, core</span><span class="hex">#059669 &middot; unchanged</span></div>
+      <div class="sw"><div class="chip" style="background:#04684C"></div><span class="name">Ahead, casing</span><span class="hex">#04684C &middot; unchanged</span></div>
+      <div class="sw"><div class="chip" style="background:#A7AEA5"></div><span class="name">Driven, core</span><span class="hex">#A7AEA5 &middot; new</span></div>
+      <div class="sw"><div class="chip" style="background:#7F8880"></div><span class="name">Driven, casing</span><span class="hex">#7F8880 &middot; new</span></div>
+    </div>
+
+    <p class="small dim">
+      The greys carry a slight green bias so they belong to the same map as the road casings
+      (<code>#C3C8C1</code>) rather than looking like a different app&rsquo;s furniture. Both are darker than
+      the road casing on purpose &mdash; a driven route still has to read as a line where it runs along a
+      white road, not disappear into it.
+    </p>
+
+    <p class="callout">
+      <b>The driven half also thins slightly</b>, from 15/10 px to 14/9. It already sits a shade under the
+      road ahead; taking one more pixel off makes &ldquo;done&rdquo; recede without any extra colour work.
+    </p>
+  </section>
+
+  <!-- ============ THE DECISION ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">One decision</p>
+      <h2>What about the drive to the start?</h2>
+      <p class="dim small">
+        &ldquo;Guide me to the start&rdquo; draws a second, separate line: the way from wherever you are to the
+        beginning of the test route. That leg is <em>already</em> grey on purpose, to say &ldquo;this is not
+        the test yet&rdquo;. With grey about to mean &ldquo;driven&rdquo;, it now says two things at once.
+      </p>
+    </div>
+
+    <div class="opts">
+      <div class="opt rec">
+        <span class="tag">Option A &middot; recommended</span>
+        <h3>Same rule everywhere</h3>
+        <div class="frame">
+          <svg viewBox="0 0 300 130" role="img" aria-label="Approach leg drawn with the same rule: grey behind the puck, emerald ahead, leading to the start marker">
+            <rect width="300" height="130" fill="#EFEEE8"/>
+            <path d="M20 100 H150" stroke="#7F8880" stroke-width="14" stroke-linecap="round"/>
+            <path d="M20 100 H150" stroke="#A7AEA5" stroke-width="9" stroke-linecap="round"/>
+            <path d="M150 100 H250 V40" fill="none" stroke="#04684C" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M150 100 H250 V40" fill="none" stroke="#059669" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+            <g transform="translate(150 100)">
+              <ellipse cy="2" rx="22" ry="17" fill="#0F172A" opacity="0.13"/>
+              <circle r="14" fill="#FFFFFF"/>
+              <path d="M0 -9 L7.5 9 L0 4.5 L-7.5 9 Z" fill="#059669" stroke="#04684C" stroke-width="1.4" stroke-linejoin="round"/>
+            </g>
+            <circle cx="250" cy="40" r="9" fill="#059669" stroke="#FFFFFF" stroke-width="3"/>
+          </svg>
+        </div>
+        <p class="small dim">
+          Green always means &ldquo;road you still have to drive&rdquo;, grey always means &ldquo;done&rdquo;.
+          One rule, no exceptions to remember. You lose the visual cue that separates the approach from the
+          test route &mdash; but the banner already says <em>Heading to the start</em> in green the whole time.
+        </p>
+      </div>
+
+      <div class="opt">
+        <span class="tag">Option B</span>
+        <h3>Approach stays fully grey</h3>
+        <div class="frame">
+          <svg viewBox="0 0 300 130" role="img" aria-label="Approach leg drawn entirely in grey, as it is today">
+            <rect width="300" height="130" fill="#EFEEE8"/>
+            <path d="M20 100 H150" stroke="#7F8880" stroke-width="14" stroke-linecap="round"/>
+            <path d="M20 100 H150" stroke="#A7AEA5" stroke-width="9" stroke-linecap="round"/>
+            <path d="M150 100 H250 V40" fill="none" stroke="#64748B" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M150 100 H250 V40" fill="none" stroke="#94A3B8" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+            <g transform="translate(150 100)">
+              <ellipse cy="2" rx="22" ry="17" fill="#0F172A" opacity="0.13"/>
+              <circle r="14" fill="#FFFFFF"/>
+              <path d="M0 -9 L7.5 9 L0 4.5 L-7.5 9 Z" fill="#059669" stroke="#04684C" stroke-width="1.4" stroke-linejoin="round"/>
+            </g>
+            <circle cx="250" cy="40" r="9" fill="#059669" stroke="#FFFFFF" stroke-width="3"/>
+          </svg>
+        </div>
+        <p class="small dim">
+          Keeps today&rsquo;s behaviour: the whole approach leg is muted, so emerald is reserved for the actual
+          test route and appears the moment it begins. The cost is that grey now means two different things,
+          and the road ahead of you on the approach looks the same as the road behind.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCOPE ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Scope</p>
+      <h2>The work</h2>
+    </div>
+    <ul class="small">
+      <li>Two new colour constants in <code>src/ui/mapStyle.ts</code>, alongside the existing route pair, so every route colour lives in one place.</li>
+      <li>The travelled line&rsquo;s two layers in <code>practice.tsx</code> point at them instead of the emerald pair, and drop a pixel of width.</li>
+      <li>A test pinning the exact values, matching how the rest of the palette is guarded.</li>
+      <li>Whatever Option A or B implies for the approach leg.</li>
+    </ul>
+    <p class="small dim">
+      No new logic: the split point already exists and already updates on every fix. Nothing here needs a rebuild.
+    </p>
+  </section>
+
+  <footer>
+    <p class="eyebrow">Next</p>
+    <p class="small dim">
+      Tell me A or B and whether the greys look right, and I&rsquo;ll build it.
+    </p>
+  </footer>
+
+</div>

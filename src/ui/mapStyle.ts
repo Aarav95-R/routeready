@@ -15,6 +15,13 @@ export const mapColors = {
   building: "#E4E2DB",
   routeCore: "#059669",
   routeCasing: "#04684C",
+  // The part already driven. Green means road still to drive, grey means done,
+  // so progress reads at a glance and the only bright thing on the map is what
+  // is still ahead. The greys carry a slight green bias to belong to the same
+  // map as roadCasing, but are darker than it on purpose: a driven route runs
+  // along white roads and still has to read as a line rather than vanish.
+  routeDrivenCore: "#A7AEA5",
+  routeDrivenCasing: "#7F8880",
 } as const;
 
 type Stops = readonly (readonly [number, number])[];
