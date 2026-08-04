@@ -12,7 +12,7 @@ import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
 import { advance, ANNOUNCE_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM } from "@/lib/navigation";
 import { bearingDeg, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
-import { navFix } from "@/lib/navmap";
+import { navFix, navSnap } from "@/lib/navmap";
 import type { Hazard, NavStep, Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
 import { colors } from "@/ui/theme";
@@ -108,7 +108,6 @@ export default function Practice() {
   const trailRef = useRef(0);
   const preparedRef = useRef(new Set<number>());
   const executedRef = useRef(new Set<number>());
-  const headingRef = useRef(0);        // raw compass, straight off the sensor
   const prevPosRef = useRef<LatLng | null>(null);
   const subRef = useRef<Location.LocationSubscription | null>(null);
   const headingSubRef = useRef<Location.LocationSubscription | null>(null);
@@ -247,32 +246,27 @@ export default function Practice() {
     const seeded = mapBearingSeededRef.current;
 
     const fixInput = {
-      raw,
       mph,
       gpsCourse: c.heading ?? null,
-      coords,
-      trailIdx: trailRef.current,
       mapBearing: mapBearingRef.current,
       compass: compassRef.current,
       bearingSeeded: seeded,
       zoom: zoomRef.current,
     };
 
-    // navFix needs the distance to the next manoeuvre to pick a zoom, but that
-    // distance itself needs the snapped position navFix produces. Rather than
-    // duplicate the snap here, take a throwaway first call just for `pos` —
-    // it's a pure function of inputs that don't change between the two calls,
-    // so the second (authoritative) call reproduces it exactly.
+    // The snap is computed once, here — navZoom needs the distance to the
+    // next manoeuvre, and that distance needs the snapped position, so the
+    // snap has to exist before navFix can be called at all.
+    const snap = navSnap(coords, raw, trailRef.current);
     const needsDistance = !isFallback && steps.length > 0;
     let st: ReturnType<typeof advance> | null = null;
     let distanceToManeuverM: number | null = null;
     if (needsDistance) {
-      const pre = navFix({ ...fixInput, distanceToManeuverM: null });
-      st = advance(steps, pre.pos, indexRef.current);
+      st = advance(steps, snap.pos, indexRef.current);
       distanceToManeuverM = st.distanceToManeuverM;
     }
 
-    const result = navFix({ ...fixInput, distanceToManeuverM });
+    const result = navFix({ ...fixInput, distanceToManeuverM, snap });
     const p = result.pos;
     setPos(p);
     mapBearingRef.current = result.mapBearing;
@@ -356,7 +350,6 @@ export default function Practice() {
     headingSubRef.current = await Location.watchHeadingAsync((h) => {
       const hd = h.trueHeading != null && h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
       if (hd == null || hd < 0) return;
-      headingRef.current = hd;
       compassRef.current = compassSeededRef.current
         ? smoothHeading(compassRef.current, hd, COMPASS_ALPHA)
         : hd;
