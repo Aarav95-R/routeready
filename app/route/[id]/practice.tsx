@@ -72,11 +72,6 @@ export default function Practice() {
   // than against north. Held in state, not a ref, because the compass has to
   // be able to redraw it between GPS fixes.
   const [iconRotation, setIconRotation] = useState(0);
-  // Render-visible copies of the two camera refs below. The refs stay the
-  // source of truth — a fix reads them back within the same callback that
-  // writes them — but NavMap.recenter needs the current pair as props.
-  const [mapBearing, setMapBearing] = useState(0);
-  const [zoom, setZoom] = useState(NAV_ZOOM_MID);
 
   const phaseRef = useRef<Phase>("preview");
   const approachRef = useRef<Directions | null>(null);
@@ -209,7 +204,6 @@ export default function Practice() {
     const p = result.pos;
     setPos(p);
     mapBearingRef.current = result.mapBearing;
-    setMapBearing(result.mapBearing);
     mapBearingSeededRef.current = true;
     // The icon's angle is relative to the map, so a map that turned changes it
     // even when the phone did not move.
@@ -224,7 +218,6 @@ export default function Practice() {
       // arrow is the only navigation aid the fallback path has.
       setCrowRot(bearingDeg(p, start!) - mapBearingRef.current);
       zoomRef.current = NAV_ZOOM_FAR;
-      setZoom(NAV_ZOOM_FAR);
       mapRef.current?.pushCamera(p, mapBearingRef.current, NAV_ZOOM_FAR);
       if (d <= ARRIVE_M) beginRoute();
       return;
@@ -247,7 +240,6 @@ export default function Practice() {
     setTrailIdx(result.trailIdx);
 
     zoomRef.current = result.zoom;
-    setZoom(result.zoom);
     mapRef.current?.pushCamera(p, mapBearingRef.current, zoomRef.current);
 
     const cur = steps[st!.index];
@@ -383,8 +375,6 @@ export default function Practice() {
         // is being previewed, and none once it has been finished.
         pos={phase === "approach" || phase === "route" ? pos : null}
         iconRotation={iconRotation}
-        mapBearing={mapBearing}
-        zoom={zoom}
         follow={following}
         onFollowChange={setFollowing}
         preview={phase === "preview"}

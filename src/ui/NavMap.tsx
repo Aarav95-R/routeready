@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { View } from "react-native";
 import { BackgroundLayer, Camera, CircleLayer, FillLayer, LineLayer, MapView, MarkerView, ShapeSource } from "@rnmapbox/maps";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { NAV_ZOOM_MID } from "@/lib/navigation";
 import type { LatLng } from "@/lib/geo";
 import type { ObservationZone } from "@/types/db";
 import { lineWidthExpression, mapColors, ROAD_OUTLINE_PX, roadLayers, roadWidths, trafficLayerIds } from "@/ui/mapStyle";
@@ -38,10 +39,14 @@ const lineWidth = (stops: Parameters<typeof lineWidthExpression>[0]) => lineWidt
 // zoom the way the road does rather than staying a fixed blob of pixels. Amber
 // rather than the route's emerald — it marks a place to look, not a place to
 // drive — and low opacity, because the road underneath is what is being driven.
+//
+// The design draws the edge dashed. A CircleLayer has no dash — that would
+// want a generated polygon and a LineLayer — so the edge is solid here. Every
+// other value matches docs/design/2026-08-04-mock-test-map.html.
 const ZONE_COLOUR = "#D97706";
-const ZONE_FILL_OPACITY = 0.12;
-const ZONE_EDGE_OPACITY = 0.5;
-const ZONE_EDGE_PX = 1.5;
+const ZONE_FILL_OPACITY = 0.13;
+const ZONE_EDGE_OPACITY = 0.8;
+const ZONE_EDGE_PX = 2;
 // Web Mercator metres per pixel at zoom 0 on the equator. A disc of r metres is
 // r / (M0 * cos(lat)) pixels at zoom 0 and doubles with every zoom level, so
 // the latitude term is baked into each feature and the zoom term is left to an
@@ -59,10 +64,10 @@ export type NavMapHandle = {
   recenter: () => void;
   fitBounds: () => void;
   /**
-   * Push the camera to a fix. Imperative rather than an effect on the props
-   * below, because an effect would also fire for a `pos` set outside a GPS
-   * callback — the one-off fix taken before watching starts — and move the
-   * camera where it does not move today.
+   * Push the camera to a fix. Imperative rather than an effect on `pos`,
+   * because an effect would also fire for a `pos` set outside a GPS callback
+   * — the one-off fix taken before watching starts — and move the camera
+   * where it does not move today.
    */
   pushCamera: (centre: LatLng, heading: number, zoom: number) => void;
 };
@@ -72,8 +77,6 @@ export type NavMapProps = {
   trailIdx: number;               // split point: grey behind, emerald ahead
   pos: LatLng | null;             // already-snapped position; null hides the puck
   iconRotation: number;
-  mapBearing: number;             // what the map is rotated to; only recenter reads it
-  zoom: number;                   // what the map is zoomed to; only recenter reads it
   follow: boolean;
   onFollowChange: (following: boolean) => void;
   // The route is being framed, not driven: the whole polyline is drawn as one
@@ -82,7 +85,11 @@ export type NavMapProps = {
   preview?: boolean;
   start?: LatLng | null;          // start marker; null draws none
   finish?: LatLng | null;         // finish marker; null draws none (a loop passes null)
-  observationZones?: ObservationZone[];   // drawn as amber discs; default none
+  // Drawn as amber discs; default none. Pass a stable reference — the GeoJSON
+  // is rebuilt whenever this array's identity changes, and the compass
+  // re-renders the screen about fifteen times a second, so an array literal
+  // would re-upload every zone's geometry on each of them.
+  observationZones?: ObservationZone[];
   children?: ReactNode;           // extra map overlays, e.g. hazard pins
 };
 
@@ -92,8 +99,6 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
     trailIdx,
     pos,
     iconRotation,
-    mapBearing,
-    zoom,
     follow,
     onFollowChange,
     preview = false,
@@ -107,11 +112,13 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
   const cameraRef = useRef<Camera>(null);
   const mapHeightRef = useRef(0);
   const followingRef = useRef(follow);
-  const previewRef = useRef(preview);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  // What the camera was last asked for. Seeded with the bearing and zoom a
+  // caller starts a leg at, so a recenter before the first fix behaves as it
+  // did when these were the caller's own two refs.
+  const lastCameraRef = useRef({ heading: 0, zoomLevel: NAV_ZOOM_MID });
 
   useEffect(() => { followingRef.current = follow; }, [follow]);
-  useEffect(() => { previewRef.current = preview; }, [preview]);
 
   // Drive the camera by hand. followUserLocation would centre on the raw GPS
   // fix and rotate to the raw compass, both of which are exactly what we are
@@ -120,6 +127,10 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
   // than the 500 ms it is asked for on either platform, so one would only ever
   // drop fixes the camera needs.
   const pushCamera = useCallback((centre: LatLng, heading: number, zoomLevel: number) => {
+    // Recorded before the follow guard: fixes keep arriving while the driver
+    // has the map panned away, and recenter has to jump to the newest one
+    // rather than to wherever following was switched off.
+    lastCameraRef.current = { heading, zoomLevel };
     if (!followingRef.current) return;
 
     // Padding shifts the camera centre down the screen so more road is visible
@@ -144,8 +155,9 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
   const recenter = useCallback(() => {
     followingRef.current = true;
     onFollowChange(true);
-    if (pos) pushCamera(pos, mapBearing, zoom);
-  }, [onFollowChange, pos, mapBearing, zoom, pushCamera]);
+    const { heading, zoomLevel } = lastCameraRef.current;
+    if (pos) pushCamera(pos, heading, zoomLevel);
+  }, [onFollowChange, pos, pushCamera]);
 
   const fitBounds = useCallback(() => {
     if (routeLL.length < 2) return;
@@ -225,11 +237,11 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
       style={{ flex: 1 }} styleURL={NAV_STYLE} scaleBarEnabled={false} compassEnabled={false}
       // Rotate and pitch are ours to set, the way they are in Waze and Google
       // Maps in nav mode. This is also what makes the icon's angle sound:
-      // nothing but setCamera can change the map bearing, so mapBearingRef
-      // is always exactly what the map is rotated to.
+      // nothing but setCamera can change the map bearing, so the map bearing
+      // is always exactly what the caller last pushed.
       rotateEnabled={false} pitchEnabled={false}
       logoPosition={{ bottom: 92, left: 8 }} attributionPosition={{ bottom: 92, right: 8 }}
-      onDidFinishLoadingMap={() => { if (previewRef.current) fitBounds(); }}
+      onDidFinishLoadingMap={() => { if (preview) fitBounds(); }}
       onLayout={(e) => { mapHeightRef.current = e.nativeEvent.layout.height; }}
       onTouchStart={(e) => {
         const t = e.nativeEvent.touches[0];
@@ -239,7 +251,7 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
         // A tap (e.g. opening a hazard callout, or the puck itself) fires
         // touchStart/End with no real movement; only a genuine drag should
         // cancel follow. Anything under the threshold is left alone.
-        if (previewRef.current) return;
+        if (preview) return;
         const startPt = touchStartRef.current;
         const t = e.nativeEvent.touches[0];
         if (!startPt || !t) return;
@@ -254,8 +266,8 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
       // so it cannot fight fitBounds.
       onCameraChanged={(s) => {
         // Fires once per frame of any camera move, including our own, so bail
-        // out on two cheap ref reads before touching state.
-        if (!followingRef.current || previewRef.current) return;
+        // out on two cheap reads before touching state.
+        if (!followingRef.current || preview) return;
         if (s.gestures?.isGestureActive) onFollowChange(false);
       }}
     >
