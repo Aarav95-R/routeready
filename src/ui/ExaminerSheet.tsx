@@ -20,10 +20,11 @@ type Props = {
   credits: number;
   lastMark: { label: string; level: MarkLevel } | null;
   minorCounts: Record<string, number>;
-  warnings: { category: string; label: string; count: number }[];
   onMark: (category: string, level: MarkLevel) => void;
   onUndo: () => void;
 };
+
+export type ExaminerWarning = { category: string; label: string; count: number };
 
 const GROUP_ORDER: ExaminerGroup[] = ["driving", "manoeuvres", "beforeDriving"];
 const GROUP_LABEL: Record<ExaminerGroup, string> = {
@@ -105,19 +106,40 @@ function CategoryRow({
   );
 }
 
-export function ExaminerSheet({
-  minors, majors, credits, lastMark, minorCounts, warnings, onMark, onUndo,
-}: Props) {
-  const firstWarning = warnings[0] ?? null;
+// Floats above the sheet, over the map — there is no room for the habitual
+// warning inside the one-row collapsed bar. Takes a single warning because
+// only the caller (mock.tsx) decides which one to show, and only one fits.
+export function ExaminerWarningPill({ warning }: { warning: ExaminerWarning }) {
+  return (
+    <View style={{ backgroundColor: LEVEL_STYLE.minor.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, flexDirection: "row", flexWrap: "wrap" }}>
+      {/* toHaveTextContent does an exact match by default (see
+          @testing-library/react-native's matches()), so the pinned testID
+          carries only the label — the count and explanation are a sibling
+          Text, outside that node's text-content subtree. */}
+      <Text testID="warning-bar" style={{ color: LEVEL_STYLE.minor.fg, fontSize: 12, fontWeight: "700" }}>
+        {warning.label}
+      </Text>
+      <Text style={{ color: LEVEL_STYLE.minor.fg, fontSize: 12, fontWeight: "600" }}>
+        {" "}×{warning.count} — an examiner would likely call this major
+      </Text>
+    </View>
+  );
+}
 
+export function ExaminerSheet({
+  minors, majors, credits, lastMark, minorCounts, onMark, onUndo,
+}: Props) {
   return (
     <View className="bg-card">
-      {/* Collapsed bar: always visible, so the tally and undo work whether or
-          not the sheet is pulled up. */}
-      <View className="px-4 py-3 gap-2">
+      {/* Collapsed bar: a single row, always visible, so the tally and undo
+          work whether or not the sheet is pulled up. The "Last: <label> —
+          <level>" line and the habitual warning used to live here too; the
+          tallies and Undo carry enough meaning on their own, and a one-row
+          bar is what fits the fixed-height first snap point. */}
+      <View className="px-4 py-3">
         <View className="flex-row items-center justify-between">
           <Text className="text-[13px] font-semibold text-primary">Examiner</Text>
-          <View className="flex-row gap-3">
+          <View className="flex-row items-center gap-3">
             <Text testID="tally-minors" style={{ color: LEVEL_STYLE.minor.fg, fontWeight: "700", fontSize: 12, fontFamily: MONO }}>
               {minors} min
             </Text>
@@ -127,39 +149,18 @@ export function ExaminerSheet({
             <Text testID="tally-credits" style={{ color: LEVEL_STYLE.credit.fg, fontWeight: "700", fontSize: 12, fontFamily: MONO }}>
               +{credits}
             </Text>
+            {lastMark && (
+              <Pressable
+                testID="undo"
+                accessibilityRole="button"
+                onPress={onUndo}
+                style={{ minHeight: MARK_BUTTON_MIN, minWidth: UNDO_MIN_WIDTH, borderRadius: 8, backgroundColor: "#F1F5F9", alignItems: "center", justifyContent: "center", paddingHorizontal: 12 }}
+              >
+                <Text className="text-[12px] font-semibold text-slate-600">Undo</Text>
+              </Pressable>
+            )}
           </View>
         </View>
-
-        {lastMark && (
-          <View className="flex-row items-center justify-between">
-            <Text className="text-[12px] text-slate-400">
-              Last: {lastMark.label} — {lastMark.level}
-            </Text>
-            <Pressable
-              testID="undo"
-              accessibilityRole="button"
-              onPress={onUndo}
-              style={{ minHeight: MARK_BUTTON_MIN, minWidth: UNDO_MIN_WIDTH, borderRadius: 8, backgroundColor: "#F1F5F9", alignItems: "center", justifyContent: "center", paddingHorizontal: 12 }}
-            >
-              <Text className="text-[12px] font-semibold text-slate-600">Undo</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {firstWarning && (
-          <View style={{ backgroundColor: LEVEL_STYLE.minor.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, flexDirection: "row", flexWrap: "wrap" }}>
-            {/* toHaveTextContent does an exact match by default (see
-                @testing-library/react-native's matches()), so the pinned
-                testID carries only the label — the count and explanation are
-                a sibling Text, outside that node's text-content subtree. */}
-            <Text testID="warning-bar" style={{ color: LEVEL_STYLE.minor.fg, fontSize: 12, fontWeight: "700" }}>
-              {firstWarning.label}
-            </Text>
-            <Text style={{ color: LEVEL_STYLE.minor.fg, fontSize: 12, fontWeight: "600" }}>
-              {" "}×{firstWarning.count} — an examiner would likely call this major
-            </Text>
-          </View>
-        )}
       </View>
 
       {/* Expanded content: grouped rows. The caller's bottom sheet supplies

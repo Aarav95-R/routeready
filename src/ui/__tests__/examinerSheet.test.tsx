@@ -1,10 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
-import { ExaminerSheet } from "../ExaminerSheet";
+import { ExaminerSheet, ExaminerWarningPill } from "../ExaminerSheet";
 import { EXAMINER_CATEGORIES } from "@/lib/examiner";
 
 const base = {
   minors: 0, majors: 0, credits: 0, lastMark: null,
-  minorCounts: {}, warnings: [],
+  minorCounts: {},
   onMark: jest.fn(), onUndo: jest.fn(),
 };
 
@@ -41,14 +41,12 @@ test("undo is offered only once something has been marked", () => {
   expect(onUndo).toHaveBeenCalledTimes(1);
 });
 
-test("a repeated minor is called out on the row and in the bar", () => {
-  render(
-    <ExaminerSheet
-      {...base}
-      minorCounts={{ mirrors: 3 }}
-      warnings={[{ category: "mirrors", label: "Use of mirrors", count: 3 }]}
-    />
-  );
+test("a repeated minor is called out on its row", () => {
+  render(<ExaminerSheet {...base} minorCounts={{ mirrors: 3 }} />);
   expect(screen.getByTestId("warning-mirrors")).toBeTruthy();
+});
+
+test("the warning pill shows the habitual category", () => {
+  render(<ExaminerWarningPill warning={{ category: "mirrors", label: "Use of mirrors", count: 3 }} />);
   expect(screen.getByTestId("warning-bar")).toHaveTextContent("Use of mirrors");
 });

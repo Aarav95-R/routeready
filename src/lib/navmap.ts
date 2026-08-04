@@ -9,6 +9,15 @@ export const SNAP_WINDOW = 30;         // vertices searched either side of the c
 // map — mounted facing forward the two agree and it sits upright by itself.
 export const HEADING_ALPHA = 0.15;     // map bearing: heavy filter, it should feel settled
 export const HEADING_DEADBAND_DEG = 3;
+// The icon's own, lighter filter — practice.tsx and mock.tsx both watch a
+// compass and want the same feel, so it is tuned once here rather than as a
+// literal duplicated in each screen.
+export const COMPASS_ALPHA = 0.35;     // icon: lighter, so twisting the phone reads as immediate
+export const ICON_TICK_MS = 66;        // ~15 icon updates a second; the compass fires far faster
+// A route whose start and finish are this close together counts as a loop —
+// the finish flag would otherwise land on the start dot and hide it. Shared
+// for the same reason as the compass constants above.
+export const LOOP_CLOSE_M = 30;
 
 export type NavSnapResult = {
   pos: LatLng;

@@ -12,7 +12,7 @@ import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
 import { advance, ANNOUNCE_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM } from "@/lib/navigation";
 import { bearingDeg, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
-import { navFix, navSnap } from "@/lib/navmap";
+import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
 import type { Hazard, NavStep, Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
 import { colors } from "@/ui/theme";
@@ -24,10 +24,10 @@ const ARRIVE_M = 30;
 // new direction, so it holds still at a red light however the phone is waved
 // about. The ICON turns with the compass, drawn at its angle relative to the
 // map — mounted facing forward the two agree and it sits upright by itself.
-// The map's half of this (snap, heading filter, deadband) lives in navFix
-// (src/lib/navmap.ts); COMPASS_ALPHA below is the icon's own, lighter filter.
-const COMPASS_ALPHA = 0.35;     // icon: lighter, so twisting the phone reads as immediate
-const ICON_TICK_MS = 66;        // ~15 icon updates a second; the compass fires far faster
+// The map's half of this (snap, heading filter, deadband) lives in navFix;
+// COMPASS_ALPHA and ICON_TICK_MS (the icon's own, lighter filter and redraw
+// throttle) live in src/lib/navmap.ts, shared with mock.tsx, so tuning one
+// screen on device does not silently diverge from the other.
 
 type Phase = "preview" | "approach" | "route" | "finished";
 
@@ -105,7 +105,7 @@ export default function Practice() {
   );
   const routeSteps = useMemo(() => route?.steps ?? [], [route]);
   const isLoop = useMemo(
-    () => routeLL.length > 1 && haversineM(routeLL[0], routeLL[routeLL.length - 1]) < 30,
+    () => routeLL.length > 1 && haversineM(routeLL[0], routeLL[routeLL.length - 1]) < LOOP_CLOSE_M,
     [routeLL]
   );
 

@@ -8,26 +8,39 @@ import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { useMockTest } from "@/stores/mockTestStore";
-import { EXAMINER_CATEGORIES, minorCountsByCategory, type MarkLevel } from "@/lib/examiner";
+import { EXAMINER_CATEGORIES, habitualWarnings, minorCountsByCategory, type MarkLevel } from "@/lib/examiner";
 import { haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
 import { NAV_ZOOM_MID } from "@/lib/navigation";
-import { navFix, navSnap } from "@/lib/navmap";
-import { ExaminerSheet } from "@/ui/ExaminerSheet";
+import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
+import { ExaminerSheet, ExaminerWarningPill } from "@/ui/ExaminerSheet";
 import { NavMap, NavMapHandle } from "@/ui/NavMap";
 import { colors } from "@/ui/theme";
 
-// Two rotations, two sources — the same split the practice screen uses. The MAP
-// turns only when the vehicle travels in a new direction (handled inside
-// navFix); the ICON turns with the compass, drawn at its angle relative to the
-// map. COMPASS_ALPHA is the icon's own, lighter filter.
-const COMPASS_ALPHA = 0.35;
-const ICON_TICK_MS = 66;        // ~15 icon updates a second; the compass fires far faster
-
-// The puck sits at 62% of screen height and the collapsed examiner sheet takes
-// the bottom 12%. The controls row lives in the gap between them: high enough
-// to clear the sheet, low enough not to sit under the vehicle.
+// The puck sits at 62% of screen height; the controls row lives above the
+// collapsed sheet, high enough to clear it and low enough not to sit under
+// the vehicle.
 const CONTROLS_BOTTOM = 150;
-const SHEET_SNAP_POINTS = ["12%", "85%"];
+// The collapsed sheet is one row: "Examiner", the three tallies and Undo, in
+// a px-4 py-3 container (12 pt top/bottom padding) whose row height is driven
+// by Undo's 44 pt minHeight — 24 + 44 = 68 pt of content. Gorhom adds its own
+// handle above that: container padding 10 pt top/bottom plus a 4 pt indicator
+// = 24 pt (node_modules/@gorhom/bottom-sheet/src/components/bottomSheetHandle/styles.ts).
+// 68 + 24 = 92 pt total, comfortably under CONTROLS_BOTTOM (150) so the two
+// never overlap. A fixed pixel count, not a percentage: a percentage of
+// screen height gives a different content height on every phone, which is
+// what clipped the undo button and hid the warning before this fix.
+const SHEET_COLLAPSED_H = 92;
+const SHEET_SNAP_POINTS = [SHEET_COLLAPSED_H, "85%"];
+// Clears the collapsed sheet (92 pt) with room for the ~20 pt logo/attribution
+// mark itself; Mapbox's terms require both to stay visible.
+const MOCK_LOGO_BOTTOM = 100;
+// Floats above the sheet and below the controls row (top edge at
+// CONTROLS_BOTTOM + 74 pt mirrors circle = 224), clear of both.
+const WARNING_PILL_BOTTOM = SHEET_COLLAPSED_H + 8;
+
+// Hoisted so the compass tick — about fifteen re-renders a second — does not
+// hand the BottomSheet a fresh style object each time.
+const SHEET_HANDLE_INDICATOR_STYLE = { backgroundColor: "#CBD5E1" };
 
 // Only the label is needed here, and examiner.ts keeps its own lookup private.
 const CATEGORY_LABEL = new Map(EXAMINER_CATEGORIES.map((c) => [c.id, c.label]));
@@ -38,7 +51,7 @@ export default function Mock() {
   const insets = useSafeAreaInsets();
   const {
     phase, route, startedAt, activeZoneIdx, marks,
-    start, onSample, tapMirrors, addMark, undoMark, warnings, finish,
+    start, onSample, tapMirrors, addMark, undoMark, finish,
   } = useMockTest();
 
   const [clock, setClock] = useState("0:00");
@@ -87,7 +100,7 @@ export default function Mock() {
   const observationZones = useMemo(() => route?.observation_zones ?? [], [route]);
 
   const isLoop = useMemo(
-    () => routeLL.length > 1 && haversineM(routeLL[0], routeLL[routeLL.length - 1]) < 30,
+    () => routeLL.length > 1 && haversineM(routeLL[0], routeLL[routeLL.length - 1]) < LOOP_CLOSE_M,
     [routeLL]
   );
 
@@ -112,6 +125,14 @@ export default function Mock() {
     // steps, so there is no manoeuvre distance to compute between the snap and
     // navFix, and distanceToManeuverM is null — the zoom then holds at
     // whatever it was seeded with.
+    //
+    // This is also the split behind the puck-vs-toast disagreement below: the
+    // puck is drawn at `result.pos` (snapped, from this call) while the zone
+    // toast is driven by the untouched `raw` fix passed to onSample above. The
+    // two can differ by up to SNAP_MAX_M (40 m) near the edge of a zone. That
+    // is correct — the toast has to answer "did the driver actually enter the
+    // zone", not "does the drawn line say so" — but it will look like a bug to
+    // anyone watching the map and the toast disagree on device.
     const snap = navSnap(routeLLRef.current, raw, trailRef.current);
     const result = navFix({
       mph: Math.round(mpsToMph(Math.max(0, c.speed ?? 0))),
@@ -182,7 +203,10 @@ export default function Mock() {
   }, [phase, onPosition]);
 
   useEffect(() => {
-    if (activeZoneIdx !== null) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Soft, not Light: a minor mark also fires Light (below), and the two have
+    // to be told apart by feel — this one is passive (the zone arrived on its
+    // own), that one is a deliberate tap.
+    if (activeZoneIdx !== null) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
   }, [activeZoneIdx]);
 
   const minors = useMemo(() => marks.filter((m) => m.level === "minor").length, [marks]);
@@ -194,9 +218,7 @@ export default function Mock() {
     if (!m) return null;
     return { label: CATEGORY_LABEL.get(m.category) ?? m.category, level: m.level };
   }, [marks]);
-  // warnings() reads the store's marks itself, so `marks` is the real
-  // dependency even though it does not appear in the call.
-  const warns = useMemo(() => warnings(), [marks, warnings]);
+  const warns = useMemo(() => habitualWarnings(marks), [marks]);
 
   const onMark = useCallback((category: string, level: MarkLevel) => {
     // Marking happens by feel, on a phone in a cradle, while watching the road:
@@ -218,15 +240,23 @@ export default function Mock() {
   const sheetContent = useMemo(() => (
     <ExaminerSheet
       minors={minors} majors={majors} credits={credits}
-      lastMark={lastMark} minorCounts={minorCounts} warnings={warns}
+      lastMark={lastMark} minorCounts={minorCounts}
       onMark={onMark} onUndo={onUndo}
     />
-  ), [minors, majors, credits, lastMark, minorCounts, warns, onMark, onUndo]);
+  ), [minors, majors, credits, lastMark, minorCounts, onMark, onUndo]);
 
   const recenter = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     mapRef.current?.recenter();
   };
+
+  // Hoisted out of the BottomSheetScrollView below for the same reason as
+  // SHEET_HANDLE_INDICATOR_STYLE, but this one depends on the safe-area inset
+  // so it cannot be a module-level constant.
+  const sheetContentContainerStyle = useMemo(
+    () => ({ paddingBottom: insets.bottom + 24 }),
+    [insets.bottom]
+  );
 
   return (
     <View className="flex-1">
@@ -246,6 +276,7 @@ export default function Mock() {
         // dot and hide it.
         finish={!isLoop ? routeLL[routeLL.length - 1] ?? null : null}
         observationZones={observationZones}
+        logoBottom={MOCK_LOGO_BOTTOM}
       />
 
       <View
@@ -307,12 +338,21 @@ export default function Mock() {
         </View>
       </View>
 
+      {/* Floats above the collapsed sheet, over the map — the one-row sheet has
+          no room for it. Only the most pressing habitual category is shown;
+          the per-category badges inside the sheet cover the rest. */}
+      {warns[0] && (
+        <View className="absolute self-center" style={{ bottom: WARNING_PILL_BOTTOM }}>
+          <ExaminerWarningPill warning={warns[0]} />
+        </View>
+      )}
+
       <BottomSheet
         index={0}
         snapPoints={SHEET_SNAP_POINTS}
-        handleIndicatorStyle={{ backgroundColor: "#CBD5E1" }}
+        handleIndicatorStyle={SHEET_HANDLE_INDICATOR_STYLE}
       >
-        <BottomSheetScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
+        <BottomSheetScrollView contentContainerStyle={sheetContentContainerStyle}>
           {sheetContent}
         </BottomSheetScrollView>
       </BottomSheet>

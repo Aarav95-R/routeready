@@ -90,6 +90,10 @@ export type NavMapProps = {
   // re-renders the screen about fifteen times a second, so an array literal
   // would re-upload every zone's geometry on each of them.
   observationZones?: ObservationZone[];
+  // Mapbox's terms require the logo and attribution notice to stay visible.
+  // 92 pt clears practice.tsx's bottom bar; a caller with its own bottom
+  // chrome (mock.tsx's examiner sheet) overrides this to clear its own.
+  logoBottom?: number;
   children?: ReactNode;           // extra map overlays, e.g. hazard pins
 };
 
@@ -105,6 +109,7 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
     start = null,
     finish = null,
     observationZones,
+    logoBottom = 92,
     children,
   },
   ref
@@ -240,7 +245,7 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
       // nothing but setCamera can change the map bearing, so the map bearing
       // is always exactly what the caller last pushed.
       rotateEnabled={false} pitchEnabled={false}
-      logoPosition={{ bottom: 92, left: 8 }} attributionPosition={{ bottom: 92, right: 8 }}
+      logoPosition={{ bottom: logoBottom, left: 8 }} attributionPosition={{ bottom: logoBottom, right: 8 }}
       onDidFinishLoadingMap={() => { if (preview) fitBounds(); }}
       onLayout={(e) => { mapHeightRef.current = e.nativeEvent.layout.height; }}
       onTouchStart={(e) => {
