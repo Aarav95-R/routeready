@@ -2,7 +2,7 @@ import { LatLng, mpsToMph, nearestVertex } from "../geo";
 import type { ObservationZone, SpeedProfileSegment } from "@/types/db";
 
 export type GpsSample = { lat: number; lng: number; speedMps: number; t: number };
-export type Fault = { kind: "speeding" | "observation"; severity: "minor" | "major"; detail: string; tag: string };
+export type Fault = { kind: "speeding" | "observation" | "examiner"; severity: "minor" | "major"; detail: string; tag: string };
 export type MockResult = {
   passed: boolean; score: number; minors: number; majors: number; credits: number;
   faults: Fault[]; tags: string[]; durationSeconds: number;
