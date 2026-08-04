@@ -10,8 +10,9 @@ import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
-import { advance, ANNOUNCE_M, formatDistance, navZoom, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM, trailIndex, travelBearing } from "@/lib/navigation";
-import { bearingDeg, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath, turnAngleDeg } from "@/lib/geo";
+import { advance, ANNOUNCE_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM } from "@/lib/navigation";
+import { bearingDeg, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
+import { navFix } from "@/lib/navmap";
 import type { Hazard, NavStep, Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
 import { colors } from "@/ui/theme";
@@ -22,14 +23,12 @@ const NAV_STYLE = "mapbox://styles/mapbox/navigation-day-v1";
 const NAV_PITCH = 55;
 const AT_START_M = 60;
 const ARRIVE_M = 30;
-const SNAP_MAX_M = 40;          // beyond this we assume you've left the route
-const SNAP_WINDOW = 30;         // vertices searched either side of the current index
 // Two rotations, two sources. The MAP turns only when the vehicle travels in a
 // new direction, so it holds still at a red light however the phone is waved
 // about. The ICON turns with the compass, drawn at its angle relative to the
 // map — mounted facing forward the two agree and it sits upright by itself.
-const HEADING_ALPHA = 0.15;     // map bearing: heavy filter, it should feel settled
-const HEADING_DEADBAND_DEG = 3;
+// The map's half of this (snap, heading filter, deadband) lives in navFix
+// (src/lib/navmap.ts); COMPASS_ALPHA below is the icon's own, lighter filter.
 const COMPASS_ALPHA = 0.35;     // icon: lighter, so twisting the phone reads as immediate
 const ICON_TICK_MS = 66;        // ~15 icon updates a second; the compass fires far faster
 // Camera pushes are driven by the GPS callback, not by a timer, so the ease has
@@ -243,49 +242,59 @@ export default function Practice() {
     const ph = phaseRef.current;
     const start = startRef.current;
     const coords = ph === "route" ? routeLLRef.current : approachRef.current?.coords ?? [];
+    const steps = ph === "route" ? routeStepsRef.current : approachRef.current?.steps ?? [];
+    const isFallback = ph === "approach" && fallbackRef.current && !!start;
+    const seeded = mapBearingSeededRef.current;
 
-    // Snap onto the active polyline. Raw GPS wanders 5-15 m, which drifts the
-    // puck through gardens; the route is already in memory, so no API call.
-    const snap = snapToPath(coords, raw, trailRef.current, SNAP_WINDOW);
-    const onRoute = !!snap && snap.distM <= SNAP_MAX_M;
-    const p = onRoute ? snap!.point : raw;
-    setPos(p);
+    const fixInput = {
+      raw,
+      mph,
+      gpsCourse: c.heading ?? null,
+      coords,
+      trailIdx: trailRef.current,
+      mapBearing: mapBearingRef.current,
+      compass: compassRef.current,
+      bearingSeeded: seeded,
+      zoom: zoomRef.current,
+    };
 
-    // The map turns only when the vehicle does. travelBearing returns null
-    // when we are not really moving, and null means "hold" — that is what
-    // stops the map swinging round when the phone is turned at a standstill.
-    // The snap gives us the road bearing for free, which is steadier than a
-    // GPS course and far steadier than a hand-held compass.
-    const target = travelBearing(mph, onRoute ? snap!.bearing : null, c.heading ?? null);
-    if (!mapBearingSeededRef.current) {
-      // First fix of a leg. There may be no travel direction yet (still
-      // stationary at the kerb), so fall back to the compass just this once,
-      // to start facing the way the car faces rather than north.
-      mapBearingRef.current = target ?? headingRef.current;
-      mapBearingSeededRef.current = true;
-    } else if (target != null && Math.abs(turnAngleDeg(mapBearingRef.current, target)) >= HEADING_DEADBAND_DEG) {
-      // Deadband: sub-3-degree wiggle never reaches the camera at all.
-      mapBearingRef.current = smoothHeading(mapBearingRef.current, target, HEADING_ALPHA);
+    // navFix needs the distance to the next manoeuvre to pick a zoom, but that
+    // distance itself needs the snapped position navFix produces. Rather than
+    // duplicate the snap here, take a throwaway first call just for `pos` —
+    // it's a pure function of inputs that don't change between the two calls,
+    // so the second (authoritative) call reproduces it exactly.
+    const needsDistance = !isFallback && steps.length > 0;
+    let st: ReturnType<typeof advance> | null = null;
+    let distanceToManeuverM: number | null = null;
+    if (needsDistance) {
+      const pre = navFix({ ...fixInput, distanceToManeuverM: null });
+      st = advance(steps, pre.pos, indexRef.current);
+      distanceToManeuverM = st.distanceToManeuverM;
     }
+
+    const result = navFix({ ...fixInput, distanceToManeuverM });
+    const p = result.pos;
+    setPos(p);
+    mapBearingRef.current = result.mapBearing;
+    mapBearingSeededRef.current = true;
     // The icon's angle is relative to the map, so a map that turned changes it
     // even when the phone did not move.
-    setIconRotation(iconRotationDeg(mapBearingRef.current, compassRef.current));
+    setIconRotation(result.iconRotation);
 
-    if (ph === "approach" && fallbackRef.current && start) {
-      const d = haversineM(p, start);
+    if (isFallback) {
+      const d = haversineM(p, start!);
       setDirectDist(Math.round(d));
       // Screen-space overlay, so subtract the bearing the map is actually
       // rotated to — the map bearing the camera is given below, not the raw
       // compass, which runs tens of degrees ahead of it through a turn. This
       // arrow is the only navigation aid the fallback path has.
-      setCrowRot(bearingDeg(p, start) - mapBearingRef.current);
+      setCrowRot(bearingDeg(p, start!) - mapBearingRef.current);
       zoomRef.current = NAV_ZOOM_FAR;
       pushCamera(p, mapBearingRef.current, NAV_ZOOM_FAR);
       if (d <= ARRIVE_M) beginRoute();
       return;
     }
 
-    const steps = ph === "route" ? routeStepsRef.current : approachRef.current?.steps ?? [];
     if (!steps.length) {
       // A leg can legitimately arrive with no steps (routes.steps defaults to
       // '[]' in the schema, and an approach fetch can come back with none).
@@ -295,32 +304,30 @@ export default function Practice() {
       return;
     }
 
-    const st = advance(steps, p, indexRef.current);
-    indexRef.current = st.index;
-    setStepIndex(st.index);
-    setDistanceM(st.distanceToManeuverM);
-    setRemaining(remainingM(steps, p, st.index));
-    const ti = onRoute ? Math.max(trailRef.current, snap!.idx) : trailIndex(coords, p, trailRef.current);
-    trailRef.current = ti;
-    setTrailIdx(ti);
+    indexRef.current = st!.index;
+    setStepIndex(st!.index);
+    setDistanceM(st!.distanceToManeuverM);
+    setRemaining(remainingM(steps, p, st!.index));
+    trailRef.current = result.trailIdx;
+    setTrailIdx(result.trailIdx);
 
-    zoomRef.current = navZoom(st.distanceToManeuverM, zoomRef.current);
+    zoomRef.current = result.zoom;
     pushCamera(p, mapBearingRef.current, zoomRef.current);
 
-    const cur = steps[st.index];
+    const cur = steps[st!.index];
     if (cur && cur.type !== "depart") {
-      const d = st.distanceToManeuverM;
-      if (d <= ANNOUNCE_M && d > 40 && !preparedRef.current.has(st.index)) {
-        preparedRef.current.add(st.index);
+      const d = st!.distanceToManeuverM;
+      if (d <= ANNOUNCE_M && d > 40 && !preparedRef.current.has(st!.index)) {
+        preparedRef.current.add(st!.index);
         Speech.speak(`In ${formatDistance(d)}, ${cur.instruction}`, { language: "en-GB" });
       }
-      if (d <= 40 && !executedRef.current.has(st.index)) {
-        executedRef.current.add(st.index);
+      if (d <= 40 && !executedRef.current.has(st!.index)) {
+        executedRef.current.add(st!.index);
         Speech.speak(cur.instruction, { language: "en-GB" });
       }
     }
 
-    if (st.arrived) {
+    if (st!.arrived) {
       if (ph === "approach") beginRoute();
       else {
         stopWatching();
