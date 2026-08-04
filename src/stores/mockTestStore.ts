@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { isInZone } from "@/lib/geo";
+import type { LatLng } from "@/lib/geo";
 import { aggregate, detectObservationFaults, detectSpeedingFaults, GpsSample, MockResult } from "@/lib/scoring/engine";
+import { creditCount, habitualWarnings, marksToFaults, type Mark, type MarkLevel } from "@/lib/examiner";
 import type { Route } from "@/types/db";
 
 type MockPhase = "idle" | "running" | "finished";
@@ -14,9 +16,13 @@ type MockState = {
   activeTapped: boolean;
   zoneOutcomes: { zoneIdx: number; tapped: boolean }[];
   result: MockResult | null;
+  marks: Mark[];
   start: (route: Route, now?: number) => void;
   onSample: (s: GpsSample) => void;
   tapMirrors: () => void;
+  addMark: (category: string, level: MarkLevel, at?: LatLng | null, now?: number) => void;
+  undoMark: () => void;
+  warnings: () => { category: string; label: string; count: number }[];
   finish: (now?: number) => MockResult;
   reset: () => void;
 };
@@ -24,6 +30,7 @@ type MockState = {
 const initial = {
   phase: "idle" as MockPhase, route: null, startedAt: 0, samples: [],
   activeZoneIdx: null, activeTapped: false, zoneOutcomes: [], result: null,
+  marks: [] as Mark[],
 };
 
 export const useMockTest = create<MockState>((set, get) => ({
@@ -49,8 +56,17 @@ export const useMockTest = create<MockState>((set, get) => ({
   tapMirrors: () => {
     if (get().activeZoneIdx !== null) set({ activeTapped: true });
   },
+  addMark: (category, level, at = null, now = Date.now()) =>
+    set({ marks: [...get().marks, { category, level, t: now, at }] }),
+
+  // Mis-taps in a moving car are certain, and a stray major would otherwise
+  // fail the test silently.
+  undoMark: () => set({ marks: get().marks.slice(0, -1) }),
+
+  warnings: () => habitualWarnings(get().marks),
+
   finish: (now = Date.now()) => {
-    const { route, samples, startedAt, activeZoneIdx, activeTapped, zoneOutcomes } = get();
+    const { route, samples, startedAt, activeZoneIdx, activeTapped, zoneOutcomes, marks } = get();
     const outcomes = activeZoneIdx !== null
       ? [...zoneOutcomes, { zoneIdx: activeZoneIdx, tapped: activeTapped }]
       : zoneOutcomes;
@@ -58,8 +74,9 @@ export const useMockTest = create<MockState>((set, get) => ({
     const faults = [
       ...detectSpeedingFaults(samples, coords, route?.speed_profile ?? []),
       ...detectObservationFaults(outcomes.map((o) => ({ zone: route!.observation_zones[o.zoneIdx], tapped: o.tapped }))),
+      ...marksToFaults(marks),
     ];
-    const result = aggregate(faults, Math.round((now - startedAt) / 1000));
+    const result = aggregate(faults, Math.round((now - startedAt) / 1000), creditCount(marks));
     set({ phase: "finished", result, zoneOutcomes: outcomes, activeZoneIdx: null });
     return result;
   },
