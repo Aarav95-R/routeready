@@ -1,6 +1,18 @@
-import { Pressable, Text, View } from "react-native";
+import { Platform, Pressable, Text, View } from "react-native";
 import { EXAMINER_CATEGORIES, ExaminerGroup, HABITUAL_MINOR_THRESHOLD, MarkLevel } from "@/lib/examiner";
 import { colors } from "@/ui/theme";
+
+// The design mockup sets group headings and the tally digits in
+// ui-monospace; RN has no generic alias that resolves on both platforms.
+const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
+
+// A mark row's three buttons at the spec's 44 pt minimum, laid out with an
+// 8 pt gap: 3 × 44 + 2 × 8 = 148. Named so the row container width and the
+// per-button minimums can't silently drift apart.
+const MARK_BUTTON_MIN = 44;
+const MARK_ROW_GAP = 8;
+const MARK_ROW_WIDTH = 3 * MARK_BUTTON_MIN + 2 * MARK_ROW_GAP;
+const UNDO_MIN_WIDTH = 64;
 
 type Props = {
   minors: number;
@@ -20,8 +32,10 @@ const GROUP_LABEL: Record<ExaminerGroup, string> = {
   beforeDriving: "Before setting off",
 };
 
-// Mark-level styling lives in one place so the row buttons and any future
-// legend stay in sync with the design's exact hex values.
+// Mark-level styling lives in one place so the row buttons, the habitual
+// badge, the warning bar, and the collapsed tallies all read the same hex
+// values — changing "minor amber" here is the only edit a colour change
+// needs, anywhere in this file.
 const LEVEL_STYLE: Record<MarkLevel, { bg: string; fg: string; label: string }> = {
   minor: { bg: "#FEF3C7", fg: "#B45309", label: "MIN" },
   major: { bg: "#FEE2E2", fg: "#B91C1C", label: "MAJ" },
@@ -46,8 +60,8 @@ function MarkButton({
       accessibilityLabel={`${level} — ${categoryId}`}
       onPress={onPress}
       style={{
-        minHeight: 44,
-        minWidth: 44,
+        minHeight: MARK_BUTTON_MIN,
+        minWidth: MARK_BUTTON_MIN,
         flex: 1,
         borderRadius: 10,
         backgroundColor: style.bg,
@@ -75,14 +89,14 @@ function CategoryRow({
         <View className="flex-row items-center gap-2">
           <Text className="text-[14px] font-semibold text-primary">{label}</Text>
           {isHabitual && (
-            <View testID={`warning-${id}`} style={{ backgroundColor: "#FEF3C7", borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
-              <Text style={{ color: "#B45309", fontSize: 11, fontWeight: "700" }}>×{minorCount}</Text>
+            <View testID={`warning-${id}`} style={{ backgroundColor: LEVEL_STYLE.minor.bg, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+              <Text style={{ color: LEVEL_STYLE.minor.fg, fontSize: 11, fontWeight: "700" }}>×{minorCount}</Text>
             </View>
           )}
         </View>
         <Text className="text-[12px] text-slate-500">{minorExample}</Text>
       </View>
-      <View className="flex-row gap-2" style={{ width: 148 }}>
+      <View className="flex-row" style={{ width: MARK_ROW_WIDTH, gap: MARK_ROW_GAP }}>
         <MarkButton level="minor" categoryId={id} onPress={() => onMark(id, "minor")} />
         <MarkButton level="major" categoryId={id} onPress={() => onMark(id, "major")} />
         <MarkButton level="credit" categoryId={id} onPress={() => onMark(id, "credit")} />
@@ -104,13 +118,13 @@ export function ExaminerSheet({
         <View className="flex-row items-center justify-between">
           <Text className="text-[13px] font-semibold text-primary">Examiner</Text>
           <View className="flex-row gap-3">
-            <Text testID="tally-minors" style={{ color: "#B45309", fontWeight: "700", fontSize: 12 }}>
+            <Text testID="tally-minors" style={{ color: LEVEL_STYLE.minor.fg, fontWeight: "700", fontSize: 12, fontFamily: MONO }}>
               {minors} min
             </Text>
-            <Text testID="tally-majors" style={{ color: "#B91C1C", fontWeight: "700", fontSize: 12 }}>
+            <Text testID="tally-majors" style={{ color: LEVEL_STYLE.major.fg, fontWeight: "700", fontSize: 12, fontFamily: MONO }}>
               {majors} maj
             </Text>
-            <Text testID="tally-credits" style={{ color: colors.accent, fontWeight: "700", fontSize: 12 }}>
+            <Text testID="tally-credits" style={{ color: LEVEL_STYLE.credit.fg, fontWeight: "700", fontSize: 12, fontFamily: MONO }}>
               +{credits}
             </Text>
           </View>
@@ -125,7 +139,7 @@ export function ExaminerSheet({
               testID="undo"
               accessibilityRole="button"
               onPress={onUndo}
-              style={{ minHeight: 44, minWidth: 64, borderRadius: 8, backgroundColor: "#F1F5F9", alignItems: "center", justifyContent: "center", paddingHorizontal: 12 }}
+              style={{ minHeight: MARK_BUTTON_MIN, minWidth: UNDO_MIN_WIDTH, borderRadius: 8, backgroundColor: "#F1F5F9", alignItems: "center", justifyContent: "center", paddingHorizontal: 12 }}
             >
               <Text className="text-[12px] font-semibold text-slate-600">Undo</Text>
             </Pressable>
@@ -133,15 +147,15 @@ export function ExaminerSheet({
         )}
 
         {firstWarning && (
-          <View style={{ backgroundColor: "#FEF3C7", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, flexDirection: "row", flexWrap: "wrap" }}>
+          <View style={{ backgroundColor: LEVEL_STYLE.minor.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, flexDirection: "row", flexWrap: "wrap" }}>
             {/* toHaveTextContent does an exact match by default (see
                 @testing-library/react-native's matches()), so the pinned
                 testID carries only the label — the count and explanation are
                 a sibling Text, outside that node's text-content subtree. */}
-            <Text testID="warning-bar" style={{ color: "#B45309", fontSize: 12, fontWeight: "700" }}>
+            <Text testID="warning-bar" style={{ color: LEVEL_STYLE.minor.fg, fontSize: 12, fontWeight: "700" }}>
               {firstWarning.label}
             </Text>
-            <Text style={{ color: "#B45309", fontSize: 12, fontWeight: "600" }}>
+            <Text style={{ color: LEVEL_STYLE.minor.fg, fontSize: 12, fontWeight: "600" }}>
               {" "}×{firstWarning.count} — an examiner would likely call this major
             </Text>
           </View>
@@ -153,7 +167,7 @@ export function ExaminerSheet({
       <View className="px-4 pb-4 gap-4">
         {GROUPS.map(({ group, categories }) => (
           <View key={group} className="gap-1">
-            <Text className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <Text className="text-[11px] font-semibold uppercase tracking-wider text-slate-400" style={{ fontFamily: MONO }}>
               {GROUP_LABEL[group]}
             </Text>
             <View>
