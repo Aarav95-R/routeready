@@ -2,9 +2,9 @@ import { LatLng, mpsToMph, nearestVertex } from "../geo";
 import type { ObservationZone, SpeedProfileSegment } from "@/types/db";
 
 export type GpsSample = { lat: number; lng: number; speedMps: number; t: number };
-export type Fault = { kind: "speeding" | "observation"; severity: "minor" | "serious"; detail: string; tag: string };
+export type Fault = { kind: "speeding" | "observation"; severity: "minor" | "major"; detail: string; tag: string };
 export type MockResult = {
-  passed: boolean; score: number; minors: number; serious: number;
+  passed: boolean; score: number; minors: number; majors: number;
   faults: Fault[]; tags: string[]; durationSeconds: number;
 };
 export const SUSTAINED_MS = 5000;
@@ -21,7 +21,7 @@ export function detectSpeedingFaults(samples: GpsSample[], coords: LatLng[], pro
   let runLimit = 30;
   const close = (endT: number) => {
     if (runStart === null) return;
-    const severity = endT - runStart >= SUSTAINED_MS ? "serious" : "minor";
+    const severity = endT - runStart >= SUSTAINED_MS ? "major" : "minor";
     faults.push({
       kind: "speeding", severity, tag: "Speeding",
       detail: `Over the ${runLimit} mph limit for ${Math.round((endT - runStart) / 1000)} s`,
@@ -55,11 +55,11 @@ export function detectObservationFaults(zoneEvents: { zone: ObservationZone; tap
 
 export function aggregate(faults: Fault[], durationSeconds: number): MockResult {
   const minors = faults.filter((f) => f.severity === "minor").length;
-  const serious = faults.filter((f) => f.severity === "serious").length;
+  const majors = faults.filter((f) => f.severity === "major").length;
   return {
-    passed: serious === 0 && minors <= 15,
-    score: Math.max(0, 100 - 5 * minors - 40 * serious),
-    minors, serious, faults,
+    passed: majors === 0 && minors <= 15,
+    score: Math.max(0, 100 - 5 * minors - 40 * majors),
+    minors, majors, faults,
     tags: [...new Set(faults.map((f) => f.tag))],
     durationSeconds,
   };

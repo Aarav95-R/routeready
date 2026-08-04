@@ -46,7 +46,7 @@ export default function Result() {
             {result.passed ? "You'd have passed" : "Not this time"}
           </Text>
           <Text className="text-[12px] text-slate-400">
-            {result.minors} minor{result.minors === 1 ? "" : "s"} · {result.serious} serious · {mins} min {secs} s · score {result.score}
+            {result.minors} minor{result.minors === 1 ? "" : "s"} · {result.majors} major{result.majors === 1 ? "" : "s"} · {mins} min {secs} s · score {result.score}
           </Text>
         </Animated.View>
         {result.faults.map((f, i) => (
@@ -56,7 +56,7 @@ export default function Result() {
                 <Text className="text-[14px] font-semibold text-primary">{f.tag}</Text>
                 <Text className="text-[11px] text-slate-500">{f.detail}</Text>
               </View>
-              <Text className={`text-[10px] font-bold uppercase ${f.severity === "serious" ? "text-danger" : "text-warning"}`}>
+              <Text className={`text-[10px] font-bold uppercase ${f.severity === "major" ? "text-danger" : "text-warning"}`}>
                 {f.severity}
               </Text>
             </Card>
