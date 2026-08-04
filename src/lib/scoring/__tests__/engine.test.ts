@@ -46,3 +46,31 @@ test("aggregate applies DVSA rule: 16 minors fail, any major fails", () => {
   expect(r).toMatchObject({ minors: 2, majors: 1, score: 50, durationSeconds: 1234 });
   expect(r.tags).toEqual(["Speeding"]);
 });
+
+const mkMinor = { kind: "speeding" as const, severity: "minor" as const, detail: "", tag: "Speeding" };
+const mkMajor = { ...mkMinor, severity: "major" as const };
+
+test("credits lift a passing score but are capped at ten", () => {
+  expect(aggregate([], 60, 0).score).toBe(100);
+  expect(aggregate([mkMinor, mkMinor], 60, 4).score).toBe(94); // 100 - 10 + 4
+  expect(aggregate([mkMinor, mkMinor], 60, 40).score).toBe(100); // 100 - 10 + 10, clamped by the 100 ceiling
+  expect(aggregate([mkMinor, mkMinor, mkMinor, mkMinor], 60, 40).score).toBe(90); // 100 - 20 + 10
+});
+
+test("credits never change the verdict", () => {
+  expect(aggregate([mkMajor], 60, 10).passed).toBe(false);
+  const sixteen = Array.from({ length: 16 }, () => mkMinor);
+  expect(aggregate(sixteen, 60, 10).passed).toBe(false);
+});
+
+test("a failed test can never show a pass-looking score", () => {
+  // One major, no other faults, ten credits: 100 - 40 + 10 = 70 before the cap.
+  expect(aggregate([mkMajor], 60, 10).score).toBe(55);
+  const sixteen = Array.from({ length: 16 }, () => mkMinor);
+  expect(aggregate(sixteen, 60, 10).score).toBeLessThanOrEqual(55);
+});
+
+test("credits default to zero so existing callers are unaffected", () => {
+  expect(aggregate([mkMinor], 60).score).toBe(95);
+  expect(aggregate([mkMinor], 60).credits).toBe(0);
+});

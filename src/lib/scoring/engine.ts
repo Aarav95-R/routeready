@@ -4,7 +4,7 @@ import type { ObservationZone, SpeedProfileSegment } from "@/types/db";
 export type GpsSample = { lat: number; lng: number; speedMps: number; t: number };
 export type Fault = { kind: "speeding" | "observation"; severity: "minor" | "major"; detail: string; tag: string };
 export type MockResult = {
-  passed: boolean; score: number; minors: number; majors: number;
+  passed: boolean; score: number; minors: number; majors: number; credits: number;
   faults: Fault[]; tags: string[]; durationSeconds: number;
 };
 export const SUSTAINED_MS = 5000;
@@ -53,13 +53,27 @@ export function detectObservationFaults(zoneEvents: { zone: ObservationZone; tap
     }));
 }
 
-export function aggregate(faults: Fault[], durationSeconds: number): MockResult {
+// Credits are this app's own idea — DVSA records faults only. They are worth a
+// few points of encouragement on the practice score and nothing at all on the
+// verdict, because telling someone they passed when they would not have is the
+// one failure this app cannot afford.
+export const MAX_CREDIT_POINTS = 10;
+const FAILED_SCORE_CEILING = 55;
+
+export function aggregate(faults: Fault[], durationSeconds: number, credits = 0): MockResult {
   const minors = faults.filter((f) => f.severity === "minor").length;
   const majors = faults.filter((f) => f.severity === "major").length;
+  const passed = majors === 0 && minors <= 15;
+
+  const raw = 100 - 5 * minors - 40 * majors + Math.min(credits, MAX_CREDIT_POINTS);
+  const bounded = Math.max(0, Math.min(100, raw));
+
   return {
-    passed: majors === 0 && minors <= 15,
-    score: Math.max(0, 100 - 5 * minors - 40 * majors),
-    minors, majors, faults,
+    passed,
+    // A failed test must not read like a comfortable pass, however many
+    // credits were banked.
+    score: passed ? bounded : Math.min(bounded, FAILED_SCORE_CEILING),
+    minors, majors, credits, faults,
     tags: [...new Set(faults.map((f) => f.tag))],
     durationSeconds,
   };
