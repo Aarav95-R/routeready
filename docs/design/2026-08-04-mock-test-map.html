@@ -1,0 +1,330 @@
+<title>Mock test — same map, different job</title>
+<style>
+  :root {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --line-soft: #EFF2EC; --emerald: #047857;
+    --emerald-bright: #059669; --amber: #B45309; --danger: #B91C1C; --code-bg: #F0F2EC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+      --line: #26302A; --line-soft: #1C241E; --emerald: #34D399;
+      --emerald-bright: #6EE7B7; --amber: #FBBF24; --danger: #F87171; --code-bg: #1A211C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+    --line: #26302A; --line-soft: #1C241E; --emerald: #34D399;
+    --emerald-bright: #6EE7B7; --amber: #FBBF24; --danger: #F87171; --code-bg: #1A211C;
+  }
+  :root[data-theme="light"] {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --line-soft: #EFF2EC; --emerald: #047857;
+    --emerald-bright: #059669; --amber: #B45309; --danger: #B91C1C; --code-bg: #F0F2EC;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-direction: column; gap: 36px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0;
+  }
+  h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.08; letter-spacing: -0.025em; font-weight: 680; margin: 10px 0 0; text-wrap: balance; }
+  .lede { margin: 14px 0 0; font-size: 17px; color: var(--muted); max-width: 62ch; }
+  h2 { font-size: 20px; letter-spacing: -0.015em; font-weight: 650; margin: 0; text-wrap: balance; }
+  h3 { font-size: 13.5px; font-weight: 640; margin: 0; }
+  p { margin: 0; max-width: 64ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14px; }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 18px; }
+  .sec-head { display: flex; flex-direction: column; gap: 6px; }
+  code { font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace; font-size: 13px; background: var(--code-bg); padding: 1.5px 5px; border-radius: 4px; }
+
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  th {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); font-weight: 500; background: var(--code-bg);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.k { font-weight: 620; white-space: nowrap; }
+  .no { color: var(--danger); font-weight: 620; }
+  .yes { color: var(--emerald); font-weight: 620; }
+
+  .split { display: grid; grid-template-columns: 1fr auto; gap: 26px; align-items: start; }
+  @media (max-width: 680px) { .split { grid-template-columns: 1fr; } }
+  .phone {
+    width: 208px; border: 1px solid var(--line); border-radius: 16px;
+    overflow: hidden; line-height: 0; flex: none; background: #EFEEE8;
+  }
+  .phone svg { width: 100%; height: auto; display: block; }
+  .cap {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); text-align: center; margin-top: 7px;
+  }
+
+  .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 16px; }
+  .opt { border: 1px solid var(--line); border-radius: 11px; padding: 17px; display: flex; flex-direction: column; gap: 9px; }
+  .opt.rec { border-color: var(--emerald-bright); }
+  .opt .tag {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  }
+  .opt.rec .tag { color: var(--emerald); }
+
+  ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; }
+  li { max-width: 62ch; }
+  li::marker { color: var(--muted); }
+
+  .callout { border-left: 3px solid var(--amber); padding: 2px 0 2px 14px; font-size: 14px; color: var(--muted); }
+  .callout.stop { border-left-color: var(--danger); }
+  .callout b { color: var(--ink); font-weight: 620; }
+
+  .files { display: flex; flex-direction: column; gap: 8px; }
+  .file { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--line-soft); }
+  .file:last-child { border-bottom: none; padding-bottom: 0; }
+  .file .path { font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace; font-size: 12.5px; color: var(--emerald); flex: none; }
+  .file .what { font-size: 13.5px; color: var(--muted); }
+
+  footer { border-top: 1px solid var(--line); padding-top: 22px; display: flex; flex-direction: column; gap: 8px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Design check &middot; 4 August 2026</p>
+    <h1>Same map, different job</h1>
+    <p class="lede">
+      The mock test is further behind than it looks. It is not a version of the practice map with fewer
+      features &mdash; it is still on a different map engine entirely. And it is the one screen where the
+      map feeds a <em>score</em>, which is where the one genuine risk sits.
+    </p>
+  </header>
+
+  <!-- ============ THE GAP ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Starting point</p>
+      <h2>What the mock test has today</h2>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th></th><th>Practice</th><th>Mock test</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="k">Map engine</td><td class="yes">Mapbox</td><td class="no">Apple Maps</td></tr>
+          <tr><td class="k">Base style</td><td class="yes">Waze palette, wide roads</td><td class="no"><code>mutedStandard</code></td></tr>
+          <tr><td class="k">User marker</td><td class="yes">Three-layer puck</td><td class="no">System blue dot</td></tr>
+          <tr><td class="k">Camera</td><td class="yes">Manual, heading-up, pitched</td><td class="no"><code>followsUserLocation</code></td></tr>
+          <tr><td class="k">Rotation</td><td class="yes">Map on travel, icon on compass</td><td class="no">None</td></tr>
+          <tr><td class="k">Snap to road</td><td class="yes">Yes</td><td class="no">No</td></tr>
+          <tr><td class="k">Route line</td><td class="yes">Green ahead, grey behind</td><td class="no">One flat emerald line</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small dim">
+      So this is a port, not a tweak. Every row above is machinery that currently lives inside
+      <code>practice.tsx</code> &mdash; which is already <b>709 lines</b>. Copying it across would leave two
+      1,400-line screens drifting apart, and every future map fix would have to be made twice and would
+      silently be made once.
+    </p>
+  </section>
+
+  <!-- ============ ARCHITECTURE ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Structure</p>
+      <h2>Extract the map, keep the screens</h2>
+      <p class="dim small">
+        The two screens want an identical map and completely different chrome. That is exactly the split.
+      </p>
+    </div>
+
+    <div class="opts">
+      <div class="opt rec">
+        <span class="tag">Goes into the shared map</span>
+        <h3><code>src/ui/NavMap.tsx</code></h3>
+        <p class="small dim">
+          The Mapbox view, the ~60 base-layer overrides, manual camera with follow and recenter, snap to
+          road, the rotation model, the route line with its progress split, the puck, and start/finish
+          markers. One component, one place to fix a map bug.
+        </p>
+      </div>
+      <div class="opt">
+        <span class="tag">Stays in each screen</span>
+        <h3><code>practice.tsx</code> &middot; <code>mock.tsx</code></h3>
+        <p class="small dim">
+          Everything that is not the map. Practice keeps its instruction banner, voice prompts, step
+          advancement and phase machine. Mock keeps its timer, observation zones, mirrors button, scoring
+          samples and finish flow. Neither screen knows how the other works.
+        </p>
+      </div>
+    </div>
+
+    <p class="small dim">
+      This is the extraction the last code review already asked for, and a second consumer is what settles
+      the shape of it &mdash; designing a shared component against one caller is guesswork.
+    </p>
+  </section>
+
+  <!-- ============ THE RISK ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">The one real decision</p>
+      <h2>Does the score see snapped positions, or raw?</h2>
+      <p class="dim small">
+        The mock test is the only screen where the map feeds something that <em>judges</em> the driver.
+        Snapping moves the reported position onto the route line &mdash; which is exactly what makes the puck
+        stop drifting through gardens, and exactly what could put a driver inside an observation zone they
+        never entered.
+      </p>
+    </div>
+
+    <div class="opts">
+      <div class="opt rec">
+        <span class="tag">Option A &middot; recommended</span>
+        <h3>Score on raw, draw on snapped</h3>
+        <p class="small dim">
+          The map shows the tidy snapped position; <code>onSample</code> keeps receiving the untouched GPS
+          fix it gets today. Observation zones and speeding faults are judged on what the phone actually
+          measured, so the display can never invent a fault or hide one.
+        </p>
+        <p class="small dim">
+          It also means this change <b>cannot alter anyone's score</b>, which makes it safe to ship without
+          re-validating the scoring engine.
+        </p>
+      </div>
+      <div class="opt">
+        <span class="tag">Option B</span>
+        <h3>Score on snapped too</h3>
+        <p class="small dim">
+          More stable zone detection: GPS noise can currently flick a driver in and out of a zone boundary.
+          But snapping assumes you are on the route, and a mock test is precisely where someone might not
+          be &mdash; take a wrong turn and the snap keeps reporting you on the line, potentially crediting a
+          zone you drove nowhere near.
+        </p>
+      </div>
+    </div>
+
+    <p class="callout stop">
+      <b>Separately, and worth saying plainly:</b> the practice screen still has not been confirmed working
+      on your phone. Extracting its map into a shared component means that if something turns out to be
+      broken, it will be harder to tell whether it was broken before the extraction or by it. Driving the
+      practice route once first would remove that ambiguity entirely. Your call &mdash; I can also just build
+      it and you check both together.
+    </p>
+  </section>
+
+  <!-- ============ THE SCREEN ============ -->
+  <section>
+    <div class="split">
+      <div class="sec-head">
+        <p class="eyebrow">Result</p>
+        <h2>What the mock test looks like</h2>
+        <p class="dim small">
+          Same map as practice, with the mock test's own chrome on top: the running clock, the observation
+          zone prompt, the mirrors button and finish.
+        </p>
+        <ul class="small" style="margin-top:6px">
+          <li>Camera follows heading-up and pitched, exactly as practice does. There are no turn instructions in a mock test, so the zoom sits at one fixed navigation level instead of tightening into manoeuvres.</li>
+          <li>The route shows progress: grey behind, emerald ahead. Consistent with practice, and it doubles as a read on how far through the test you are.</li>
+          <li><b>Observation zones become visible on the map</b> rather than only announced by a toast. They are the thing being scored; drawing them costs nothing now that the map can.</li>
+          <li>The mirrors button moves down slightly. The puck sits at 62% of screen height and the button is currently centred near there &mdash; on the pitched map they would overlap.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="phone">
+          <svg viewBox="0 0 220 400" role="img" aria-label="Mock test screen: Waze-style map, grey route behind the puck and emerald ahead, an observation zone ring, timer pill, mirrors button and finish button">
+            <rect width="220" height="400" fill="#EFEEE8"/>
+            <g stroke="#C3C8C1" stroke-width="30"><path d="M110 -10 V410"/><path d="M-10 300 H230"/></g>
+            <g stroke="#FFFFFF" stroke-width="24"><path d="M110 -10 V410"/><path d="M-10 300 H230"/></g>
+            <g stroke="#C3C8C1" stroke-width="18"><path d="M-10 150 H230"/></g>
+            <g stroke="#FFFFFF" stroke-width="13"><path d="M-10 150 H230"/></g>
+            <rect x="20" y="180" width="60" height="70" rx="4" fill="#DCE7CE"/>
+
+            <!-- observation zone -->
+            <circle cx="110" cy="150" r="42" fill="#D97706" opacity="0.13"/>
+            <circle cx="110" cy="150" r="42" fill="none" stroke="#D97706" stroke-width="2" stroke-dasharray="5 4" opacity="0.8"/>
+
+            <!-- route: grey behind, emerald ahead -->
+            <path d="M110 410 V262" stroke="#7F8880" stroke-width="14" stroke-linecap="round"/>
+            <path d="M110 410 V262" stroke="#A7AEA5" stroke-width="9" stroke-linecap="round"/>
+            <path d="M110 262 V-10" stroke="#04684C" stroke-width="16" stroke-linecap="round"/>
+            <path d="M110 262 V-10" stroke="#059669" stroke-width="11" stroke-linecap="round"/>
+
+            <!-- puck at 62% -->
+            <g transform="translate(110 248)">
+              <ellipse cy="2" rx="26" ry="21" fill="#0F172A" opacity="0.13"/>
+              <circle r="17" fill="#FFFFFF"/>
+              <path d="M0 -11 L9.5 11 L0 5.5 L-9.5 11 Z" fill="#059669" stroke="#04684C" stroke-width="1.6" stroke-linejoin="round"/>
+            </g>
+
+            <!-- timer pill -->
+            <rect x="14" y="18" width="192" height="34" rx="9" fill="#FFFFFF" opacity="0.96"/>
+            <circle cx="30" cy="35" r="4" fill="#DC2626"/>
+            <text x="42" y="39" font-family="system-ui" font-size="11.5" font-weight="600" fill="#0F172A">Mock test</text>
+            <text x="192" y="39" font-family="ui-monospace, monospace" font-size="12" font-weight="600" fill="#0F172A" text-anchor="end">4:12</text>
+
+            <!-- zone toast -->
+            <rect x="26" y="292" width="168" height="24" rx="12" fill="#FFFFFF" opacity="0.94"/>
+            <text x="110" y="308" font-family="system-ui" font-size="9.5" font-weight="600" fill="#475569" text-anchor="middle">Observation zone — check mirrors</text>
+
+            <!-- mirrors button -->
+            <circle cx="110" cy="345" r="26" fill="#059669"/>
+            <text x="110" y="343" font-family="system-ui" font-size="13" fill="#FFFFFF" text-anchor="middle">◉</text>
+            <text x="110" y="355" font-family="system-ui" font-size="7.5" font-weight="700" fill="#FFFFFF" text-anchor="middle">MIRRORS</text>
+
+            <!-- finish -->
+            <rect x="72" y="378" width="76" height="17" rx="8.5" fill="#0F172A"/>
+            <text x="110" y="390" font-family="system-ui" font-size="8.5" font-weight="600" fill="#FFFFFF" text-anchor="middle">Finish test</text>
+          </svg>
+        </div>
+        <div class="cap">Mock test, after</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCOPE ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Scope</p>
+      <h2>Files</h2>
+    </div>
+    <div class="files">
+      <div class="file"><span class="path">src/ui/NavMap.tsx</span><span class="what">new &mdash; the shared map, lifted out of practice.tsx unchanged</span></div>
+      <div class="file"><span class="path">src/lib/navmap.ts</span><span class="what">new &mdash; the per-fix decision logic as a pure function, so it can be tested without mocking Mapbox</span></div>
+      <div class="file"><span class="path">app/route/[id]/practice.tsx</span><span class="what">drops to roughly 400 lines; keeps banner, voice, steps, phases</span></div>
+      <div class="file"><span class="path">app/route/[id]/mock.tsx</span><span class="what">swaps Apple Maps for NavMap; keeps clock, zones, mirrors, scoring</span></div>
+      <div class="file"><span class="path">src/lib/__tests__/</span><span class="what">tests for the extracted decision logic, written first</span></div>
+    </div>
+
+    <h3 style="margin-top:6px">Not in this piece of work</h3>
+    <ul class="small dim">
+      <li><code>app/route/[id]/index.tsx</code>, the route preview screen, is also still on Apple Maps. Worth doing, but it is a preview rather than a live map and wants different framing &mdash; separate job.</li>
+      <li>No change to the scoring engine, the fault rules, or the result screen.</li>
+      <li>No change to how often the mock test samples GPS, so recorded tests stay comparable with earlier ones.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <p class="eyebrow">Next</p>
+    <p class="small dim">
+      Confirm Option A or B on the scoring, and tell me whether you want to drive the practice route first
+      or have me build straight through. Then I will spec it and go.
+    </p>
+  </footer>
+
+</div>

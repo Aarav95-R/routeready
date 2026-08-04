@@ -1,0 +1,603 @@
+<title>Mock test — examiner panel and new map</title>
+<style>
+  :root {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --line-soft: #EFF2EC; --emerald: #047857;
+    --emerald-bright: #059669; --amber: #B45309; --danger: #B91C1C; --code-bg: #F0F2EC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+      --line: #26302A; --line-soft: #1C241E; --emerald: #34D399;
+      --emerald-bright: #6EE7B7; --amber: #FBBF24; --danger: #F87171; --code-bg: #1A211C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+    --line: #26302A; --line-soft: #1C241E; --emerald: #34D399;
+    --emerald-bright: #6EE7B7; --amber: #FBBF24; --danger: #F87171; --code-bg: #1A211C;
+  }
+  :root[data-theme="light"] {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --line-soft: #EFF2EC; --emerald: #047857;
+    --emerald-bright: #059669; --amber: #B45309; --danger: #B91C1C; --code-bg: #F0F2EC;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-direction: column; gap: 36px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0;
+  }
+  h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.08; letter-spacing: -0.025em; font-weight: 680; margin: 10px 0 0; text-wrap: balance; }
+  .lede { margin: 14px 0 0; font-size: 17px; color: var(--muted); max-width: 62ch; }
+  h2 { font-size: 20px; letter-spacing: -0.015em; font-weight: 650; margin: 0; text-wrap: balance; }
+  h3 { font-size: 13.5px; font-weight: 640; margin: 0; }
+  p { margin: 0; max-width: 64ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14px; }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 18px; }
+  .sec-head { display: flex; flex-direction: column; gap: 6px; }
+  code { font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace; font-size: 13px; background: var(--code-bg); padding: 1.5px 5px; border-radius: 4px; }
+
+  .split { display: grid; grid-template-columns: 1fr auto; gap: 28px; align-items: start; }
+  @media (max-width: 720px) { .split { grid-template-columns: 1fr; } }
+  .phones { display: flex; gap: 14px; flex-wrap: wrap; }
+  .phone { width: 190px; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; line-height: 0; flex: none; background: #EFEEE8; }
+  .phone svg { width: 100%; height: auto; display: block; }
+  .cap {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); text-align: center; margin-top: 7px;
+  }
+
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  th {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); font-weight: 500; background: var(--code-bg);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.k { font-weight: 620; white-space: nowrap; }
+  td.grp { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+
+  .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 16px; }
+  .opt { border: 1px solid var(--line); border-radius: 11px; padding: 17px; display: flex; flex-direction: column; gap: 9px; }
+  .opt.rec { border-color: var(--emerald-bright); }
+  .opt .tag {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+  }
+  .opt.rec .tag { color: var(--emerald); }
+
+  .gestures { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }
+  .g { border: 1px solid var(--line); border-radius: 10px; padding: 15px; display: flex; flex-direction: column; gap: 6px; }
+  .g .lbl {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+  }
+  .g .act { font-size: 15px; font-weight: 640; }
+  .g.neg .act { color: var(--danger); }
+  .g.pos .act { color: var(--emerald); }
+
+  ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 7px; }
+  li { max-width: 62ch; }
+  li::marker { color: var(--muted); }
+
+  .callout { border-left: 3px solid var(--amber); padding: 2px 0 2px 14px; font-size: 14px; color: var(--muted); }
+  .callout.stop { border-left-color: var(--danger); }
+  .callout b { color: var(--ink); font-weight: 620; }
+
+  .files { display: flex; flex-direction: column; gap: 8px; }
+  .file { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--line-soft); }
+  .file:last-child { border-bottom: none; padding-bottom: 0; }
+  .file .path { font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace; font-size: 12.5px; color: var(--emerald); flex: none; }
+  .file .what { font-size: 13.5px; color: var(--muted); }
+
+  .formula {
+    background: var(--code-bg); border-radius: 10px; padding: 18px 20px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 13px; line-height: 1.85; overflow-x: auto;
+  }
+  .formula .c { color: var(--muted); }
+  .formula .hl { color: var(--emerald); font-weight: 600; }
+  .formula .warn { color: var(--danger); font-weight: 600; }
+
+  footer { border-top: 1px solid var(--line); padding-top: 22px; display: flex; flex-direction: column; gap: 8px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Design check &middot; 4 August 2026</p>
+    <h1>An examiner in the passenger seat</h1>
+    <p class="lede">
+      Two changes to the mock test: the map becomes the practice map, and whoever is sitting beside the
+      learner gets a panel of the things a real examiner marks &mdash; tapped down for a fault, up for
+      something done well, feeding the result at the end.
+    </p>
+  </header>
+
+  <!-- ============ THE PANEL ============ -->
+  <section>
+    <div class="split">
+      <div class="sec-head">
+        <p class="eyebrow">The panel</p>
+        <h2>Closed by default, one pull away</h2>
+        <p class="dim small">
+          A sheet over the bottom of the map. Closed it is a single bar showing the running tally, so the
+          map stays readable and nothing is in the way. Pulled up it covers the map completely &mdash; which
+          is fine, because the person holding the phone is not the one driving.
+        </p>
+        <ul class="small" style="margin-top:4px">
+          <li>Rows are big and the labels are short. This gets tapped in a moving car, at a glance, by someone who should mostly be watching the road.</li>
+          <li>Every tap gives a haptic, so it registers without looking. Different pattern for a fault and a credit.</li>
+          <li>The last tap stays on screen with an <b>Undo</b> next to it. Mis-taps in a moving car are certain, and a wrong serious fault would otherwise silently fail the test.</li>
+          <li>The tally reads <code>+4 &middot; 3 minors</code> so the running state is legible without opening anything.</li>
+        </ul>
+      </div>
+
+      <div class="phones">
+        <div>
+          <div class="phone">
+            <svg viewBox="0 0 200 400" role="img" aria-label="Mock test map with the examiner panel collapsed into a bar at the bottom showing the running tally">
+              <rect width="200" height="400" fill="#EFEEE8"/>
+              <g stroke="#C3C8C1" stroke-width="28"><path d="M100 -10 V410"/><path d="M-10 260 H210"/></g>
+              <g stroke="#FFFFFF" stroke-width="22"><path d="M100 -10 V410"/><path d="M-10 260 H210"/></g>
+              <rect x="14" y="150" width="52" height="60" rx="4" fill="#DCE7CE"/>
+              <circle cx="100" cy="140" r="36" fill="#D97706" opacity="0.12"/>
+              <circle cx="100" cy="140" r="36" fill="none" stroke="#D97706" stroke-width="2" stroke-dasharray="5 4" opacity="0.75"/>
+              <path d="M100 410 V236" stroke="#7F8880" stroke-width="13" stroke-linecap="round"/>
+              <path d="M100 410 V236" stroke="#A7AEA5" stroke-width="8" stroke-linecap="round"/>
+              <path d="M100 236 V-10" stroke="#04684C" stroke-width="15" stroke-linecap="round"/>
+              <path d="M100 236 V-10" stroke="#059669" stroke-width="10" stroke-linecap="round"/>
+              <g transform="translate(100 224)">
+                <ellipse cy="2" rx="24" ry="19" fill="#0F172A" opacity="0.13"/>
+                <circle r="15" fill="#FFFFFF"/>
+                <path d="M0 -10 L8.5 10 L0 5 L-8.5 10 Z" fill="#059669" stroke="#04684C" stroke-width="1.5" stroke-linejoin="round"/>
+              </g>
+              <rect x="12" y="16" width="176" height="30" rx="8" fill="#FFFFFF" opacity="0.96"/>
+              <circle cx="27" cy="31" r="3.5" fill="#DC2626"/>
+              <text x="38" y="35" font-family="system-ui" font-size="10.5" font-weight="600" fill="#0F172A">Mock test</text>
+              <text x="176" y="35" font-family="ui-monospace, monospace" font-size="11" font-weight="600" fill="#0F172A" text-anchor="end">4:12</text>
+
+              <!-- collapsed sheet -->
+              <rect x="0" y="330" width="200" height="70" rx="16" fill="#FFFFFF"/>
+              <rect x="86" y="340" width="28" height="3.5" rx="1.75" fill="#CBD5E1"/>
+              <text x="18" y="366" font-family="system-ui" font-size="11.5" font-weight="640" fill="#0F172A">Examiner</text>
+              <g font-family="ui-monospace, monospace" font-size="10.5" font-weight="640" text-anchor="end">
+                <text x="122" y="366" fill="#B45309">3 min</text>
+                <text x="158" y="366" fill="#B91C1C">1 maj</text>
+                <text x="184" y="366" fill="#059669">+4</text>
+              </g>
+              <text x="18" y="384" font-family="system-ui" font-size="9" fill="#94A3B8">Last: Mirrors — minor</text>
+              <rect x="140" y="374" width="44" height="15" rx="7.5" fill="#F1F5F9"/>
+              <text x="162" y="384.5" font-family="system-ui" font-size="8.5" font-weight="620" fill="#475569" text-anchor="middle">Undo</text>
+            </svg>
+          </div>
+          <div class="cap">Collapsed</div>
+        </div>
+
+        <div>
+          <div class="phone">
+            <svg viewBox="0 0 200 400" role="img" aria-label="Examiner panel expanded, showing grouped rows each with a minus and a plus button">
+              <rect width="200" height="400" fill="#EFEEE8"/>
+              <g stroke="#C3C8C1" stroke-width="28"><path d="M100 -10 V120"/></g>
+              <g stroke="#FFFFFF" stroke-width="22"><path d="M100 -10 V120"/></g>
+              <path d="M100 120 V-10" stroke="#04684C" stroke-width="15" stroke-linecap="round"/>
+              <path d="M100 120 V-10" stroke="#059669" stroke-width="10" stroke-linecap="round"/>
+              <rect x="12" y="16" width="176" height="30" rx="8" fill="#FFFFFF" opacity="0.96"/>
+              <circle cx="27" cy="31" r="3.5" fill="#DC2626"/>
+              <text x="38" y="35" font-family="system-ui" font-size="10.5" font-weight="600" fill="#0F172A">Mock test</text>
+              <text x="176" y="35" font-family="ui-monospace, monospace" font-size="11" font-weight="600" fill="#0F172A" text-anchor="end">4:12</text>
+
+              <!-- expanded sheet -->
+              <rect x="0" y="100" width="200" height="300" rx="16" fill="#FFFFFF"/>
+              <rect x="86" y="110" width="28" height="3.5" rx="1.75" fill="#CBD5E1"/>
+
+              <text x="14" y="134" font-family="ui-monospace, monospace" font-size="7.5" letter-spacing="1.1" fill="#94A3B8">WHILE DRIVING</text>
+              <g font-family="system-ui" font-size="10" fill="#0F172A">
+                <text x="14" y="152">Control</text>
+                <text x="14" y="176">Move off</text>
+                <text x="14" y="200">Use of mirrors</text>
+              </g>
+              <g font-family="ui-monospace, monospace" font-size="6.5" font-weight="700">
+                <rect x="104" y="142" width="26" height="18" rx="6" fill="#FEF3C7"/><text x="117" y="154" fill="#B45309" text-anchor="middle">MIN</text>
+                <rect x="133" y="142" width="26" height="18" rx="6" fill="#FEE2E2"/><text x="146" y="154" fill="#B91C1C" text-anchor="middle">MAJ</text>
+                <rect x="162" y="142" width="24" height="18" rx="6" fill="#ECFDF5"/><text x="174" y="155" font-size="11" fill="#059669" text-anchor="middle">+</text>
+                <rect x="104" y="166" width="26" height="18" rx="6" fill="#FEF3C7"/><text x="117" y="178" fill="#B45309" text-anchor="middle">MIN</text>
+                <rect x="133" y="166" width="26" height="18" rx="6" fill="#FEE2E2"/><text x="146" y="178" fill="#B91C1C" text-anchor="middle">MAJ</text>
+                <rect x="162" y="166" width="24" height="18" rx="6" fill="#ECFDF5"/><text x="174" y="179" font-size="11" fill="#059669" text-anchor="middle">+</text>
+                <rect x="104" y="190" width="26" height="18" rx="6" fill="#FEF3C7"/><text x="117" y="202" fill="#B45309" text-anchor="middle">MIN</text>
+                <rect x="133" y="190" width="26" height="18" rx="6" fill="#FEE2E2"/><text x="146" y="202" fill="#B91C1C" text-anchor="middle">MAJ</text>
+                <rect x="162" y="190" width="24" height="18" rx="6" fill="#ECFDF5"/><text x="174" y="203" font-size="11" fill="#059669" text-anchor="middle">+</text>
+              </g>
+              <line x1="14" y1="214" x2="186" y2="214" stroke="#EFF2EC" stroke-width="1"/>
+
+              <text x="14" y="230" font-family="ui-monospace, monospace" font-size="7.5" letter-spacing="1.1" fill="#94A3B8">MANOEUVRES</text>
+              <g font-family="system-ui" font-size="10" fill="#0F172A">
+                <text x="14" y="248">Reverse park</text>
+                <text x="14" y="272">Forward park</text>
+                <text x="14" y="296">Controlled stop</text>
+              </g>
+              <g font-family="ui-monospace, monospace" font-size="6.5" font-weight="700">
+                <rect x="104" y="238" width="26" height="18" rx="6" fill="#FEF3C7"/><text x="117" y="250" fill="#B45309" text-anchor="middle">MIN</text>
+                <rect x="133" y="238" width="26" height="18" rx="6" fill="#FEE2E2"/><text x="146" y="250" fill="#B91C1C" text-anchor="middle">MAJ</text>
+                <rect x="162" y="238" width="24" height="18" rx="6" fill="#ECFDF5"/><text x="174" y="251" font-size="11" fill="#059669" text-anchor="middle">+</text>
+                <rect x="104" y="262" width="26" height="18" rx="6" fill="#FEF3C7"/><text x="117" y="274" fill="#B45309" text-anchor="middle">MIN</text>
+                <rect x="133" y="262" width="26" height="18" rx="6" fill="#FEE2E2"/><text x="146" y="274" fill="#B91C1C" text-anchor="middle">MAJ</text>
+                <rect x="162" y="262" width="24" height="18" rx="6" fill="#ECFDF5"/><text x="174" y="275" font-size="11" fill="#059669" text-anchor="middle">+</text>
+                <rect x="104" y="286" width="26" height="18" rx="6" fill="#FEF3C7"/><text x="117" y="298" fill="#B45309" text-anchor="middle">MIN</text>
+                <rect x="133" y="286" width="26" height="18" rx="6" fill="#FEE2E2"/><text x="146" y="298" fill="#B91C1C" text-anchor="middle">MAJ</text>
+                <rect x="162" y="286" width="24" height="18" rx="6" fill="#ECFDF5"/><text x="174" y="299" font-size="11" fill="#059669" text-anchor="middle">+</text>
+              </g>
+              <line x1="14" y1="310" x2="186" y2="310" stroke="#EFF2EC" stroke-width="1"/>
+              <text x="14" y="326" font-family="ui-monospace, monospace" font-size="7.5" letter-spacing="1.1" fill="#94A3B8">BEFORE SETTING OFF</text>
+              <g font-family="system-ui" font-size="10" fill="#94A3B8">
+                <text x="14" y="344">Eyesight check</text>
+              </g>
+              <text x="100" y="378" font-family="system-ui" font-size="8.5" fill="#CBD5E1" text-anchor="middle">scroll for more</text>
+            </svg>
+          </div>
+          <div class="cap">Expanded</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="gestures">
+      <div class="g neg" style="border-color:#F59E0B">
+        <span class="lbl" style="color:#B45309">Tap MIN</span>
+        <span class="act" style="color:#B45309">Minor</span>
+        <span class="small dim">Amber. Fifteen of these and the test is failed.</span>
+      </div>
+      <div class="g neg">
+        <span class="lbl">Tap MAJ</span>
+        <span class="act">Major</span>
+        <span class="small dim">Red, heavier haptic. <b>One of these fails the test outright.</b></span>
+      </div>
+      <div class="g pos">
+        <span class="lbl">Tap plus</span>
+        <span class="act">Done well</span>
+        <span class="small dim">A credit. Never cancels a fault &mdash; see below.</span>
+      </div>
+      <div class="g">
+        <span class="lbl">Undo</span>
+        <span class="act">Removes the last mark</span>
+        <span class="small dim">Always on the collapsed bar, whatever the last mark was.</span>
+      </div>
+    </div>
+
+    <p class="callout">
+      <b>Three buttons rather than a long-press.</b> An earlier draft had you hold the minus button to
+      escalate a minor into a major. That is one slip away from failing someone&rsquo;s test by accident, on
+      a gesture nothing on screen advertises. Two labelled buttons cost a few millimetres and remove the
+      whole class of mistake &mdash; and at a real row height both are comfortable thumb targets.
+    </p>
+  </section>
+
+  <!-- ============ CORRECTION ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Correction</p>
+      <h2>No category is a minor or a major</h2>
+    </div>
+
+    <p class="callout stop">
+      <b>I checked DVSA's examiner guidance and the premise was wrong &mdash; mine as much as anything.</b>
+      There is no list of minor faults and major faults. <em>Every</em> category on the test report can be
+      marked as a driving fault, a serious fault or a dangerous fault. What decides it is the incident, not
+      the heading it sits under.
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Level</th><th>DVSA's definition, verbatim</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="k" style="color:#B45309">Driving fault</td>
+            <td class="small dim">&ldquo;One which in itself is not potentially dangerous.&rdquo;</td>
+          </tr>
+          <tr>
+            <td class="k" style="color:#B91C1C">Serious</td>
+            <td class="small dim">&ldquo;Potentially dangerous or entails a breach of the law.&rdquo;</td>
+          </tr>
+          <tr>
+            <td class="k" style="color:#B91C1C">Dangerous</td>
+            <td class="small dim">&ldquo;Involving actual danger to the examiner, candidate, the general public, or property.&rdquo;</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small dim">
+      Steering is the clearest example. Drifting a little wide is a driving fault; mounting the kerb is
+      serious; mounting the kerb where someone is standing is dangerous. Same row on the sheet, three
+      different marks. So the panel keeps <b>MIN</b> and <b>MAJ</b> on every row, which turns out to be
+      exactly how the real sheet works &mdash; and the useful thing the app can add is telling you
+      <em>where the line falls</em> for each one.
+    </p>
+
+    <p class="small dim">
+      Sources:
+      <a href="https://www.gov.uk/guidance/understanding-your-driving-test-result/car-driving-test">Understanding your driving test result</a>,
+      <a href="https://www.gov.uk/guidance/guidance-for-driving-examiners-carrying-out-driving-tests-dt1/annex-6-guide-to-assessment-and-marking">DT1 Annex 6, guide to assessment and marking</a>,
+      and the <a href="https://assets.publishing.service.gov.uk/media/62a7437cd3bf7f03667c667a/dl25-driving-test-report.pdf">DL25 test report</a> itself.
+    </p>
+  </section>
+
+  <!-- ============ THE ITEMS ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">The items</p>
+      <h2>DVSA's own categories</h2>
+      <p class="dim small">
+        Swapped from my invented fifteen to the real names off the test report. A learner gets these exact
+        words emailed to them after a real test, so a mock test that uses different ones makes the two
+        impossible to compare. Split by when they can be marked.
+      </p>
+    </div>
+
+    <h3>While driving &mdash; markable at any moment</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Category</th><th>Driving fault</th><th>Serious or dangerous</th></tr></thead>
+        <tbody>
+          <tr><td class="k">Control</td><td class="small dim">Stalling, jerky gear change, coasting</td><td class="small dim">Stall that blocks a junction; losing control</td></tr>
+          <tr><td class="k">Move off</td><td class="small dim">Slightly late blind-spot check</td><td class="small dim">Pulling out into traffic; no observation at all</td></tr>
+          <tr><td class="k">Use of mirrors</td><td class="small dim">Missed check where nothing was coming</td><td class="small dim">Changing direction or braking hard into someone unseen</td></tr>
+          <tr><td class="k">Signals</td><td class="small dim">Late, or left flashing after the turn</td><td class="small dim">A signal that misleads another road user into moving</td></tr>
+          <tr><td class="k">Junctions</td><td class="small dim">Approaching a touch fast; slightly wide</td><td class="small dim">Emerging into a gap that forces someone to brake</td></tr>
+          <tr><td class="k">Judgement</td><td class="small dim">Hesitant on an overtake</td><td class="small dim">Overtaking into oncoming traffic; cutting in</td></tr>
+          <tr><td class="k">Positioning</td><td class="small dim">Drifting within the lane</td><td class="small dim">Wrong side of the road; wrong roundabout lane into conflict</td></tr>
+          <tr><td class="k">Clearance to obstructions</td><td class="small dim">Passing a parked car a bit close</td><td class="small dim">Close enough that a door or pedestrian would be hit</td></tr>
+          <tr><td class="k">Following distance</td><td class="small dim">Briefly closer than two seconds</td><td class="small dim">Tailgating; no room to stop</td></tr>
+          <tr><td class="k">Use of speed</td><td class="small dim">A few mph over, briefly</td><td class="small dim">Well over the limit &mdash; a breach of the law is serious by definition</td></tr>
+          <tr><td class="k">Progress</td><td class="small dim">Over-cautious; a bit slow for the road</td><td class="small dim">Stopping dead where it endangers others; refusing every gap</td></tr>
+          <tr><td class="k">Response to signs and signals</td><td class="small dim">Late reaction to a sign</td><td class="small dim">Through a red light; ignoring a give way</td></tr>
+          <tr><td class="k">Pedestrian crossings</td><td class="small dim">Approaching too fast at a clear crossing</td><td class="small dim">Failing to give way to someone on the crossing</td></tr>
+          <tr><td class="k">Position / normal stops</td><td class="small dim">Stopping slightly awkwardly</td><td class="small dim">Stopping somewhere that blocks or endangers</td></tr>
+          <tr><td class="k">Awareness and planning</td><td class="small dim">Late to spot a developing hazard</td><td class="small dim">Missing a cyclist or pedestrian entirely</td></tr>
+          <tr><td class="k">Ancillary controls</td><td class="small dim">Fumbling for the wipers</td><td class="small dim">Losing control of the car while reaching for something</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:6px">Manoeuvres &mdash; only when one is asked for</h3>
+    <p class="small dim">
+      Hidden until tapped open, since most of a drive has none. Reverse park, forward park, pull up on the
+      right, and controlled stop. Marked the same way: poor accuracy or observation is a driving fault;
+      losing control, or reversing into the road without looking, is serious.
+    </p>
+
+    <h3 style="margin-top:6px">Before setting off</h3>
+    <p class="small dim">
+      Eyesight check, precautions, and the show-me tell-me vehicle checks. Done while stationary, so they
+      get their own group and can be marked before the clock matters. A failed eyesight check ends a real
+      test on the spot, which the app should say rather than quietly scoring it.
+    </p>
+
+    <p class="small dim">
+      Left out on purpose: uncoupling and recoupling, which is lorry and trailer tests only, and
+      fuel-efficient driving, which DVSA records but explicitly does not count towards the result.
+    </p>
+  </section>
+
+  <!-- ============ HABITUAL ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">The rule worth automating</p>
+      <h2>Repeating a minor turns it into a major</h2>
+    </div>
+
+    <p class="small dim">
+      Straight from the examiner guidance: a candidate &ldquo;who habitually commits a driving fault in one
+      aspect of driving throughout the test cannot be regarded as competent to pass the test. The repeated
+      fault can then be assessed as potentially dangerous.&rdquo;
+    </p>
+
+    <p class="small dim">
+      This is the single most misunderstood thing about the test &mdash; people count to fifteen and assume
+      they are safe. The app already knows how many minors each category has, so it can say so: at the third
+      minor on the same row, the row turns amber and the collapsed bar warns
+      <em>&ldquo;Mirrors &times;3 &mdash; an examiner would likely call this serious&rdquo;</em>.
+    </p>
+
+    <p class="callout">
+      <b>It warns, it does not decide.</b> DVSA gives no number &mdash; &ldquo;habitually&rdquo; is the
+      examiner's judgement, and inventing a threshold that silently fails someone would be worse than saying
+      nothing. So the count and the warning are shown, and it stays the person in the passenger seat's call
+      whether to press MAJ.
+    </p>
+  </section>
+  <!-- ============ TERMINOLOGY ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Terminology</p>
+      <h2>What minor and major mean here</h2>
+      <p class="dim small">
+        The app currently says &ldquo;minor&rdquo; and &ldquo;serious&rdquo;. Everyone learning to drive says
+        minors and majors, so that is what the panel and the result screen will say. Worth being exact about
+        what each one maps to, because the pass rule hangs off it.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>In the app</th><th>DVSA calls it</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="k" style="color:#B45309">Minor</td>
+            <td class="small dim">Driving fault</td>
+            <td class="small dim">Allowed. <b>Sixteen or more fails</b> &mdash; so fifteen is the most you can carry.</td>
+          </tr>
+          <tr>
+            <td class="k" style="color:#B91C1C">Major</td>
+            <td class="small dim">Serious <em>or</em> dangerous fault</td>
+            <td class="small dim"><b>One fails the test</b>, immediately, whatever else happened.</td>
+          </tr>
+          <tr>
+            <td class="k" style="color:#047857">Credit</td>
+            <td class="small dim">Nothing &mdash; the real sheet has no equivalent</td>
+            <td class="small dim">This app&rsquo;s own idea. Affects the practice score only, never the verdict.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small dim">
+      DVSA separates serious from dangerous &mdash; serious is potentially dangerous, dangerous means actual
+      danger was caused. Both fail the test on the spot, and asking someone to make that call at 30 mph
+      buys nothing, so the panel collapses them into one <b>major</b>. If a post-test review screen ever
+      wants the distinction, it can be drawn there instead.
+    </p>
+
+    <p class="callout">
+      <b>This renames things in code too.</b> <code>Fault.severity</code> becomes
+      <code>"minor" | "major"</code> and <code>MockResult.serious</code> becomes
+      <code>majors</code>, so the result screen and the automatic speeding and observation faults all speak
+      the same language as the panel. No behaviour changes &mdash; a sustained speeding fault is still the
+      more severe kind, it is just called a major now.
+    </p>
+  </section>
+
+  <!-- ============ SCORING ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Scoring</p>
+      <h2>Credits must not be able to buy a pass</h2>
+    </div>
+
+    <p class="callout stop">
+      <b>The real test has no positive marks.</b> DVSA examiners record faults only: sixteen minors, or one
+      major, and you fail. If a handful of taps on the plus side could turn a fail into a pass, the app
+      would tell someone they were ready for a test they would not pass &mdash; which is the one thing it
+      exists to prevent.
+    </p>
+
+    <div class="formula">
+<span class="c">// Pass or fail: exactly the DVSA rule, untouched by credits</span>
+passed = <span class="hl">majors === 0</span> && <span class="hl">minors &lt;= 15</span>
+
+<span class="c">// The 0-100 practice score is this app's own idea, so credits belong here</span>
+score  = 100 &minus; 5&times;minors &minus; 40&times;majors <span class="hl">+ min(credits, 10)</span>
+<span class="c">// ...but capped so a failed test can never look like a comfortable pass</span>
+score  = passed ? score : <span class="warn">min(score, 55)</span>
+    </div>
+
+    <p class="small dim">
+      So credits are worth up to ten points on the practice score, and nothing at all on the verdict. The
+      result screen gains a <b>What went well</b> section listing them, which is where they actually earn
+      their keep &mdash; a learner reading three faults and nothing else has no idea what to keep doing.
+    </p>
+
+    <div class="opts">
+      <div class="opt rec">
+        <span class="tag">Also recommended</span>
+        <h3>Each mark remembers where it happened</h3>
+        <p class="small dim">
+          A tap already knows the time and the GPS fix. Storing them costs nothing and means the result
+          screen can say <em>&ldquo;Mirrors &mdash; minor, 4:12, near Queensway&rdquo;</em> instead of just
+          &ldquo;Mirrors&rdquo;. It also makes a future map replay of the test possible without another data change.
+        </p>
+      </div>
+      <div class="opt">
+        <span class="tag">Needs a decision later</span>
+        <h3>Credits are not saved between sessions yet</h3>
+        <p class="small dim">
+          Saved progress currently stores a list of fault tags and a score. Credits would need a new column
+          to survive. For now they appear on the result screen and feed the score, but a past test reopened
+          later shows faults only. Worth doing properly, separately.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MAP ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">The map, still open</p>
+      <h2>One question from last time</h2>
+      <p class="dim small">
+        The map port is unchanged from the previous design: Mapbox instead of Apple Maps, Waze palette and
+        wide roads, the three-layer puck, manual heading-up camera, the two-source rotation model, and the
+        route line going grey behind you. The shared <code>NavMap</code> component still gets extracted so
+        practice and mock cannot drift apart.
+      </p>
+    </div>
+
+    <div class="opts">
+      <div class="opt rec">
+        <span class="tag">Option A &middot; recommended</span>
+        <h3>Score on raw GPS, draw on snapped</h3>
+        <p class="small dim">
+          The map shows the tidy snapped position; the scoring engine keeps receiving the untouched fix.
+          Observation zones and speeding are judged on what the phone measured, so the display can never
+          invent a fault or hide one &mdash; and this change cannot alter anyone&rsquo;s score.
+        </p>
+      </div>
+      <div class="opt">
+        <span class="tag">Option B</span>
+        <h3>Score on snapped too</h3>
+        <p class="small dim">
+          Steadier zone detection, but snapping assumes you are on the route. Take a wrong turn in a mock
+          test and it would keep reporting you on the line, possibly crediting a zone you drove nowhere near.
+        </p>
+      </div>
+    </div>
+
+    <p class="callout">
+      <b>Still worth doing first:</b> the practice screen has not been confirmed working on your phone.
+      Extracting its map makes it harder to tell a pre-existing bug from one the extraction caused. One
+      drive of the practice route removes that ambiguity &mdash; or say the word and I will build straight
+      through and you can check both at once.
+    </p>
+  </section>
+
+  <!-- ============ SCOPE ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Scope</p>
+      <h2>Files</h2>
+    </div>
+    <div class="files">
+      <div class="file"><span class="path">src/lib/examiner.ts</span><span class="what">new &mdash; DVSA's categories, their groups, mark-to-fault conversion, and the repeated-minor warning. Pure and tested.</span></div>
+      <div class="file"><span class="path">src/lib/scoring/engine.ts</span><span class="what">severity becomes minor/major, <code>serious</code> becomes <code>majors</code>; Fault gains an "examiner" kind; aggregate gains credits and the fail cap</span></div>
+      <div class="file"><span class="path">src/stores/mockTestStore.ts</span><span class="what">marks, undo, and last-mark state alongside the existing samples and zones</span></div>
+      <div class="file"><span class="path">src/ui/ExaminerSheet.tsx</span><span class="what">new &mdash; the collapsed bar and the expanded grouped list</span></div>
+      <div class="file"><span class="path">src/ui/NavMap.tsx</span><span class="what">new &mdash; the shared map, lifted out of practice.tsx</span></div>
+      <div class="file"><span class="path">app/route/[id]/mock.tsx</span><span class="what">NavMap plus the sheet; keeps clock, zones, mirrors, finish</span></div>
+      <div class="file"><span class="path">app/route/[id]/practice.tsx</span><span class="what">drops to roughly 400 lines, using NavMap</span></div>
+      <div class="file"><span class="path">app/route/[id]/result.tsx</span><span class="what">gains "What went well"; faults show time and place</span></div>
+    </div>
+
+    <h3 style="margin-top:6px">Not in this piece of work</h3>
+    <ul class="small dim">
+      <li>Persisting credits to saved progress &mdash; needs a schema change, worth doing on its own.</li>
+      <li>The full thirty-row DL25 sheet. If you want it later, the natural home is a post-test review screen, not something tapped at 30 mph.</li>
+      <li>The route preview screen, which is also still on Apple Maps.</li>
+    </ul>
+  </section>
+
+  <footer>
+    <p class="eyebrow">Next</p>
+    <p class="small dim">
+      Three things to confirm: using DVSA's own category names rather than a shorter invented set, the
+      scoring rule that credits cannot buy a pass, and Option A or B on the map. Then I will spec it and build.
+    </p>
+    <p class="small dim">
+      The rename reaches the whole scoring engine and the result screen, so it is worth saying now if you
+      would rather keep &ldquo;serious&rdquo; anywhere &mdash; on the result screen, for instance, where
+      there is room for the longer word.
+    </p>
+  </footer>
+
+</div>
