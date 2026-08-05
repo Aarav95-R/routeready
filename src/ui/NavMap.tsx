@@ -230,12 +230,31 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
     })),
   }), [observationZones]);
 
+  // Memoised on the only two inputs that can change the geometry. Both callers
+  // re-render at the compass tick (~15 Hz) and rnmapbox pushes a ShapeSource's
+  // whole polyline across the bridge whenever `shape` changes identity — a few
+  // thousand coordinates on a real route, fifteen times a second, for the
+  // length of a test. trailIdx only advances on a GPS fix, so this drops the
+  // uploads to the fix rate.
+  //
   // Nothing is driven until the trail index has actually advanced. The old
   // Math.max(trailIdx, 1) floor always produced a two-vertex stub, which was
   // invisible while both halves were the same emerald and would now show as a
   // grey tick sitting at the start line before the driver has moved.
-  const traveled = trailIdx > 0 ? routeLL.slice(0, trailIdx + 1) : [];
-  const ahead = routeLL.slice(trailIdx);
+  const traveledFeature = useMemo(() => {
+    const traveled = trailIdx > 0 ? routeLL.slice(0, trailIdx + 1) : [];
+    return traveled.length > 1 ? lineFeature(traveled) : null;
+  }, [routeLL, trailIdx]);
+
+  const aheadFeature = useMemo(() => {
+    const ahead = routeLL.slice(trailIdx);
+    return ahead.length > 1 ? lineFeature(ahead) : null;
+  }, [routeLL, trailIdx]);
+
+  const previewFeature = useMemo(
+    () => (routeLL.length > 1 ? lineFeature(routeLL) : null),
+    [routeLL]
+  );
 
   return (
     <MapView
@@ -293,28 +312,33 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
               circleStrokeColor: ZONE_COLOUR,
               circleStrokeWidth: ZONE_EDGE_PX,
               circleStrokeOpacity: ZONE_EDGE_OPACITY,
+              // The camera is pitched (NAV_PITCH), and the default "viewport"
+              // alignment would draw these as screen-facing billboards
+              // standing up out of the road. A zone is a patch of tarmac, so
+              // it has to lie flat on it.
+              circlePitchAlignment: "map",
             }}
           />
         </ShapeSource>
       )}
 
       {preview ? (
-        routeLL.length > 1 && (
-          <ShapeSource id="route" shape={lineFeature(routeLL)}>
+        previewFeature && (
+          <ShapeSource id="route" shape={previewFeature}>
             <LineLayer id="routeCasing" style={{ lineColor: mapColors.routeCasing, lineWidth: 15, lineCap: "round", lineJoin: "round" }} />
             <LineLayer id="routeCore" style={{ lineColor: mapColors.routeCore, lineWidth: 10, lineCap: "round", lineJoin: "round" }} />
           </ShapeSource>
         )
       ) : (
         <>
-          {traveled.length > 1 && (
-            <ShapeSource id="trail" shape={lineFeature(traveled)}>
+          {traveledFeature && (
+            <ShapeSource id="trail" shape={traveledFeature}>
               <LineLayer id="trailCasing" style={{ lineColor: mapColors.routeDrivenCasing, lineWidth: 14, lineCap: "round", lineJoin: "round" }} />
               <LineLayer id="trailCore" style={{ lineColor: mapColors.routeDrivenCore, lineWidth: 9, lineCap: "round", lineJoin: "round" }} />
             </ShapeSource>
           )}
-          {ahead.length > 1 && (
-            <ShapeSource id="ahead" shape={lineFeature(ahead)}>
+          {aheadFeature && (
+            <ShapeSource id="ahead" shape={aheadFeature}>
               <LineLayer id="aheadCasing" style={{ lineColor: mapColors.routeCasing, lineWidth: 16, lineCap: "round", lineJoin: "round" }} />
               <LineLayer id="aheadCore" style={{ lineColor: mapColors.routeCore, lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
             </ShapeSource>
