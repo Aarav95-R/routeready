@@ -26,23 +26,59 @@ import { colors } from "@/ui/theme";
 const SHEET_HANDLE_H = 24;
 const SHEET_COLLAPSED_BASE_H = SHEET_HANDLE_H + EXAMINER_BAR_H; // 92
 
-// Everything that floats over the map is stacked off the collapsed sheet's
-// height, so a phone with a home indicator carries the whole column up rather
-// than letting the bands run into each other. Measured from the bottom of the
-// screen, with h = SHEET_COLLAPSED_BASE_H + insets.bottom:
+// The floating logo/attribution is stacked off the collapsed sheet's height
+// alone, so a phone with a home indicator carries it up rather than letting
+// it sit atop the sheet. Measured from the bottom of the screen, with h =
+// SHEET_COLLAPSED_BASE_H + insets.bottom:
 //
-//   sheet             [0,      h]
-//   logo + attribution[h + 8,  h + 30]    Mapbox's terms require both visible
-//   warning pill      [h + 38, h + 82]    28 pt on one line, 44 pt wrapped
-//   controls row      [h + 90, h + 164]   74 pt mirrors circle
-//
-// The logo and the pill used to be given the same literal (100) by
-// coincidence, which put the pill straight over Mapbox's attribution.
+//   sheet              [0,     h]
+//   logo + attribution [h + 8, h + 30]   Mapbox's terms require both visible
 const LOGO_GAP = 8;
 const LOGO_H = 22;
-const PILL_GAP = 8;
-const PILL_MAX_H = 44;
-const CONTROLS_GAP = 8;
+
+// The controls row sits a tuned distance above the *sheet*, not the pill —
+// it nearly touches the vehicle puck and cannot afford to inherit some other
+// element's height, so it is added to insets.bottom directly rather than
+// stacked through logoBottom/pillTop the way the logo is.
+//
+// The puck sits at 62% of screen height (NavMap's PUCK_SCREEN_FRACTION) in an
+// 88 pt box (NavPuck's PUCK_SIZE), so its centre is 0.38 x H from the bottom
+// of the screen. Only the middle of that box is drawn: the puck's visible
+// artwork spans SVG y 19-73 inside it, so the artwork's lower edge sits
+// centre - 44 + 15 = centre - 29. On a 667 pt-tall screen (iPhone SE, the
+// smallest this app targets, insets.bottom 0) that is 0.38 x 667 - 29 = 224.5
+// pt from the bottom. The controls row is 74 pt tall (the mirrors circle),
+// so at bottom: 150 it spans [150, 224] — clearing the artwork by 0.5 pt.
+//
+// insets.bottom is added on top of the 150 (not folded into a single fixed
+// literal) because the collapsed sheet's own height already grows by
+// insets.bottom pt (see sheetCollapsedH below), and a flat 150 stopped
+// clearing the Mapbox logo band by exactly that amount on any phone with a
+// 34 pt home-indicator inset: logo top = 92 + 34 + 30 = 156, three pt inside
+// a static [150, 224] controls row. Every notched/Dynamic-Island iPhone in
+// current use has a 34 pt bottom inset, so this is not a hypothetical case.
+// Growing the puck's own screen fraction with H more than covers the extra
+// headroom this adds — see the check above.
+//
+// Do not make this depend on whether the pill, the toast or anything else is
+// currently on screen: at this margin, one reserved-but-invisible band is
+// enough to push the row's top edge into the puck. That is exactly what
+// happened when this used to be pillBottom + PILL_MAX_H + CONTROLS_GAP.
+const CONTROLS_BOTTOM = 150;
+
+// The habitual-warning pill used to float just above the controls row, but
+// that band sits inside the puck's visible artwork on a short screen (see
+// CONTROLS_BOTTOM above) whether or not the pill itself is rendered — the
+// bottom of the screen has no spare room for it. Moved to the top instead,
+// below the observation-zone toast: the pill is informational, not tied to
+// the road ahead the way the toast and the controls are, so it does not need
+// to live near the bottom stack at all. Measured from the top of the screen:
+//
+//   banner       [insets.top + 6,  insets.top + 40]
+//   zone toast    insets.top + 56                    one line, ~28 pt
+//   warning pill  insets.top + 92                     36 pt clear of the toast
+const ZONE_TOAST_TOP_GAP = 56;
+const PILL_TOP_GAP = 92;
 
 // Hoisted so the compass tick — about fifteen re-renders a second — does not
 // hand the BottomSheet a fresh style object each time.
@@ -182,42 +218,60 @@ export default function Mock() {
     if (phase !== "running") return;
     let cancelled = false;
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (cancelled) return;
-      // This used to return silently. The clock kept ticking, the map kept
-      // drawing and Finish still worked, so a whole route could be driven and
-      // then aggregated from no samples, no zone outcomes and no marks — which
-      // is indistinguishable from a flawless drive and scores 100, passed.
-      if (status !== "granted") { setPermissionDenied(true); return; }
+      // headingSub is declared outside the try so a throw from
+      // watchPositionAsync — after watchHeadingAsync already resolved — can
+      // still find it and remove it. An uncaught throw anywhere in this block
+      // used to escape the IIFE with no .catch: the effect's cleanup only
+      // ever looks at headingSubRef/subRef, and neither is assigned until the
+      // very end, so cleanup found nothing to remove and the magnetometer ran
+      // for the life of the process, plus an unhandled promise rejection.
+      let headingSub: Location.LocationSubscription | null = null;
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (cancelled) return;
+        // This used to return silently. The clock kept ticking, the map kept
+        // drawing and Finish still worked, so a whole route could be driven and
+        // then aggregated from no samples, no zone outcomes and no marks — which
+        // is indistinguishable from a flawless drive and scores 100, passed.
+        if (status !== "granted") { setPermissionDenied(true); return; }
 
-      // The compass drives the icon, and only the icon. It fires as the phone
-      // turns, including standing still, which is the whole point: the map is
-      // pinned to the direction of travel and cannot answer a phone being
-      // turned on the spot.
-      const headingSub = await Location.watchHeadingAsync((h) => {
-        const hd = h.trueHeading != null && h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
-        if (hd == null || hd < 0) return;
-        compassRef.current = compassSeededRef.current
-          ? smoothHeading(compassRef.current, hd, COMPASS_ALPHA)
-          : hd;
-        compassSeededRef.current = true;
+        // The compass drives the icon, and only the icon. It fires as the phone
+        // turns, including standing still, which is the whole point: the map is
+        // pinned to the direction of travel and cannot answer a phone being
+        // turned on the spot.
+        headingSub = await Location.watchHeadingAsync((h) => {
+          const hd = h.trueHeading != null && h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+          if (hd == null || hd < 0) return;
+          compassRef.current = compassSeededRef.current
+            ? smoothHeading(compassRef.current, hd, COMPASS_ALPHA)
+            : hd;
+          compassSeededRef.current = true;
 
-        // The sensor fires far faster than anything needs to be redrawn, and
-        // each of these re-renders the screen.
-        const now = Date.now();
-        if (now - lastIconRef.current < ICON_TICK_MS) return;
-        lastIconRef.current = now;
-        setIconRotation(iconRotationDeg(mapBearingRef.current, compassRef.current));
-      });
-      // distanceInterval stays at 5 m: recorded tests are compared against
-      // earlier ones, and the sample cadence is part of what they score.
-      const sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 },
-        onPosition
-      );
-      if (cancelled) { headingSub.remove(); sub.remove(); return; }
-      headingSubRef.current = headingSub;
-      subRef.current = sub;
+          // The sensor fires far faster than anything needs to be redrawn, and
+          // each of these re-renders the screen.
+          const now = Date.now();
+          if (now - lastIconRef.current < ICON_TICK_MS) return;
+          lastIconRef.current = now;
+          setIconRotation(iconRotationDeg(mapBearingRef.current, compassRef.current));
+        });
+        // distanceInterval stays at 5 m: recorded tests are compared against
+        // earlier ones, and the sample cadence is part of what they score.
+        const sub = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 },
+          onPosition
+        );
+        if (cancelled) { headingSub.remove(); sub.remove(); return; }
+        headingSubRef.current = headingSub;
+        subRef.current = sub;
+      } catch {
+        // A magnetometer or GPS failure on first run is exactly the kind of
+        // thing only a real device surfaces. permissionDenied is reused
+        // rather than inventing a third dead-end screen: either way the test
+        // cannot be scored, and "check Settings" is the same remedy to offer.
+        headingSub?.remove();
+        if (!cancelled) setPermissionDenied(true);
+        return;
+      }
 
       // One seed fix, as practice.tsx takes: with a 5 m distanceInterval there
       // is otherwise no puck at all until the driver has moved five metres.
@@ -335,8 +389,8 @@ export default function Mock() {
   const sheetSnapPoints = useMemo(() => [sheetCollapsedH, "85%"], [sheetCollapsedH]);
 
   const logoBottom = sheetCollapsedH + LOGO_GAP;
-  const pillBottom = logoBottom + LOGO_H + PILL_GAP;
-  const controlsBottom = pillBottom + PILL_MAX_H + CONTROLS_GAP;
+  const pillTop = insets.top + PILL_TOP_GAP;
+  const controlsBottom = CONTROLS_BOTTOM + insets.bottom;
 
   if (permissionDenied) {
     return (
@@ -388,10 +442,21 @@ export default function Mock() {
       {activeZoneIdx !== null && (
         <Text
           className="absolute self-center rounded-full bg-card/90 px-4 py-1.5 text-[11px] font-semibold text-slate-600"
-          style={{ top: insets.top + 56 }}
+          style={{ top: insets.top + ZONE_TOAST_TOP_GAP }}
         >
           Observation zone — check your mirrors
         </Text>
+      )}
+
+      {/* Below the zone toast, not the controls row — see PILL_TOP_GAP above
+          for why the pill lives at the top of the screen now. Bounded left
+          and right so a long label wraps inside the screen instead of running
+          off both edges. Only the most pressing habitual category is shown;
+          the per-category badges inside the sheet cover the rest. */}
+      {warns[0] && (
+        <View pointerEvents="none" className="absolute left-4 right-4 items-center" style={{ top: pillTop }}>
+          <ExaminerWarningPill warning={warns[0]} />
+        </View>
       )}
 
       {/* Three columns, so the mirrors button stays centred under the puck and
@@ -429,17 +494,6 @@ export default function Mock() {
           </Pressable>
         </View>
       </View>
-
-      {/* Floats above the collapsed sheet and the Mapbox logo, over the map —
-          the one-row sheet has no room for it. Bounded left and right so a
-          long label wraps inside the screen instead of running off both edges
-          and over the attribution. Only the most pressing habitual category is
-          shown; the per-category badges inside the sheet cover the rest. */}
-      {warns[0] && (
-        <View pointerEvents="none" className="absolute left-4 right-4 items-center" style={{ bottom: pillBottom }}>
-          <ExaminerWarningPill warning={warns[0]} />
-        </View>
-      )}
 
       <BottomSheet
         ref={sheetRef}
