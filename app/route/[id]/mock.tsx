@@ -12,35 +12,46 @@ import { EXAMINER_CATEGORIES, habitualWarnings, minorCountsByCategory, type Mark
 import { haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
 import { NAV_ZOOM_MID } from "@/lib/navigation";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
-import { ExaminerSheet, ExaminerWarningPill } from "@/ui/ExaminerSheet";
+import { EXAMINER_BAR_H, ExaminerBar, ExaminerCategoryList, ExaminerWarningPill } from "@/ui/ExaminerSheet";
 import { NavMap, NavMapHandle } from "@/ui/NavMap";
 import { colors } from "@/ui/theme";
 
-// The puck sits at 62% of screen height; the controls row lives above the
-// collapsed sheet, high enough to clear it and low enough not to sit under
-// the vehicle.
-const CONTROLS_BOTTOM = 150;
-// The collapsed sheet is one row: "Examiner", the three tallies and Undo, in
-// a px-4 py-3 container (12 pt top/bottom padding) whose row height is driven
-// by Undo's 44 pt minHeight — 24 + 44 = 68 pt of content. Gorhom adds its own
-// handle above that: container padding 10 pt top/bottom plus a 4 pt indicator
-// = 24 pt (node_modules/@gorhom/bottom-sheet/src/components/bottomSheetHandle/styles.ts).
-// 68 + 24 = 92 pt total, comfortably under CONTROLS_BOTTOM (150) so the two
-// never overlap. A fixed pixel count, not a percentage: a percentage of
-// screen height gives a different content height on every phone, which is
-// what clipped the undo button and hid the warning before this fix.
-const SHEET_COLLAPSED_H = 92;
-const SHEET_SNAP_POINTS = [SHEET_COLLAPSED_H, "85%"];
-// Clears the collapsed sheet (92 pt) with room for the ~20 pt logo/attribution
-// mark itself; Mapbox's terms require both to stay visible.
-const MOCK_LOGO_BOTTOM = 100;
-// Floats above the sheet and below the controls row (top edge at
-// CONTROLS_BOTTOM + 74 pt mirrors circle = 224), clear of both.
-const WARNING_PILL_BOTTOM = SHEET_COLLAPSED_H + 8;
+// The collapsed sheet is gorhom's handle — container padding 10 pt top and
+// bottom plus a 4 pt indicator (node_modules/@gorhom/bottom-sheet/src/
+// components/bottomSheetHandle/styles.ts) — over the examiner bar, whose own
+// height comes from ExaminerSheet.tsx so the two can never drift apart. A
+// fixed pixel count, not a percentage: a percentage of screen height gives a
+// different content height on every phone, which is what clipped the undo
+// button and hid the warning before this fix.
+const SHEET_HANDLE_H = 24;
+const SHEET_COLLAPSED_BASE_H = SHEET_HANDLE_H + EXAMINER_BAR_H; // 92
+
+// Everything that floats over the map is stacked off the collapsed sheet's
+// height, so a phone with a home indicator carries the whole column up rather
+// than letting the bands run into each other. Measured from the bottom of the
+// screen, with h = SHEET_COLLAPSED_BASE_H + insets.bottom:
+//
+//   sheet             [0,      h]
+//   logo + attribution[h + 8,  h + 30]    Mapbox's terms require both visible
+//   warning pill      [h + 38, h + 82]    28 pt on one line, 44 pt wrapped
+//   controls row      [h + 90, h + 164]   74 pt mirrors circle
+//
+// The logo and the pill used to be given the same literal (100) by
+// coincidence, which put the pill straight over Mapbox's attribution.
+const LOGO_GAP = 8;
+const LOGO_H = 22;
+const PILL_GAP = 8;
+const PILL_MAX_H = 44;
+const CONTROLS_GAP = 8;
 
 // Hoisted so the compass tick — about fifteen re-renders a second — does not
 // hand the BottomSheet a fresh style object each time.
 const SHEET_HANDLE_INDICATOR_STYLE = { backgroundColor: "#CBD5E1" };
+// The sheet's content container is a column of a known animated height, and
+// gorhom gives its scrollables no flex of their own — so the list has to claim
+// what is left after the pinned bar explicitly, or it sizes to its content and
+// stops scrolling.
+const SHEET_SCROLL_STYLE = { flex: 1 };
 
 // Only the label is needed here, and examiner.ts keeps its own lookup private.
 const CATEGORY_LABEL = new Map(EXAMINER_CATEGORIES.map((c) => [c.id, c.label]));
@@ -50,7 +61,7 @@ export default function Mock() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const {
-    phase, route, startedAt, activeZoneIdx, marks,
+    phase, route, startedAt, activeZoneIdx, marks, samples,
     start, onSample, tapMirrors, addMark, undoMark, finish,
   } = useMockTest();
 
@@ -58,12 +69,16 @@ export default function Mock() {
   const [pos, setPos] = useState<LatLng | null>(null);
   const [trailIdx, setTrailIdx] = useState(0);
   const [following, setFollowing] = useState(true);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [noFix, setNoFix] = useState(false);
   // Degrees to draw the user icon at, measured against the rotated map rather
   // than against north. Held in state, not a ref, because the compass has to
   // be able to redraw it between GPS fixes.
   const [iconRotation, setIconRotation] = useState(0);
 
   const mapRef = useRef<NavMapHandle>(null);
+  const sheetRef = useRef<BottomSheet>(null);
+  const framedRef = useRef(false);
   const subRef = useRef<Location.LocationSubscription | null>(null);
   const headingSubRef = useRef<Location.LocationSubscription | null>(null);
   const routeLLRef = useRef<LatLng[]>([]);
@@ -106,9 +121,15 @@ export default function Mock() {
 
   useEffect(() => { routeLLRef.current = routeLL; }, [routeLL]);
 
-  // The route arrives after the first render, so this is a no-op until there
-  // is something to frame — and pointless once a fix has taken the camera over.
-  useEffect(() => { if (posRef.current === null) mapRef.current?.fitBounds(); }, [routeLL]);
+  // The route arrives after the first render, so this is a no-op until there is
+  // something to frame. Guarded by its own ref rather than "no position yet":
+  // the seed fix below sets a position before the driver has moved, and that
+  // must not cost the route its one framing.
+  useEffect(() => {
+    if (framedRef.current || routeLL.length < 2) return;
+    framedRef.current = true;
+    mapRef.current?.fitBounds();
+  }, [routeLL]);
 
   const onPosition = useCallback((loc: Location.LocationObject) => {
     const c = loc.coords;
@@ -162,7 +183,12 @@ export default function Mock() {
     let cancelled = false;
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted" || cancelled) return;
+      if (cancelled) return;
+      // This used to return silently. The clock kept ticking, the map kept
+      // drawing and Finish still worked, so a whole route could be driven and
+      // then aggregated from no samples, no zone outcomes and no marks — which
+      // is indistinguishable from a flawless drive and scores 100, passed.
+      if (status !== "granted") { setPermissionDenied(true); return; }
 
       // The compass drives the icon, and only the icon. It fires as the phone
       // turns, including standing still, which is the whole point: the map is
@@ -192,6 +218,24 @@ export default function Mock() {
       if (cancelled) { headingSub.remove(); sub.remove(); return; }
       headingSubRef.current = headingSub;
       subRef.current = sub;
+
+      // One seed fix, as practice.tsx takes: with a 5 m distanceInterval there
+      // is otherwise no puck at all until the driver has moved five metres.
+      // Display only — onSample is deliberately not called with it, so scoring
+      // stays on the watch callback and its cadence alone. posRef is set too,
+      // so a "Before setting off" mark still gets a location. Taken after the
+      // watch is running, and applied only if the watch has not beaten it, so
+      // waiting for a lock cannot delay scoring or overwrite a newer fix. The
+      // camera is left alone, exactly as it is on the practice screen.
+      try {
+        const seed = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+        if (cancelled || posRef.current !== null) return;
+        const p = { lat: seed.coords.latitude, lng: seed.coords.longitude };
+        posRef.current = p;
+        setPos(p);
+      } catch {
+        // No fix available yet; the watch will deliver the first one.
+      }
     })();
     return () => {
       cancelled = true;
@@ -203,10 +247,19 @@ export default function Mock() {
   }, [phase, onPosition]);
 
   useEffect(() => {
+    if (activeZoneIdx === null) return;
     // Soft, not Light: a minor mark also fires Light (below), and the two have
     // to be told apart by feel — this one is passive (the zone arrived on its
     // own), that one is a deliberate tap.
-    if (activeZoneIdx !== null) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+    // At the 85% snap the sheet covers the controls row, Mirrors included, and
+    // it does not close on its own: a passenger who pulls it up to mark a fault
+    // and leaves it there scores a missed mirror check on every zone from then
+    // on, while the toast above the sheet keeps asking them to answer. The
+    // sheet is collapsed here rather than on every mark because this is the
+    // only state in which its position can change the score, and closing it
+    // under a marking finger has its own mis-tap cost.
+    sheetRef.current?.collapse();
   }, [activeZoneIdx]);
 
   const minors = useMemo(() => marks.filter((m) => m.level === "minor").length, [marks]);
@@ -234,29 +287,68 @@ export default function Mock() {
     undoMark();
   }, [undoMark]);
 
+  const onFinish = useCallback(() => {
+    // Refuse a verdict with no evidence. A drive taken indoors, or one where
+    // the fix never arrives, reaches finish() with no samples and no zone
+    // outcomes — the exact shape of a flawless drive — and aggregate() would
+    // score it 100 and call it a pass. The guard sits on the one action that
+    // produces a verdict rather than inside the scoring engine: aggregate() is
+    // a pure function of the faults it is handed, and has no business knowing
+    // whether the GPS was working.
+    if (samples.length === 0) { setNoFix(true); return; }
+    finish();
+    router.replace(`/route/${id}/result`);
+  }, [samples.length, finish, router, id]);
+
   // Held apart from the render below: the compass re-renders this screen about
-  // fifteen times a second, and the sheet is ~70 pressables that only change
+  // fifteen times a second, and the list is ~70 pressables that only change
   // when a mark does.
-  const sheetContent = useMemo(() => (
-    <ExaminerSheet
+  const barContent = useMemo(() => (
+    <ExaminerBar
       minors={minors} majors={majors} credits={credits}
-      lastMark={lastMark} minorCounts={minorCounts}
-      onMark={onMark} onUndo={onUndo}
+      lastMark={lastMark} bottomInset={insets.bottom} onUndo={onUndo}
     />
-  ), [minors, majors, credits, lastMark, minorCounts, onMark, onUndo]);
+  ), [minors, majors, credits, lastMark, insets.bottom, onUndo]);
+
+  const listContent = useMemo(
+    () => <ExaminerCategoryList minorCounts={minorCounts} onMark={onMark} />,
+    [minorCounts, onMark]
+  );
 
   const recenter = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     mapRef.current?.recenter();
   };
 
-  // Hoisted out of the BottomSheetScrollView below for the same reason as
-  // SHEET_HANDLE_INDICATOR_STYLE, but this one depends on the safe-area inset
-  // so it cannot be a module-level constant.
-  const sheetContentContainerStyle = useMemo(
-    () => ({ paddingBottom: insets.bottom + 24 }),
+  // The bar carries the safe-area inset itself (it is the whole sheet when
+  // collapsed), so the list only needs breathing room under its last row.
+  const sheetContentContainerStyle = useMemo(() => ({ paddingBottom: 24 }), []);
+
+  // The collapsed height has to include the inset: the sheet is measured from
+  // the bottom of the *screen*, so without it roughly 22 pt of Undo — the only
+  // mis-tap recovery there is — sits inside the home indicator's edge-gesture
+  // strip. Memoised because BottomSheet re-reads snapPoints on identity change.
+  const sheetCollapsedH = useMemo(
+    () => SHEET_COLLAPSED_BASE_H + insets.bottom,
     [insets.bottom]
   );
+  const sheetSnapPoints = useMemo(() => [sheetCollapsedH, "85%"], [sheetCollapsedH]);
+
+  const logoBottom = sheetCollapsedH + LOGO_GAP;
+  const pillBottom = logoBottom + LOGO_H + PILL_GAP;
+  const controlsBottom = pillBottom + PILL_MAX_H + CONTROLS_GAP;
+
+  if (permissionDenied) {
+    return (
+      <View className="flex-1 items-center justify-center gap-3 bg-surface px-8">
+        <Text className="text-center text-[15px] font-semibold text-primary">Location access is needed to mark a mock test.</Text>
+        <Text className="text-center text-[12px] text-slate-500">Enable it in Settings → Privacy → Location Services.</Text>
+        <Pressable onPress={() => router.back()} className="mt-2 min-h-[44px] items-center justify-center rounded-full border-[1.5px] border-slate-200 px-6">
+          <Text className="text-[14px] font-semibold text-primary">Back</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1">
@@ -276,7 +368,7 @@ export default function Mock() {
         // dot and hide it.
         finish={!isLoop ? routeLL[routeLL.length - 1] ?? null : null}
         observationZones={observationZones}
-        logoBottom={MOCK_LOGO_BOTTOM}
+        logoBottom={logoBottom}
       />
 
       <View
@@ -307,11 +399,11 @@ export default function Mock() {
       <View
         pointerEvents="box-none"
         className="absolute left-4 right-4 flex-row items-center"
-        style={{ bottom: CONTROLS_BOTTOM }}
+        style={{ bottom: controlsBottom }}
       >
         <View pointerEvents="box-none" className="flex-1 items-start">
           <Pressable
-            onPress={() => { finish(); router.replace(`/route/${id}/result`); }}
+            onPress={onFinish}
             className="min-h-[44px] flex-row items-center rounded-full bg-primary px-5 py-2.5"
           >
             <Text className="text-[13px] font-semibold text-white">Finish test</Text>
@@ -338,24 +430,58 @@ export default function Mock() {
         </View>
       </View>
 
-      {/* Floats above the collapsed sheet, over the map — the one-row sheet has
-          no room for it. Only the most pressing habitual category is shown;
-          the per-category badges inside the sheet cover the rest. */}
+      {/* Floats above the collapsed sheet and the Mapbox logo, over the map —
+          the one-row sheet has no room for it. Bounded left and right so a
+          long label wraps inside the screen instead of running off both edges
+          and over the attribution. Only the most pressing habitual category is
+          shown; the per-category badges inside the sheet cover the rest. */}
       {warns[0] && (
-        <View className="absolute self-center" style={{ bottom: WARNING_PILL_BOTTOM }}>
+        <View pointerEvents="none" className="absolute left-4 right-4 items-center" style={{ bottom: pillBottom }}>
           <ExaminerWarningPill warning={warns[0]} />
         </View>
       )}
 
       <BottomSheet
+        ref={sheetRef}
         index={0}
-        snapPoints={SHEET_SNAP_POINTS}
+        snapPoints={sheetSnapPoints}
         handleIndicatorStyle={SHEET_HANDLE_INDICATOR_STYLE}
       >
-        <BottomSheetScrollView contentContainerStyle={sheetContentContainerStyle}>
-          {sheetContent}
+        {/* The bar sits outside the scroll view: as the first row inside it,
+            scrolling down to "Before setting off" carried Undo off the top,
+            and spec §3 wants it reachable at all times. A plain View, not
+            BottomSheetView — that one is absolutely positioned and registers
+            itself as the sheet's scrollable, both of which fight the list. */}
+        {barContent}
+        <BottomSheetScrollView style={SHEET_SCROLL_STYLE} contentContainerStyle={sheetContentContainerStyle}>
+          {listContent}
         </BottomSheetScrollView>
       </BottomSheet>
+
+      {/* Nothing was recorded, so there is nothing to mark. Said plainly rather
+          than scored: an empty test aggregates to a flawless one. */}
+      {noFix && (
+        <View className="absolute inset-0 items-center justify-center bg-primary/70 px-8">
+          <View className="w-full items-center gap-2 rounded-3xl bg-card px-6 py-7">
+            <Text className="text-center text-[16px] font-semibold text-primary">No GPS data was recorded</Text>
+            <Text className="text-center text-[12px] leading-5 text-slate-500">
+              Nothing was tracked on this drive, so it cannot be marked. Scoring it now would report a clean pass you have not been assessed for.
+            </Text>
+            <Pressable
+              onPress={() => setNoFix(false)}
+              className="mt-2 min-h-[44px] w-full items-center justify-center rounded-full bg-accent active:bg-accent-pressed"
+            >
+              <Text className="text-[15px] font-semibold text-white">Keep driving</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.back()}
+              className="min-h-[44px] w-full items-center justify-center rounded-full border-[1.5px] border-slate-200"
+            >
+              <Text className="text-[14px] font-semibold text-primary">Leave the test</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
