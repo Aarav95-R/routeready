@@ -168,3 +168,25 @@ So: **`NavMap` displays the snapped position; `onSample` keeps receiving the unt
 - The full DL25 as a post-test review screen.
 - `app/route/[id]/index.tsx`, the route preview, which is also still on Apple Maps.
 - Any change to how often the mock test samples GPS, so recorded tests stay comparable.
+
+## 10. Known follow-ups after implementation
+
+Implemented 2026-08-04/05 across 16 commits (`d962a57`..`e6b5147`). Two things in this spec were not delivered as written, and are worth knowing before reading the code:
+
+- **§3's collapsible groups were lost.** `manoeuvres` and `beforeDriving` were meant to start collapsed; all 23 rows always render. Lost at planning time, so no review had anything to compare against. Costs about seven rows of extra scrolling.
+- **The warning wording says "major", not "serious".** §3 fixed the string as "an examiner would likely call this serious" — deliberately the examiner's word rather than the app's. Changed for app-wide consistency without being flagged.
+
+The final review found and fixed one defect worth recording because it is the failure this app exists to prevent: **denying location permission produced a fabricated PASS with score 100.** The screen returned silently, the clock ran, Finish worked, and `aggregate([], d, 0)` reported a pass. There is now a `permissionDenied` screen and a zero-sample guard.
+
+Deferred, in rough priority order:
+
+1. **No screen has any test coverage.** `mock.tsx`, `practice.tsx` and `NavMap.tsx` are verified by reading alone — and five of the seven issues the final review raised lived in them. The 143 green tests say nothing about screen wiring. Adding `@rnmapbox/maps` test mocks would change that.
+2. **The zero-sample guard only triggers at exactly zero samples.** A single stray indoor fix still yields 100 and a pass.
+3. **`mock.tsx` duplicates `practice.tsx`** — the heading callback verbatim, the `routeLL`/`isLoop` memos, the camera ref bank, the navFix commit block and `recenter`. A `useNavCompass` hook was deliberately deferred; it should happen before the next map change, not after.
+4. **Seed-versus-`fitBounds` race.** If the one-off position seed lands before `onDidFinishLoadingMap`, the route may never be framed until the driver has moved five metres.
+5. **The warning pill can exceed its 44 pt budget** at 320 pt screen width or with large Dynamic Type, reaching ~55 pt. Visual only — `pointerEvents="none"`.
+6. **`resultView.ts` reconstructs `marksToFaults`'s filter** with no enforced link beyond a comment and two integration tests. A cross-reference comment on `marksToFaults` itself would be two lines and zero risk.
+7. **`NavMap`'s `preview` prop overloads three behaviours** — draw one whole line, fit bounds on load, and gestures do not release follow. `mock.tsx` passes it a fourth meaning ("no fix yet").
+8. Smaller: `prevPosRef` is write-only; `HEADING_ALPHA`'s value is unpinned by tests; the `0`/`100` score bounds are unnamed literals; the `st!` assertions in `practice.tsx` rest on two predicates duplicated forty lines apart.
+
+**Nothing here has been seen on a device.** Check in this order: deny location permission and confirm you get the denial screen rather than a pass; the collapsed sheet against the home indicator; the controls row against the puck **on a 667 pt screen** — tall phones hide that one; the warning pill at three repeated minors; and camera smoothness at low speed, where `CAM_ANIM_MS` is tuned for a fix cadence this screen does not deliver.
