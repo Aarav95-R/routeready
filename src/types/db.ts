@@ -1,6 +1,7 @@
 export type SpeedProfileSegment = { startIdx: number; endIdx: number; limitMph: 20 | 30 | 40 | 60 | 70 };
 export type ObservationZone = { lat: number; lng: number; radiusM: number; kind: "roundabout" | "junction" | "pedestrian" };
 export type GeoLineString = { type: "LineString"; coordinates: [number, number][] }; // [lng, lat]
+export type GeoPolygon = { type: "Polygon"; coordinates: [number, number][][] }; // [lng, lat]
 
 // A single turn-by-turn navigation step (precomputed from OSRM at seed time).
 export type NavStep = {

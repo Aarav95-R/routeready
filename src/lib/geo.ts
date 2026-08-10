@@ -1,3 +1,5 @@
+import type { GeoPolygon } from "@/types/db";
+
 export type LatLng = { lat: number; lng: number };
 const R = 6371000;
 const toRad = (d: number) => (d * Math.PI) / 180;
@@ -117,4 +119,26 @@ export function smoothHeading(prev: number, next: number, alpha = 0.15): number 
 // underneath holds still.
 export function iconRotationDeg(mapBearing: number, compass: number): number {
   return turnAngleDeg(mapBearing, compass);
+}
+
+/**
+ * A circle of `radiusM` around `centre`, as a GeoJSON polygon.
+ *
+ * The map draws distance rings from this rather than from a `circle-radius`
+ * paint property, because a pixel radius does not scale with zoom: a ring set
+ * to "8 miles" in pixels is only 8 miles at one zoom level and a lie at every
+ * other. A polygon is in world coordinates, so it stays 8 miles wide however
+ * far the camera pulls back.
+ */
+export function ringPolygon(centre: LatLng, radiusM: number, segments = 64): GeoPolygon {
+  const latRad = toRad(centre.lat);
+  const dLat = toDeg(radiusM / R);
+  const dLng = toDeg(radiusM / (R * Math.cos(latRad)));
+  const points: [number, number][] = [];
+  for (let i = 0; i < segments; i++) {
+    const theta = (i / segments) * 2 * Math.PI;
+    points.push([centre.lng + dLng * Math.cos(theta), centre.lat + dLat * Math.sin(theta)]);
+  }
+  points.push(points[0]);
+  return { type: "Polygon", coordinates: [points] };
 }

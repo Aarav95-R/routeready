@@ -1,4 +1,4 @@
-import { bandSpeedMph, bearingDeg, cumulativeM, haversineM, isInZone, mpsToMph, nearestVertex, turnAngleDeg, projectOnSegment, snapToPath, smoothHeading } from "../geo";
+import { bandSpeedMph, bearingDeg, cumulativeM, haversineM, isInZone, mpsToMph, nearestVertex, ringPolygon, turnAngleDeg, projectOnSegment, snapToPath, smoothHeading } from "../geo";
 
 const london = { lat: 51.5074, lng: -0.1278 };
 const birmingham = { lat: 52.4862, lng: -1.8904 };
@@ -140,4 +140,24 @@ test("iconRotationDeg stays within a half turn either way", () => {
     expect(r).toBeGreaterThanOrEqual(-180);
     expect(r).toBeLessThanOrEqual(180);
   }
+});
+
+test("ringPolygon puts every vertex at the requested radius", () => {
+  const centre = { lat: 51.6087, lng: -0.2412 };
+  const radius = 8 * 1609.34;
+  const ring = ringPolygon(centre, radius);
+  const points = ring.coordinates[0];
+
+  for (const [lng, lat] of points) {
+    const d = haversineM(centre, { lat, lng });
+    expect(Math.abs(d - radius) / radius).toBeLessThan(0.005);
+  }
+});
+
+test("ringPolygon closes and honours its segment count", () => {
+  const ring = ringPolygon({ lat: 51.6, lng: -0.24 }, 5000, 16);
+  const points = ring.coordinates[0];
+  expect(points).toHaveLength(17);            // 16 segments + the repeated first
+  expect(points[16]).toEqual(points[0]);
+  expect(ring.type).toBe("Polygon");
 });
