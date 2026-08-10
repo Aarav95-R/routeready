@@ -99,16 +99,16 @@ Emerald is retired from identity duty. `colors.accent` (#059669) means *you* or 
 
 Twelve hues, ordered so that no two adjacent assignments are neighbours on the wheel:
 
-| # | Name | Hue | Tint | | # | Name | Hue | Tint |
-|---|---|---|---|---|---|---|---|---|
-| 1 | rose | `#E11D48` | `#FFF1F2` | | 7 | sky | `#0369A1` | `#F0F9FF` |
-| 2 | teal | `#0D9488` | `#F0FDFA` | | 8 | orange | `#EA580C` | `#FFF7ED` |
-| 3 | amber | `#A16207` | `#FFFBEB` | | 9 | violet | `#7C3AED` | `#F5F3FF` |
-| 4 | indigo | `#4F46E5` | `#EEF2FF` | | 10 | cyan | `#0E7490` | `#ECFEFF` |
-| 5 | lime | `#4D7C0F` | `#F7FEE7` | | 11 | fuchsia | `#A21CAF` | `#FDF4FF` |
-| 6 | pink | `#DB2777` | `#FDF2F8` | | 12 | slate | `#475569` | `#F1F5F9` |
+| # | Name | Hue | Tint | White | On tint | | # | Name | Hue | Tint | White | On tint |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | rose | `#BE123C` | `#FFF1F2` | 6.29 | 5.72 | | 7 | sky | `#0369A1` | `#F0F9FF` | 5.93 | 5.57 |
+| 2 | teal | `#0F766E` | `#F0FDFA` | 5.47 | 5.25 | | 8 | orange | `#C2410C` | `#FFF7ED` | 5.18 | 4.88 |
+| 3 | amber | `#A16207` | `#FFFBEB` | 4.92 | 4.75 | | 9 | violet | `#7C3AED` | `#F5F3FF` | 5.70 | 5.20 |
+| 4 | indigo | `#4F46E5` | `#EEF2FF` | 6.29 | 5.62 | | 10 | cyan | `#0E7490` | `#ECFEFF` | 5.36 | 5.15 |
+| 5 | lime | `#4D7C0F` | `#F7FEE7` | 4.99 | 4.82 | | 11 | fuchsia | `#A21CAF` | `#FDF4FF` | 6.32 | 5.89 |
+| 6 | pink | `#BE185D` | `#FDF2F8` | 6.04 | 5.53 | | 12 | slate | `#475569` | `#F1F5F9` | 7.58 | 6.92 |
 
-These are starting values, already stepped darker than the artifact's where white text needed it. The test is the authority.
+All twelve clear 4.5:1 on both gates. Rose, teal, orange and pink are a shade darker than the artifact's, which is what the gate is for — the artifact's teal and orange were at 3.7 and 3.6 against white.
 
 **The exact hue values are set by a test, not by taste.** The monogram is white, 9.5pt, bold, sitting on the pin fill, so every hue must clear **4.5:1 against white**. `centreIdentity.test.ts` computes the contrast ratio for all twelve and fails the build on any that does not; the fix is to step that hue one shade darker (Tailwind 600 → 700 → 800). Amber, lime, cyan and sky are the ones expected to move.
 
@@ -161,9 +161,9 @@ Search matches `name` and `region`, filters both list and pins, and matches acro
 |---|---|
 | Loading | Map mounts immediately with no pins; sheet shows five 88pt skeleton rows. |
 | No location permission | No rings, no driver dot, no near set. Map fits all centres. Rows show region instead of distance. Sort defaults to Pass rate, Nearest disabled. A pill on the map: `Turn on location for distances`, tapping it re-requests. |
-| Permission granted, no fix yet | Map, pins and rows all render. Distances read `—` and fill in when the first fix lands. Nothing blocks. |
+| Permission granted, no fix yet | Identical to having no permission until the fix lands, at which point distances and the near set appear. A row without a distance shows its region, which is information; `—` is not. |
 | Offline or stale cache | Rows render from `cachedFetch`; the existing `OfflineBanner` sits between the map and the sheet. Map tiles will not load, so the background colour shows through with pins and rings still correctly placed — the spatial layout survives without a network. The layout does **not** swap to a list-only mode; a connection dropping in and out would thrash it. |
-| Load failed, no cache | Map with no pins, and in the sheet a single centred line — `Couldn't load centres. Pull down to retry.` — replacing the rows. |
+| Load failed, no cache | Map with no pins, and in the sheet a centred line — `Couldn't load centres.` — over a `Try again` button. The old copy said "pull down to retry"; a sheet whose list has been replaced by an error has nothing to pull. |
 | Search matches nothing | `No centres match "brixton".` in the sheet, with the map keeping its last fit. |
 
 ## Files
