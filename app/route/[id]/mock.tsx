@@ -3,18 +3,32 @@ import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Location from "expo-location";
+import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
+import { fetchDirections, Directions } from "@/services/directions";
 import { useMockTest } from "@/stores/mockTestStore";
 import { EXAMINER_CATEGORIES, habitualWarnings, minorCountsByCategory, type MarkLevel } from "@/lib/examiner";
-import { haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
-import { NAV_ZOOM_MID } from "@/lib/navigation";
+import { bearingDeg, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
+import { advance, ANNOUNCE_M, ARRIVE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM } from "@/lib/navigation";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
+import type { ObservationZone, Route } from "@/types/db";
 import { EXAMINER_BAR_H, ExaminerBar, ExaminerCategoryList, ExaminerWarningPill } from "@/ui/ExaminerSheet";
+import { ManeuverBanner } from "@/ui/ManeuverBanner";
 import { NavMap, NavMapHandle } from "@/ui/NavMap";
+import { RoutePreviewCard } from "@/ui/RoutePreviewCard";
 import { colors } from "@/ui/theme";
+
+// The screen's own three stages, distinct from the store's phase: the store
+// only knows "idle | running | finished", because it only cares whether what
+// arrives is evidence. Both preview and the drive to the start leave it idle.
+//
+// Nothing is marked, timed or sampled before "test" — a fault cannot be scored
+// against a driver who has not been told the test has begun, and the clock used
+// to start the moment this screen opened.
+type Leg = "preview" | "approach" | "test";
 
 // The collapsed sheet is gorhom's handle — container padding 10 pt top and
 // bottom plus a 4 pt indicator (node_modules/@gorhom/bottom-sheet/src/
@@ -92,15 +106,24 @@ const SHEET_SCROLL_STYLE = { flex: 1 };
 // Only the label is needed here, and examiner.ts keeps its own lookup private.
 const CATEGORY_LABEL = new Map(EXAMINER_CATEGORIES.map((c) => [c.id, c.label]));
 
+// NavMap rebuilds its zone GeoJSON whenever this array's identity changes, and
+// the compass re-renders this screen about fifteen times a second.
+const NO_ZONES: ObservationZone[] = [];
+
 export default function Mock() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const {
-    phase, route, startedAt, activeZoneIdx, marks, samples,
+    startedAt, activeZoneIdx, marks, samples,
     start, onSample, tapMirrors, addMark, undoMark, finish,
   } = useMockTest();
 
+  // Held here rather than read back off the store: the route has to be drawn
+  // and framed while it is being previewed, and the store must not know about a
+  // test that has not started. It is handed over in beginTest.
+  const [route, setRoute] = useState<Route | null>(null);
+  const [leg, setLeg] = useState<Leg>("preview");
   const [clock, setClock] = useState("0:00");
   const [pos, setPos] = useState<LatLng | null>(null);
   const [trailIdx, setTrailIdx] = useState(0);
@@ -112,11 +135,30 @@ export default function Mock() {
   // be able to redraw it between GPS fixes.
   const [iconRotation, setIconRotation] = useState(0);
 
+  // The drive to the start line. Its own polyline, its own step list, and a
+  // fallback for when directions cannot be fetched at all.
+  const [previewLoc, setPreviewLoc] = useState<LatLng | null>(null);
+  const [approach, setApproach] = useState<Directions | null>(null);
+  const [fallback, setFallback] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [stepIndex, setStepIndex] = useState(1);
+  const [distanceM, setDistanceM] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState<number | null>(null);
+  const [directDist, setDirectDist] = useState<number | null>(null);
+  const [crowRot, setCrowRot] = useState(0);
+
   const mapRef = useRef<NavMapHandle>(null);
   const sheetRef = useRef<BottomSheet>(null);
-  const framedRef = useRef(false);
   const subRef = useRef<Location.LocationSubscription | null>(null);
   const headingSubRef = useRef<Location.LocationSubscription | null>(null);
+  const legRef = useRef<Leg>("preview");
+  const routeRef = useRef<Route | null>(null);
+  const approachRef = useRef<Directions | null>(null);
+  const fallbackRef = useRef(false);
+  const startRef = useRef<LatLng | null>(null);
+  const indexRef = useRef(1);
+  const preparedRef = useRef(new Set<number>());
+  const executedRef = useRef(new Set<number>());
   const routeLLRef = useRef<LatLng[]>([]);
   const trailRef = useRef(0);
   const mapBearingRef = useRef(0);            // what the map is rotated to: travel direction only
@@ -130,16 +172,22 @@ export default function Mock() {
   const posRef = useRef<LatLng | null>(null);
 
   useEffect(() => {
-    getRoute(id).then((r) => start(r.data.route)).catch(() => {});
-  }, [id, start]);
+    getRoute(id).then((r) => setRoute(r.data.route)).catch(() => {});
+  }, [id]);
 
+  // Only while the test is being driven. startedAt is 0 until the store is
+  // started, so an unguarded interval reported the milliseconds since 1970 as
+  // a duration — and, once fixed, would still have timed the walk to the car.
   useEffect(() => {
-    const t = setInterval(() => {
+    if (leg !== "test") return;
+    const tick = () => {
       const s = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
       setClock(`${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`);
-    }, 1000);
+    };
+    tick();
+    const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [startedAt]);
+  }, [leg, startedAt]);
 
   const routeLL = useMemo(
     () => (route?.geometry.coordinates ?? []).map(([lng, lat]) => ({ lat, lng })),
@@ -155,19 +203,130 @@ export default function Mock() {
     [routeLL]
   );
 
-  useEffect(() => { routeLLRef.current = routeLL; }, [routeLL]);
-
-  // The route arrives after the first render, so this is a no-op until there is
-  // something to frame. Guarded by its own ref rather than "no position yet":
-  // the seed fix below sets a position before the driver has moved, and that
-  // must not cost the route its one framing.
   useEffect(() => {
-    if (framedRef.current || routeLL.length < 2) return;
-    framedRef.current = true;
-    mapRef.current?.fitBounds();
-  }, [routeLL]);
+    routeLLRef.current = routeLL;
+    routeRef.current = route;
+    startRef.current = routeLL[0] ?? null;
+  }, [routeLL, route]);
+
+  // routeLL is a dependency because it arrives after the first render: the fit
+  // is a no-op until there is a route to frame.
+  useEffect(() => { if (leg === "preview") mapRef.current?.fitBounds(); }, [leg, routeLL]);
+
+  // How far the driver is from the start line, for the preview card. A last
+  // known fix rather than a live one: this is a card being read at a standstill,
+  // and asking for a fresh lock would cost a permission prompt before the
+  // driver has chosen to do anything.
+  useEffect(() => {
+    if (!routeLL.length) return;
+    (async () => {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== "granted") return;
+      const p = await Location.getLastKnownPositionAsync();
+      if (p) setPreviewLoc({ lat: p.coords.latitude, lng: p.coords.longitude });
+    })();
+  }, [routeLL.length]);
+
+  // The drive proper begins here: from the Start buttons, or on reaching the
+  // start line after being guided to it. This is the only place the store is
+  // told anything, so it is also the moment the clock, the samples and the
+  // marks come alive.
+  const beginTest = useCallback((spoken: boolean) => {
+    const r = routeRef.current;
+    if (!r) return;
+    legRef.current = "test";
+    setLeg("test");
+    start(r);
+    trailRef.current = 0;
+    setTrailIdx(0);
+    // A new leg means a new active polyline, which can carry an unrelated
+    // bearing — re-seed rather than easing round from the approach's.
+    mapBearingSeededRef.current = false;
+    zoomRef.current = NAV_ZOOM_MID;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (spoken) Speech.speak("You've reached the start. The mock test begins now.", { language: "en-GB" });
+  }, [start]);
+
+  // The drive to the start line. Narrated turn by turn and never marked: no
+  // sample reaches the store, so a wrong turn on the way over cannot cost a
+  // fault, and the observation zones on the test route are not live yet.
+  const onApproachPosition = useCallback((loc: Location.LocationObject) => {
+    const c = loc.coords;
+    const raw = { lat: c.latitude, lng: c.longitude };
+    posRef.current = raw;
+
+    const dirs = approachRef.current;
+    const startPt = startRef.current;
+    const isFallback = fallbackRef.current && !!startPt;
+    const steps = dirs?.steps ?? [];
+
+    const snap = navSnap(dirs?.coords ?? [], raw, trailRef.current);
+    const st = !isFallback && steps.length ? advance(steps, snap.pos, indexRef.current) : null;
+
+    const result = navFix({
+      mph: Math.round(mpsToMph(Math.max(0, c.speed ?? 0))),
+      gpsCourse: c.heading ?? null,
+      mapBearing: mapBearingRef.current,
+      compass: compassRef.current,
+      bearingSeeded: mapBearingSeededRef.current,
+      zoom: zoomRef.current,
+      distanceToManeuverM: st?.distanceToManeuverM ?? null,
+      snap,
+    });
+    const p = result.pos;
+    setPos(p);
+    mapBearingRef.current = result.mapBearing;
+    mapBearingSeededRef.current = true;
+    setIconRotation(result.iconRotation);
+
+    // No directions could be fetched, so there is nothing to follow but the
+    // direction of the start. The arrow is screen-space, so it is measured
+    // against the bearing the map is actually rotated to.
+    if (isFallback) {
+      const d = haversineM(p, startPt!);
+      setDirectDist(Math.round(d));
+      setCrowRot(bearingDeg(p, startPt!) - mapBearingRef.current);
+      zoomRef.current = NAV_ZOOM_FAR;
+      mapRef.current?.pushCamera(p, mapBearingRef.current, NAV_ZOOM_FAR);
+      if (d <= ARRIVE_M) beginTest(true);
+      return;
+    }
+
+    if (!st) {
+      // A leg can legitimately arrive with no steps. The camera still has to
+      // follow, or the driver watches their puck walk off a frozen map.
+      mapRef.current?.pushCamera(p, mapBearingRef.current, zoomRef.current);
+      return;
+    }
+
+    indexRef.current = st.index;
+    setStepIndex(st.index);
+    setDistanceM(st.distanceToManeuverM);
+    setRemaining(remainingM(steps, p, st.index));
+    trailRef.current = result.trailIdx;
+    setTrailIdx(result.trailIdx);
+    zoomRef.current = result.zoom;
+    mapRef.current?.pushCamera(p, mapBearingRef.current, result.zoom);
+
+    const cur = steps[st.index];
+    if (cur && cur.type !== "depart") {
+      const d = st.distanceToManeuverM;
+      if (d <= ANNOUNCE_M && d > 40 && !preparedRef.current.has(st.index)) {
+        preparedRef.current.add(st.index);
+        Speech.speak(`In ${formatDistance(d)}, ${cur.instruction}`, { language: "en-GB" });
+      }
+      if (d <= 40 && !executedRef.current.has(st.index)) {
+        executedRef.current.add(st.index);
+        Speech.speak(cur.instruction, { language: "en-GB" });
+      }
+    }
+
+    if (st.arrived) beginTest(true);
+  }, [beginTest]);
 
   const onPosition = useCallback((loc: Location.LocationObject) => {
+    if (legRef.current === "approach") { onApproachPosition(loc); return; }
+
     const c = loc.coords;
     // Scoring sees the raw fix, never the snapped one. Snapping assumes you are
     // on the route, and a mock test is exactly where someone might not be — it
@@ -212,93 +371,139 @@ export default function Mock() {
     setTrailIdx(result.trailIdx);
     zoomRef.current = result.zoom;
     mapRef.current?.pushCamera(result.pos, result.mapBearing, result.zoom);
-  }, [onSample]);
+  }, [onSample, onApproachPosition]);
 
-  useEffect(() => {
-    if (phase !== "running") return;
-    let cancelled = false;
-    (async () => {
-      // headingSub is declared outside the try so a throw from
-      // watchPositionAsync — after watchHeadingAsync already resolved — can
-      // still find it and remove it. An uncaught throw anywhere in this block
-      // used to escape the IIFE with no .catch: the effect's cleanup only
-      // ever looks at headingSubRef/subRef, and neither is assigned until the
-      // very end, so cleanup found nothing to remove and the magnetometer ran
-      // for the life of the process, plus an unhandled promise rejection.
-      let headingSub: Location.LocationSubscription | null = null;
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (cancelled) return;
-        // This used to return silently. The clock kept ticking, the map kept
-        // drawing and Finish still worked, so a whole route could be driven and
-        // then aggregated from no samples, no zone outcomes and no marks — which
-        // is indistinguishable from a flawless drive and scores 100, passed.
-        if (status !== "granted") { setPermissionDenied(true); return; }
+  const stopWatching = useCallback(() => {
+    subRef.current?.remove();
+    subRef.current = null;
+    headingSubRef.current?.remove();
+    headingSubRef.current = null;
+    Speech.stop();
+  }, []);
+  useEffect(() => stopWatching, [stopWatching]);
 
-        // The compass drives the icon, and only the icon. It fires as the phone
-        // turns, including standing still, which is the whole point: the map is
-        // pinned to the direction of travel and cannot answer a phone being
-        // turned on the spot.
-        headingSub = await Location.watchHeadingAsync((h) => {
-          const hd = h.trueHeading != null && h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
-          if (hd == null || hd < 0) return;
-          compassRef.current = compassSeededRef.current
-            ? smoothHeading(compassRef.current, hd, COMPASS_ALPHA)
-            : hd;
-          compassSeededRef.current = true;
+  const startWatch = useCallback(async () => {
+    // headingSub is declared outside the try so a throw from
+    // watchPositionAsync — after watchHeadingAsync already resolved — can
+    // still find it and remove it. An uncaught throw anywhere here used to
+    // escape with no .catch: cleanup only ever looks at headingSubRef/subRef,
+    // and neither is assigned until the very end, so cleanup found nothing to
+    // remove and the magnetometer ran for the life of the process, plus an
+    // unhandled promise rejection.
+    let headingSub: Location.LocationSubscription | null = null;
+    try {
+      // The compass drives the icon, and only the icon. It fires as the phone
+      // turns, including standing still, which is the whole point: the map is
+      // pinned to the direction of travel and cannot answer a phone being
+      // turned on the spot.
+      headingSub = await Location.watchHeadingAsync((h) => {
+        const hd = h.trueHeading != null && h.trueHeading >= 0 ? h.trueHeading : h.magHeading;
+        if (hd == null || hd < 0) return;
+        compassRef.current = compassSeededRef.current
+          ? smoothHeading(compassRef.current, hd, COMPASS_ALPHA)
+          : hd;
+        compassSeededRef.current = true;
 
-          // The sensor fires far faster than anything needs to be redrawn, and
-          // each of these re-renders the screen.
-          const now = Date.now();
-          if (now - lastIconRef.current < ICON_TICK_MS) return;
-          lastIconRef.current = now;
-          setIconRotation(iconRotationDeg(mapBearingRef.current, compassRef.current));
-        });
-        // distanceInterval stays at 5 m: recorded tests are compared against
-        // earlier ones, and the sample cadence is part of what they score.
-        const sub = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 },
-          onPosition
-        );
-        if (cancelled) { headingSub.remove(); sub.remove(); return; }
-        headingSubRef.current = headingSub;
-        subRef.current = sub;
-      } catch {
-        // A magnetometer or GPS failure on first run is exactly the kind of
-        // thing only a real device surfaces. permissionDenied is reused
-        // rather than inventing a third dead-end screen: either way the test
-        // cannot be scored, and "check Settings" is the same remedy to offer.
-        headingSub?.remove();
-        if (!cancelled) setPermissionDenied(true);
-        return;
-      }
+        // The sensor fires far faster than anything needs to be redrawn, and
+        // each of these re-renders the screen.
+        const now = Date.now();
+        if (now - lastIconRef.current < ICON_TICK_MS) return;
+        lastIconRef.current = now;
+        setIconRotation(iconRotationDeg(mapBearingRef.current, compassRef.current));
+      });
+      // distanceInterval stays at 5 m: recorded tests are compared against
+      // earlier ones, and the sample cadence is part of what they score.
+      const sub = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 },
+        onPosition
+      );
+      headingSubRef.current = headingSub;
+      subRef.current = sub;
+    } catch {
+      // A magnetometer or GPS failure on first run is exactly the kind of
+      // thing only a real device surfaces. permissionDenied is reused rather
+      // than inventing a third dead-end screen: either way the test cannot be
+      // scored, and "check Settings" is the same remedy to offer.
+      headingSub?.remove();
+      setPermissionDenied(true);
+      return;
+    }
 
-      // One seed fix, as practice.tsx takes: with a 5 m distanceInterval there
-      // is otherwise no puck at all until the driver has moved five metres.
-      // Display only — onSample is deliberately not called with it, so scoring
-      // stays on the watch callback and its cadence alone. posRef is set too,
-      // so a "Before setting off" mark still gets a location. Taken after the
-      // watch is running, and applied only if the watch has not beaten it, so
-      // waiting for a lock cannot delay scoring or overwrite a newer fix. The
-      // camera is left alone, exactly as it is on the practice screen.
-      try {
-        const seed = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
-        if (cancelled || posRef.current !== null) return;
-        const p = { lat: seed.coords.latitude, lng: seed.coords.longitude };
-        posRef.current = p;
-        setPos(p);
-      } catch {
-        // No fix available yet; the watch will deliver the first one.
-      }
-    })();
-    return () => {
-      cancelled = true;
-      subRef.current?.remove();
-      subRef.current = null;
-      headingSubRef.current?.remove();
-      headingSubRef.current = null;
-    };
-  }, [phase, onPosition]);
+    // One seed fix, as practice.tsx takes: with a 5 m distanceInterval there
+    // is otherwise no puck at all until the driver has moved five metres.
+    // Display only — onSample is deliberately not called with it, so scoring
+    // stays on the watch callback and its cadence alone. posRef is set too,
+    // so a "Before setting off" mark still gets a location. Taken after the
+    // watch is running, and applied only if the watch has not beaten it, so
+    // waiting for a lock cannot delay scoring or overwrite a newer fix. The
+    // camera is left alone, exactly as it is on the practice screen.
+    try {
+      const seed = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+      if (posRef.current !== null) return;
+      const p = { lat: seed.coords.latitude, lng: seed.coords.longitude };
+      posRef.current = p;
+      setPos(p);
+    } catch {
+      // No fix available yet; the watch will deliver the first one.
+    }
+  }, [onPosition]);
+
+  // Asked for at the moment the driver commits to setting off, not on mount.
+  // A refusal used to return silently: the clock kept ticking, the map kept
+  // drawing and Finish still worked, so a whole route could be driven and then
+  // aggregated from no samples, no zone outcomes and no marks — which is
+  // indistinguishable from a flawless drive and scores 100, passed.
+  const ensurePermission = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== "granted") { setPermissionDenied(true); return false; }
+    return true;
+  };
+
+  const startDirectly = useCallback(async () => {
+    if (!(await ensurePermission())) return;
+    beginTest(false);
+    await startWatch();
+  }, [beginTest, startWatch]);
+
+  const guideToStart = useCallback(async () => {
+    if (!(await ensurePermission())) return;
+    setBusy(true);
+    let me: LatLng | null = null;
+    try {
+      const f = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+      me = { lat: f.coords.latitude, lng: f.coords.longitude };
+      posRef.current = me;
+      setPos(me);
+    } catch {
+      // Handled below: no fix means no directions to fetch, which is the
+      // fallback case rather than a dead end.
+    }
+    const startPt = startRef.current;
+    try {
+      if (!me || !startPt) throw new Error("no fix");
+      const dirs = await fetchDirections(me, startPt);
+      approachRef.current = dirs; setApproach(dirs);
+      fallbackRef.current = false; setFallback(false);
+    } catch {
+      approachRef.current = null; setApproach(null);
+      fallbackRef.current = true; setFallback(true);
+    }
+
+    indexRef.current = 1;
+    setStepIndex(1);
+    trailRef.current = 0;
+    setTrailIdx(0);
+    preparedRef.current = new Set();
+    executedRef.current = new Set();
+    setDistanceM(null);
+    mapBearingSeededRef.current = false;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    legRef.current = "approach";
+    setLeg("approach");
+    setBusy(false);
+    await startWatch();
+  }, [startWatch]);
 
   useEffect(() => {
     if (activeZoneIdx === null) return;
@@ -392,6 +597,16 @@ export default function Mock() {
   const pillTop = insets.top + PILL_TOP_GAP;
   const controlsBottom = CONTROLS_BOTTOM + insets.bottom;
 
+  const distToStart = previewLoc && routeLL[0] ? haversineM(previewLoc, routeLL[0]) : null;
+  const atStart = distToStart !== null && distToStart < AT_START_M;
+
+  // The polyline being driven. One rule on both legs: green is road still to
+  // drive, grey is road already driven — so the approach is drawn exactly as
+  // the test route is, and the banner is what says which one this is.
+  const activeLL = leg === "approach" && approach ? approach.coords : routeLL;
+  const approachStep = approach?.steps[stepIndex];
+  const approachNext = approach?.steps[stepIndex + 1];
+
   if (permissionDenied) {
     return (
       <View className="flex-1 items-center justify-center gap-3 bg-surface px-8">
@@ -408,23 +623,99 @@ export default function Mock() {
     <View className="flex-1">
       <NavMap
         ref={mapRef}
-        routeLL={routeLL}
+        routeLL={activeLL}
         trailIdx={trailIdx}
-        pos={pos}
+        // The puck is the driver on the leg being driven, and there is no
+        // driver to draw while the route is only being looked at.
+        pos={leg === "preview" ? null : pos}
         iconRotation={iconRotation}
         follow={following}
         onFollowChange={setFollowing}
-        // Until the first fix there is no driver to follow, so the route is
-        // framed whole rather than left at the default world view.
-        preview={pos === null}
+        preview={leg === "preview"}
         start={routeLL[0] ?? null}
         // A loop finishes where it starts, so the flag would land on the start
         // dot and hide it.
         finish={!isLoop ? routeLL[routeLL.length - 1] ?? null : null}
-        observationZones={observationZones}
-        logoBottom={logoBottom}
+        // Hidden on the way to the start: the zones belong to the test route,
+        // and drawn over the approach they are discs floating off the line
+        // being driven, marking places the driver is not being assessed on yet.
+        observationZones={leg === "approach" ? NO_ZONES : observationZones}
+        // The examiner sheet only exists once the test does; on the other legs
+        // NavMap's own default clears the bottom chrome.
+        logoBottom={leg === "test" ? logoBottom : undefined}
       />
 
+      {/* ---------- PREVIEW ---------- */}
+      {leg === "preview" && route && (
+        <RoutePreviewCard
+          route={route}
+          isLoop={isLoop}
+          distToStart={distToStart}
+          atStart={atStart}
+          busy={busy}
+          onGuideToStart={guideToStart}
+          onStartHere={startDirectly}
+          onBack={() => router.back()}
+        />
+      )}
+
+      {/* ---------- HEADING TO THE START ---------- */}
+      {leg === "approach" && (
+        <>
+          {fallback && (
+            <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
+              <View style={{ transform: [{ rotate: `${crowRot}deg` }] }}>
+                <Ionicons name="navigate" size={96} color="rgba(5,150,105,0.85)" />
+              </View>
+            </View>
+          )}
+
+          <View className="absolute left-3 right-3" style={{ top: insets.top + 6 }}>
+            <ManeuverBanner
+              eyebrow="Heading to the start"
+              fallback={fallback}
+              step={approachStep}
+              next={approachNext}
+              arriveLabel="then the mock test begins"
+              distanceM={fallback ? directDist : distanceM}
+            />
+          </View>
+
+          <Pressable
+            onPress={recenter}
+            className="absolute right-4 h-12 w-12 items-center justify-center rounded-full bg-card"
+            style={{ bottom: 100, shadowColor: "#0F172A", shadowOpacity: 0.18, shadowRadius: 8 }}
+          >
+            <Ionicons name="navigate" size={20} color={colors.accent} />
+          </Pressable>
+
+          <View
+            className="absolute bottom-0 left-0 right-0 flex-row items-center gap-3 bg-card px-4 pt-3"
+            style={{ paddingBottom: insets.bottom + 12, shadowColor: "#0F172A", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -3 } }}
+          >
+            <View className="flex-1">
+              <Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">To the start</Text>
+              <Text className="text-[18px] font-semibold text-primary">
+                {fallback
+                  ? (directDist === null ? "—" : formatDistance(directDist))
+                  : (remaining === null ? "—" : formatDistance(remaining))}
+              </Text>
+            </View>
+            {/* Nothing has been assessed yet, so there is nothing to score and
+                nothing to discard — this leaves rather than finishing. */}
+            <Pressable
+              onPress={() => { stopWatching(); router.back(); }}
+              className="min-h-[44px] items-center justify-center rounded-full bg-danger px-7"
+            >
+              <Text className="text-[14px] font-semibold text-white">Stop</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
+
+      {/* ---------- MOCK TEST ---------- */}
+      {leg === "test" && (
+      <>
       <View
         className="absolute left-4 right-4 flex-row items-center justify-between rounded-xl bg-card px-4 py-2.5"
         style={{ top: insets.top + 6, shadowColor: "#0F172A", shadowOpacity: 0.12, shadowRadius: 12 }}
@@ -535,6 +826,8 @@ export default function Mock() {
             </Pressable>
           </View>
         </View>
+      )}
+      </>
       )}
     </View>
   );

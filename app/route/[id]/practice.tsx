@@ -10,16 +10,15 @@ import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
-import { advance, ANNOUNCE_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM } from "@/lib/navigation";
+import { advance, ANNOUNCE_M, ARRIVE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM } from "@/lib/navigation";
 import { bearingDeg, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
 import type { Hazard, NavStep, Route } from "@/types/db";
-import { DifficultyPips } from "@/ui/DifficultyPips";
+import { ManeuverBanner } from "@/ui/ManeuverBanner";
+import { RoutePreviewCard } from "@/ui/RoutePreviewCard";
 import { colors } from "@/ui/theme";
 import { NavMap, NavMapHandle } from "@/ui/NavMap";
 
-const AT_START_M = 60;
-const ARRIVE_M = 30;
 // Two rotations, two sources. The MAP turns only when the vehicle travels in a
 // new direction, so it holds still at a red light however the phone is waved
 // about. The ICON turns with the compass, drawn at its angle relative to the
@@ -30,18 +29,6 @@ const ARRIVE_M = 30;
 // screen on device does not silently diverge from the other.
 
 type Phase = "preview" | "approach" | "route" | "finished";
-
-function maneuverIcon(step?: NavStep): keyof typeof Ionicons.glyphMap {
-  if (!step) return "navigate";
-  if (step.type === "arrive") return "flag";
-  if (step.type === "depart") return "navigate";
-  if (step.type.includes("roundabout") || step.type === "rotary") return "sync";
-  const m = step.modifier;
-  if (m.includes("uturn")) return "arrow-undo";
-  if (m.includes("left")) return "arrow-back";
-  if (m.includes("right")) return "arrow-forward";
-  return "arrow-up";
-}
 
 export default function Practice() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -392,37 +379,16 @@ export default function Practice() {
 
       {/* ---------- PREVIEW ---------- */}
       {phase === "preview" && route && (
-        <View className="absolute bottom-0 left-0 right-0 gap-2.5 rounded-t-3xl bg-card px-4 pt-4" style={{ paddingBottom: insets.bottom + 14, shadowColor: "#0F172A", shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } }}>
-          <Text className="text-[18px] font-semibold tracking-tight text-primary" style={{ fontFamily: "Inter_600SemiBold" }}>{route.name}</Text>
-          <View className="flex-row items-center gap-5">
-            <View><Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Distance</Text><Text className="text-[15px] font-semibold text-primary">{route.distance_km?.toFixed(1)} km</Text></View>
-            <View><Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Time</Text><Text className="text-[15px] font-semibold text-primary">{route.estimated_minutes} min</Text></View>
-            <View><Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Difficulty</Text><View className="mt-1"><DifficultyPips level={route.difficulty} /></View></View>
-            {isLoop && <View className="flex-1 items-end"><Text className="text-[11px] font-semibold text-slate-400">Loop · start = finish</Text></View>}
-          </View>
-
-          {atStart ? (
-            <Pressable disabled={busy} onPress={startDirectly} className="mt-1 min-h-[52px] flex-row items-center justify-center gap-2 rounded-full bg-accent active:bg-accent-pressed">
-              <Ionicons name="navigate" size={18} color="#fff" /><Text className="text-[16px] font-semibold text-white">Start</Text>
-            </Pressable>
-          ) : (
-            <>
-              <View className="mt-0.5 flex-row items-center gap-2 rounded-xl border border-slate-200 bg-surface px-3 py-2.5">
-                <Ionicons name="location-outline" size={15} color={colors.accent} />
-                <Text className="text-[12px] font-semibold text-slate-600">
-                  {distToStart !== null ? `You're ${formatDistance(distToStart)} from the start` : "You're away from the start point"}
-                </Text>
-              </View>
-              <Pressable disabled={busy} onPress={guideToStart} className="min-h-[52px] flex-row items-center justify-center gap-2 rounded-full bg-accent active:bg-accent-pressed">
-                <Ionicons name="navigate" size={18} color="#fff" /><Text className="text-[16px] font-semibold text-white">{busy ? "Finding route…" : "Guide me to the start"}</Text>
-              </Pressable>
-              <Pressable disabled={busy} onPress={startDirectly} className="min-h-[50px] flex-row items-center justify-center gap-2 rounded-full border-[1.5px] border-slate-200 bg-card">
-                <Ionicons name="arrow-forward" size={17} color={colors.primary} /><Text className="text-[15px] font-semibold text-primary">Start directly from here</Text>
-              </Pressable>
-            </>
-          )}
-          <Pressable onPress={() => router.back()} className="min-h-[40px] items-center justify-center"><Text className="text-[13px] font-semibold text-slate-500">Back</Text></Pressable>
-        </View>
+        <RoutePreviewCard
+          route={route}
+          isLoop={isLoop}
+          distToStart={distToStart}
+          atStart={atStart}
+          busy={busy}
+          onGuideToStart={guideToStart}
+          onStartHere={startDirectly}
+          onBack={() => router.back()}
+        />
       )}
 
       {/* ---------- APPROACH FALLBACK ---------- */}
@@ -438,35 +404,14 @@ export default function Practice() {
       {(phase === "approach" || phase === "route") && (
         <>
           <View className="absolute left-3 right-3" style={{ top: insets.top + 6 }}>
-            <View className="overflow-hidden rounded-2xl bg-primary" style={{ shadowColor: "#0F172A", shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } }}>
-              {isApproach && (
-                <View className="flex-row items-center gap-1.5 px-4 py-1.5" style={{ backgroundColor: "#064E3B" }}>
-                  <Ionicons name="flag-outline" size={12} color="#6EE7B7" />
-                  <Text className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-300">Heading to the start</Text>
-                </View>
-              )}
-              <View className="flex-row items-center gap-3 px-4 py-3.5">
-                <View className={`h-12 w-12 items-center justify-center rounded-xl ${fallback ? "bg-slate-600" : "bg-accent"}`}>
-                  <Ionicons name={fallback ? "navigate" : maneuverIcon(current)} size={26} color="#fff" />
-                </View>
-                <View className="flex-1">
-                  {fallback
-                    ? directDist !== null && <Text className="text-[13px] font-semibold text-emerald-300">{formatDistance(directDist)}</Text>
-                    : distanceM !== null && <Text className="text-[13px] font-semibold text-emerald-300">{formatDistance(distanceM)}</Text>}
-                  <Text className="text-[17px] font-semibold leading-[21px] text-white" numberOfLines={2}>
-                    {fallback ? "Head toward the start point" : current?.instruction ?? "Follow the route"}
-                  </Text>
-                </View>
-              </View>
-              {!fallback && next && (
-                <View className="flex-row items-center gap-2 border-t border-white/10 bg-white/5 px-4 py-2">
-                  <Ionicons name={maneuverIcon(next)} size={14} color="#94A3B8" />
-                  <Text className="flex-1 text-[12px] text-slate-300" numberOfLines={1}>
-                    {isApproach && next.type === "arrive" ? "then the route begins" : `then ${next.instruction}`}
-                  </Text>
-                </View>
-              )}
-            </View>
+            <ManeuverBanner
+              eyebrow={isApproach ? "Heading to the start" : null}
+              fallback={fallback}
+              step={current}
+              next={next}
+              arriveLabel={isApproach ? "then the route begins" : undefined}
+              distanceM={fallback ? directDist : distanceM}
+            />
           </View>
 
           {phase === "route" && (

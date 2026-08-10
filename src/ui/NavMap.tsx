@@ -25,11 +25,34 @@ const PAN_THRESHOLD_PX = 10;    // finger movement beyond this counts as a pan, 
 
 type Lng = [number, number];
 const toPos = (c: LatLng): Lng => [c.lng, c.lat];
-const lineFeature = (coords: LatLng[]) => ({
-  type: "Feature" as const,
-  properties: {},
-  geometry: { type: "LineString" as const, coordinates: coords.map(toPos) },
-});
+
+// Every ShapeSource below stays mounted for the life of the map, and "nothing
+// to draw" is an empty FeatureCollection rather than an unmounted source.
+//
+// Mounting and unmounting them is what produced the native SDK's
+// "Source 'route' is not in style". That message means a layer was added
+// naming a source the style does not have, and there was only ever one source
+// called "route": a preview-only one that was torn out and replaced with
+// "trail"/"ahead" the instant the first fix arrived. The likely path — read out
+// of rnmapbox 10.3.5 rather than caught on device — is view recycling, which
+// newArchEnabled turns on: RNMBXSource.removeFromMap (android/.../styles/
+// sources/RNMBXSource.kt) never clears mSubFeatures, no RNMBX view manager
+// overrides prepareToRecycleView, so a source view recycled out of "route"
+// re-adds child layers still holding mSourceID "route". Either way the churn is
+// ours, and it also meant re-uploading the whole polyline at exactly the moment
+// the driver starts moving.
+const EMPTY_SHAPE = { type: "FeatureCollection" as const, features: [] };
+const lineShape = (coords: LatLng[]) =>
+  coords.length > 1
+    ? {
+        type: "FeatureCollection" as const,
+        features: [{
+          type: "Feature" as const,
+          properties: {},
+          geometry: { type: "LineString" as const, coordinates: coords.map(toPos) },
+        }],
+      }
+    : EMPTY_SHAPE;
 
 // lineWidthExpression returns unknown[] (see src/ui/mapStyle.ts); LineLayer's
 // style prop wants a narrower Mapbox Expression tuple — narrow it once here.
@@ -241,19 +264,16 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
   // Math.max(trailIdx, 1) floor always produced a two-vertex stub, which was
   // invisible while both halves were the same emerald and would now show as a
   // grey tick sitting at the start line before the driver has moved.
-  const traveledFeature = useMemo(() => {
-    const traveled = trailIdx > 0 ? routeLL.slice(0, trailIdx + 1) : [];
-    return traveled.length > 1 ? lineFeature(traveled) : null;
-  }, [routeLL, trailIdx]);
+  const traveledShape = useMemo(
+    () => lineShape(!preview && trailIdx > 0 ? routeLL.slice(0, trailIdx + 1) : []),
+    [routeLL, trailIdx, preview]
+  );
 
-  const aheadFeature = useMemo(() => {
-    const ahead = routeLL.slice(trailIdx);
-    return ahead.length > 1 ? lineFeature(ahead) : null;
-  }, [routeLL, trailIdx]);
-
-  const previewFeature = useMemo(
-    () => (routeLL.length > 1 ? lineFeature(routeLL) : null),
-    [routeLL]
+  // Preview frames the route rather than driving it, so the whole polyline is
+  // the road ahead and none of it is behind.
+  const aheadShape = useMemo(
+    () => lineShape(preview ? routeLL : routeLL.slice(trailIdx)),
+    [routeLL, trailIdx, preview]
   );
 
   return (
@@ -299,52 +319,38 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
 
       {baseLayers}
 
-      {zoneShape.features.length > 0 && (
-        <ShapeSource id="zones" shape={zoneShape}>
-          {/* A CircleLayer cannot dash its stroke — that would want a polygon
-              and a LineLayer — so the edge is a solid line at low opacity. */}
-          <CircleLayer
-            id="zoneDiscs"
-            style={{
-              circleRadius: zoneRadius,
-              circleColor: ZONE_COLOUR,
-              circleOpacity: ZONE_FILL_OPACITY,
-              circleStrokeColor: ZONE_COLOUR,
-              circleStrokeWidth: ZONE_EDGE_PX,
-              circleStrokeOpacity: ZONE_EDGE_OPACITY,
-              // The camera is pitched (NAV_PITCH), and the default "viewport"
-              // alignment would draw these as screen-facing billboards
-              // standing up out of the road. A zone is a patch of tarmac, so
-              // it has to lie flat on it.
-              circlePitchAlignment: "map",
-            }}
-          />
-        </ShapeSource>
-      )}
+      <ShapeSource id="zones" shape={zoneShape}>
+        {/* A CircleLayer cannot dash its stroke — that would want a polygon
+            and a LineLayer — so the edge is a solid line at low opacity. */}
+        <CircleLayer
+          id="zoneDiscs"
+          style={{
+            circleRadius: zoneRadius,
+            circleColor: ZONE_COLOUR,
+            circleOpacity: ZONE_FILL_OPACITY,
+            circleStrokeColor: ZONE_COLOUR,
+            circleStrokeWidth: ZONE_EDGE_PX,
+            circleStrokeOpacity: ZONE_EDGE_OPACITY,
+            // The camera is pitched (NAV_PITCH), and the default "viewport"
+            // alignment would draw these as screen-facing billboards
+            // standing up out of the road. A zone is a patch of tarmac, so
+            // it has to lie flat on it.
+            circlePitchAlignment: "map",
+          }}
+        />
+      </ShapeSource>
 
-      {preview ? (
-        previewFeature && (
-          <ShapeSource id="route" shape={previewFeature}>
-            <LineLayer id="routeCasing" style={{ lineColor: mapColors.routeCasing, lineWidth: 15, lineCap: "round", lineJoin: "round" }} />
-            <LineLayer id="routeCore" style={{ lineColor: mapColors.routeCore, lineWidth: 10, lineCap: "round", lineJoin: "round" }} />
-          </ShapeSource>
-        )
-      ) : (
-        <>
-          {traveledFeature && (
-            <ShapeSource id="trail" shape={traveledFeature}>
-              <LineLayer id="trailCasing" style={{ lineColor: mapColors.routeDrivenCasing, lineWidth: 14, lineCap: "round", lineJoin: "round" }} />
-              <LineLayer id="trailCore" style={{ lineColor: mapColors.routeDrivenCore, lineWidth: 9, lineCap: "round", lineJoin: "round" }} />
-            </ShapeSource>
-          )}
-          {aheadFeature && (
-            <ShapeSource id="ahead" shape={aheadFeature}>
-              <LineLayer id="aheadCasing" style={{ lineColor: mapColors.routeCasing, lineWidth: 16, lineCap: "round", lineJoin: "round" }} />
-              <LineLayer id="aheadCore" style={{ lineColor: mapColors.routeCore, lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
-            </ShapeSource>
-          )}
-        </>
-      )}
+      <ShapeSource id="trail" shape={traveledShape}>
+        <LineLayer id="trailCasing" style={{ lineColor: mapColors.routeDrivenCasing, lineWidth: 14, lineCap: "round", lineJoin: "round" }} />
+        <LineLayer id="trailCore" style={{ lineColor: mapColors.routeDrivenCore, lineWidth: 9, lineCap: "round", lineJoin: "round" }} />
+      </ShapeSource>
+
+      {/* Preview draws the route a shade narrower than the road ahead does
+          while driving, as it did when it had a source of its own. */}
+      <ShapeSource id="ahead" shape={aheadShape}>
+        <LineLayer id="aheadCasing" style={{ lineColor: mapColors.routeCasing, lineWidth: preview ? 15 : 16, lineCap: "round", lineJoin: "round" }} />
+        <LineLayer id="aheadCore" style={{ lineColor: mapColors.routeCore, lineWidth: preview ? 10 : 11, lineCap: "round", lineJoin: "round" }} />
+      </ShapeSource>
 
       {start && (
         <MarkerView id="start" coordinate={toPos(start)} anchor={{ x: 0.5, y: 0.5 }}>

@@ -6,6 +6,14 @@ export const ADVANCE_RADIUS_M = 25;
 // Distance at which we first announce the upcoming maneuver ("In 250 m, …").
 export const ANNOUNCE_M = 250;
 
+// Close enough to the start line that offering to drive there would be silly,
+// so the preview shows a single Start button instead.
+export const AT_START_M = 60;
+// Close enough to the start line to hand over from the approach leg to the
+// drive itself. Tighter than AT_START_M: that one answers "is it worth
+// navigating there", this one answers "are you on the start line".
+export const ARRIVE_M = 30;
+
 export type NavState = {
   index: number;               // step currently being navigated toward
   distanceToManeuverM: number; // live distance to that maneuver
