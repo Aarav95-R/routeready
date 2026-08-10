@@ -22,3 +22,4 @@ export const CircleLayer = stub("layer");
 export const FillLayer = stub("layer");
 export const BackgroundLayer = stub("layer");
 export const MarkerView = stub("marker");
+export const SymbolLayer = stub("layer");
