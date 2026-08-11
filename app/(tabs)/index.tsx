@@ -125,6 +125,22 @@ export default function Centres() {
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const lastMove = useRef(0);
+  // The 150ms floor throttles camera moves, not the row the sheet highlights.
+  // A move that lands inside the floor is stashed here rather than dropped,
+  // so a trailing timer can still send the camera to wherever the user
+  // actually stopped, instead of leaving it stuck on an earlier row forever.
+  const pendingFocus = useRef<LatLng | null>(null);
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearFlush = useCallback(() => {
+    if (flushTimer.current) {
+      clearTimeout(flushTimer.current);
+      flushTimer.current = null;
+    }
+  }, []);
+
+  // Nothing left to flush once the screen itself goes away.
+  useEffect(() => clearFlush, [clearFlush]);
 
   /**
    * The sheet and the map are one instrument: scrolling the cards is the same
@@ -157,11 +173,35 @@ export default function Centres() {
 
     setActiveId(row.item.centre.id);
 
+    const target: LatLng = { lat: row.item.centre.lat, lng: row.item.centre.lng };
     const now = Date.now();
-    if (now - lastMove.current < 150) return;
-    lastMove.current = now;
-    map.current?.focus({ lat: row.item.centre.lat, lng: row.item.centre.lng });
-  }, [rows, rowOffsets, activeId]);
+    const elapsed = now - lastMove.current;
+
+    if (elapsed >= 150) {
+      // A real move fires now, superseding whatever was still queued.
+      clearFlush();
+      pendingFocus.current = null;
+      lastMove.current = now;
+      map.current?.focus(target);
+      return;
+    }
+
+    // Inside the floor: stash the target the camera should end up on. Only
+    // schedule the trailing flush the first time we enter the window — a
+    // later stash while one is already pending just updates the target that
+    // timer will use, so a fling settles on the *last* row, not the first.
+    pendingFocus.current = target;
+    if (!flushTimer.current) {
+      flushTimer.current = setTimeout(() => {
+        flushTimer.current = null;
+        lastMove.current = Date.now();
+        if (pendingFocus.current) {
+          map.current?.focus(pendingFocus.current);
+          pendingFocus.current = null;
+        }
+      }, 150 - elapsed);
+    }
+  }, [rows, rowOffsets, activeId, clearFlush]);
 
   // The first pin is active from the start, so the map opens already pointed
   // at something rather than at the middle of nowhere. Gated on a ref, not on

@@ -137,31 +137,40 @@ test("a car-type filter removes non-matching centres from the map pins too", asy
   expect(pinIds()).not.toEqual(expect.arrayContaining(["Chingford"]));
 });
 
-// Calls the onScroll prop we handed the list directly, rather than dispatching
-// a scroll event: the mocked BottomSheetFlatList above is a lean stand-in, so
-// its onScroll prop is reachable straight off the element, and calling it
-// exercises exactly the handler this screen wired up.
+// Dispatches a real scroll event at the mocked list, rather than calling its
+// onScroll prop back directly, so this proves the handler is reachable
+// through an event the way the real BottomSheetFlatList would deliver it —
+// not just that the arithmetic behind it is right. The lean FakeFlatList
+// stand-in above still wires onScroll straight onto the element fireEvent
+// targets, so this reaches exactly what the screen wired up.
 const scrollTo = (y: number) => {
-  act(() => {
-    screen.getByTestId("centres-list").props.onScroll({
-      nativeEvent: {
-        contentOffset: { y, x: 0 },
-        contentSize: { height: 1000, width: 390 },
-        layoutMeasurement: { height: 400, width: 390 },
-      },
-    });
+  fireEvent.scroll(screen.getByTestId("centres-list"), {
+    nativeEvent: {
+      contentOffset: { y, x: 0 },
+      contentSize: { height: 1000, width: 390 },
+      layoutMeasurement: { height: 400, width: 390 },
+    },
   });
 };
 
+// With this fixture (all three centres near, "nearest" sort, no location
+// permission denied), the sorted-by-distance order is Mill Hill, Hendon,
+// Chingford — so row index 2, an offset of two 88pt rows, is Chingford.
+// Asserting the name (not just "exactly one row is active") matters: the
+// seed effect already makes pins[0] (Mill Hill) active on load, so a test
+// that only counts active rows would pass with the scroll binding entirely
+// disconnected.
 test("scrolling the sheet makes the arrived-at centre active", async () => {
   render(<Centres />);
   await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(3));
 
-  // 88pt rows: an offset of two rows lands on the third centre.
   scrollTo(176);
   await waitFor(() => {
-    const active = screen.getAllByTestId("centre-row").filter((r) => r.props.style.backgroundColor !== "#FFFFFF");
-    expect(active).toHaveLength(1);
+    const rows = screen.getAllByTestId("centre-row");
+    const names = screen.getAllByTestId("centre-row-name").map((n) => n.props.children);
+    const activeIndex = rows.findIndex((r) => r.props.style.backgroundColor !== "#FFFFFF");
+    expect(activeIndex).toBeGreaterThanOrEqual(0);
+    expect(names[activeIndex]).toBe("Chingford");
   });
 });
 
@@ -218,4 +227,99 @@ test("a section header above the target row does not shift which centre becomes 
     expect(activeIndex).toBeGreaterThanOrEqual(0);
     expect(names[activeIndex]).toBe("Near B");
   });
+});
+
+// The camera itself — map.current?.focus(), the row-change skip, and the
+// 150ms floor — was previously untested, which is exactly how it stayed
+// broken: `setActiveId` had already run by the time the floor discarded a
+// move, so the sheet could show one row while the map stayed on an earlier
+// one, permanently. rnmapboxMock's CameraStub exposes setCamera as a
+// jest.fn() (see src/test/rnmapboxMock.tsx) reachable off the "camera:"
+// element's props, which is what these three tests read.
+const cameraCalls = () => screen.getByTestId("camera:").props.setCamera.mock.calls;
+
+test("scrolling to a centre flies the camera to that centre's coordinates", async () => {
+  render(<Centres />);
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(3));
+
+  scrollTo(176);   // row index 2, nearest-sorted — Chingford (see the test above)
+  await waitFor(() => {
+    const calls = cameraCalls();
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls[calls.length - 1][0].centerCoordinate).toEqual([-0.006, 51.6316]);
+  });
+});
+
+test("a second scroll resolving to the same row issues no second camera call", async () => {
+  render(<Centres />);
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(3));
+
+  scrollTo(176);
+  await waitFor(() => expect(cameraCalls().length).toBe(1));
+
+  scrollTo(200);   // still row index 2 — the last row's band has no upper bound
+  expect(cameraCalls().length).toBe(1);
+});
+
+// The regression guard for the ruling above. Without the trailing flush this
+// fails: the old code just returned when the 150ms floor was still open,
+// permanently dropping the move onto the row the user actually landed on.
+// Fake timers give this deterministic control over the elapsed time between
+// scrolls; RNTL's waitFor detects them and advances them itself, so the
+// final await below both flushes the trailing setTimeout and re-checks the
+// expectation without this test manually reaching for advanceTimersByTime.
+//
+// Four near centres, not the shared three: the seed effect already makes
+// row 0 active on load without moving the camera, so the first *move* in
+// this test has to target a different row, and proving the trailing flush
+// keeps the *last* of several throttled targets (not just the only one)
+// needs a second, distinct row to supersede the first stash with.
+test("throttled moves in quick succession still end with the camera on the last row", async () => {
+  (listCentres as jest.Mock).mockResolvedValue({
+    data: [
+      // Same longitude as `me`, increasing latitude, all comfortably inside
+      // the 30-mile near radius — one section, no header, so offsets are a
+      // plain row_index * CENTRE_ROW_H.
+      centre("A", { lat: 51.611, lng: -0.235 }),
+      centre("B", { lat: 51.651, lng: -0.235 }),
+      centre("C", { lat: 51.701, lng: -0.235 }),
+      centre("D", { lat: 51.751, lng: -0.235 }),
+    ],
+    stale: false,
+  });
+
+  jest.useFakeTimers();
+  jest.setSystemTime(10_000);   // far enough past 0 that the very first move is never itself throttled
+  try {
+    render(<Centres />);
+    await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(4));
+
+    // Row A is already active from the seed effect (no camera call yet).
+    scrollTo(88);    // row 1, B — first real move, fires immediately
+    await waitFor(() => expect(cameraCalls().length).toBe(1));
+
+    act(() => jest.advanceTimersByTime(50));
+    scrollTo(176);   // row 2, C — 50ms after the last move: inside the floor, stashed
+
+    act(() => jest.advanceTimersByTime(50));
+    scrollTo(264);   // row 3, D — 100ms after the last move: still inside the floor,
+                      // supersedes C as the stashed target
+
+    // The sheet already shows D active before the floor even opens.
+    const names = screen.getAllByTestId("centre-row-name").map((n) => n.props.children);
+    const activeIndex = screen.getAllByTestId("centre-row").findIndex(
+      (r) => r.props.style.backgroundColor !== "#FFFFFF"
+    );
+    expect(names[activeIndex]).toBe("D");
+
+    // Scrolling has stopped; nothing further is going to move the camera on
+    // its own except the trailing flush this floor owes row D.
+    await waitFor(() => {
+      const calls = cameraCalls();
+      expect(calls.length).toBe(2);
+      expect(calls[1][0].centerCoordinate).toEqual([-0.235, 51.751]);   // D, not B
+    });
+  } finally {
+    jest.useRealTimers();
+  }
 });

@@ -2,7 +2,7 @@
 // a plain View tagged with its kind and id, which is all the NavMap tests read:
 // they are about which sources and layers are *mounted*, not about what the map
 // draws.
-import { forwardRef, createElement, useImperativeHandle } from "react";
+import { forwardRef, createElement, useImperativeHandle, useRef } from "react";
 import { View } from "react-native";
 
 // `shape` is forwarded so the tests can read what each source was handed.
@@ -19,18 +19,24 @@ export const MapView = stub("map");
 // Camera is imperative rather than declarative: callers drive it through a
 // ref (setCamera, fitBounds, ...), not through props a plain View stub could
 // stand in for. NavMap and CentresMap both call these directly on the ref, so
-// the stub answers with no-ops instead of a bare host-component instance,
+// the stub answers with jest.fn()s instead of a bare host-component instance,
 // which has neither method and would throw the moment a test scrolls or taps
-// recentre.
+// recentre. The functions are created once per mount (via useRef, not fresh
+// on every render) so their call history is stable across a test, and they
+// are also spread onto the rendered View's props — the same "read state back
+// off the element" pattern `shape` uses on ShapeSource above — so a test can
+// assert on them via screen.getByTestId("camera:").props.setCamera.mock.calls
+// without CentresMap/NavMap needing to expose their own internal Camera ref.
 const CameraStub = forwardRef<unknown, any>((_props, ref) => {
-  useImperativeHandle(ref, () => ({
-    setCamera: () => {},
-    fitBounds: () => {},
-    flyTo: () => {},
-    moveTo: () => {},
-    zoomTo: () => {},
-  }));
-  return createElement(View as any, { testID: "camera:" });
+  const handle = useRef({
+    setCamera: jest.fn(),
+    fitBounds: jest.fn(),
+    flyTo: jest.fn(),
+    moveTo: jest.fn(),
+    zoomTo: jest.fn(),
+  }).current;
+  useImperativeHandle(ref, () => handle, [handle]);
+  return createElement(View as any, { testID: "camera:", ...handle });
 });
 CameraStub.displayName = "camera";
 export const Camera = CameraStub;
