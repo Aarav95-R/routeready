@@ -53,10 +53,21 @@ const CENTRES = [
   centre("Chingford", { lat: 51.6316, lng: -0.006, pass_rate: 50, test_types: ["auto"] }),
 ];
 
+// Fake timers for the whole file, frozen unless a test explicitly advances
+// them. Task 9 put CentresMap's pins and rings behind a setTimeout stagger;
+// under real timers those fire whenever they fire relative to a test's own
+// async work, which is exactly the kind of race that shows up as an
+// intermittent "not wrapped in act(...)" warning. Frozen fake time means the
+// stagger simply never elapses in tests that never asked it to.
 beforeEach(() => {
+  jest.useFakeTimers();
   resetLocationMock();
   setLastKnownPosition(51.601, -0.235);
   (listCentres as jest.Mock).mockResolvedValue({ data: CENTRES, stale: false });
+});
+
+afterEach(() => {
+  jest.useRealTimers();
 });
 
 test("lists the centres once they load", async () => {
@@ -123,9 +134,18 @@ test("a failed load with no cache offers a retry rather than an empty list", asy
 // radius of the test fix, so filtering to Manual must drop its pin from the
 // map source alongside its row — nearSet() alone would still hand it over,
 // since nearSet is computed from the unfiltered list to keep identity stable.
+// Task 9 puts the map's pins behind a reveal stagger (CentresMap.tsx): a
+// fresh pin set starts empty and fills in one setTimeout at a time, so
+// reading source:pins right after a render or a filter change would
+// otherwise catch the reveal mid-flight rather than the settled set this
+// test is actually about. The two advanceTimersByTime calls (the file's fake
+// timers are frozen by default — see the top-level beforeEach) just flush
+// that animation past its own worst case (3 pins * 70ms) before each read;
+// the assertions they gate are unchanged from before Task 9.
 test("a car-type filter removes non-matching centres from the map pins too", async () => {
   render(<Centres />);
   await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(3));
+  act(() => jest.advanceTimersByTime(10_000));
 
   const pinIds = () => screen.getByTestId("source:pins").props.shape.features.map((f: any) => f.properties.id);
   expect(pinIds()).toEqual(expect.arrayContaining(["Chingford"]));
@@ -133,6 +153,7 @@ test("a car-type filter removes non-matching centres from the map pins too", asy
   fireEvent.press(screen.getByText("Manual"));
 
   await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(2));
+  act(() => jest.advanceTimersByTime(10_000));
   expect(screen.queryByText("Chingford")).toBeNull();
   expect(pinIds()).not.toEqual(expect.arrayContaining(["Chingford"]));
 });

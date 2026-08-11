@@ -1,5 +1,5 @@
 import { createRef } from "react";
-import { render, screen } from "@testing-library/react-native";
+import { act, render, screen } from "@testing-library/react-native";
 
 // Kept outside __tests__ so jest does not collect it as a suite of its own.
 jest.mock("@rnmapbox/maps", () => require("../../test/rnmapboxMock"));
@@ -35,6 +35,12 @@ const setup = (over: Partial<React.ComponentProps<typeof CentresMap>> = {}) =>
 
 const shapeOf = (id: string) => screen.getByTestId(`source:${id}`).props.shape;
 
+// Pins and rings now arrive on a stagger (see the two tests below), so any
+// test that wants the *settled* map — every pin, every ring, present — has
+// to run the reveal to completion first. 10s comfortably clears the longest
+// stagger for any fixture in this file.
+const settleReveal = () => act(() => jest.advanceTimersByTime(10_000));
+
 test("rings, pins and the driver each get a source that is always mounted", () => {
   setup();
   for (const id of ["rings", "pins", "me"]) {
@@ -51,22 +57,66 @@ test("the sources stay mounted with no fix and no pins, holding empty collection
 });
 
 test("one ring feature per distance band", () => {
+  jest.useFakeTimers();
   setup();
+  settleReveal();
   expect(shapeOf("rings").features).toHaveLength(3);
   expect(shapeOf("rings").features[0].geometry.type).toBe("Polygon");
+  jest.useRealTimers();
 });
 
 test("each pin carries its own colour and monogram as feature properties", () => {
+  jest.useFakeTimers();
   setup();
+  settleReveal();
   const features = shapeOf("pins").features;
   expect(features).toHaveLength(2);
   expect(features[0].properties).toMatchObject({ id: "a", hue: "#BE123C", initials: "MH" });
   expect(features[0].geometry.coordinates).toEqual([-0.24, 51.60]);
+  jest.useRealTimers();
 });
 
 test("the active pin is flagged so the style can lift it", () => {
+  jest.useFakeTimers();
   setup({ activeId: "b" });
+  settleReveal();
   const features = shapeOf("pins").features;
   expect(features.find((f: any) => f.properties.id === "b").properties.active).toBe(true);
   expect(features.find((f: any) => f.properties.id === "a").properties.active).toBe(false);
+  jest.useRealTimers();
+});
+
+test("pins arrive one at a time rather than all at once", () => {
+  jest.useFakeTimers();
+  setup();
+
+  // Nothing on the map on the first frame; the stagger fills it in.
+  expect(shapeOf("pins").features).toHaveLength(0);
+
+  act(() => jest.advanceTimersByTime(70));
+  expect(shapeOf("pins").features).toHaveLength(1);
+
+  act(() => jest.advanceTimersByTime(70 * 5));
+  expect(shapeOf("pins").features).toHaveLength(2);
+  jest.useRealTimers();
+});
+
+test("a changed pin set restarts the reveal rather than jumping", () => {
+  jest.useFakeTimers();
+  const { rerender } = setup();
+  act(() => jest.advanceTimersByTime(70 * 4));
+  expect(shapeOf("pins").features).toHaveLength(2);
+
+  rerender(
+    <CentresMap
+      pins={[...pins, centre("c", 51.65, -0.08)]}
+      identities={new Map([...identities, ["c", identity]])}
+      me={{ lat: 51.601, lng: -0.235 }}
+      activeId={null}
+    />
+  );
+  expect(shapeOf("pins").features).toHaveLength(0);
+  act(() => jest.advanceTimersByTime(70 * 4));
+  expect(shapeOf("pins").features).toHaveLength(3);
+  jest.useRealTimers();
 });

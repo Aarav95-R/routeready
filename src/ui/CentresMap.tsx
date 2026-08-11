@@ -1,5 +1,6 @@
-import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { BackgroundLayer, Camera, CircleLayer, LineLayer, MapView, ShapeSource, SymbolLayer } from "@rnmapbox/maps";
+import { useReducedMotion } from "react-native-reanimated";
 import { ringPolygon, type LatLng } from "@/lib/geo";
 import type { CentreIdentity } from "@/lib/centreIdentity";
 import type { Centre } from "@/types/db";
@@ -8,6 +9,8 @@ import { mapColors } from "@/ui/mapStyle";
 const OVERVIEW_STYLE = "mapbox://styles/mapbox/navigation-day-v1";
 const RING_MILES = [3, 8, 15];
 const ACCENT = "#059669";
+const PIN_STAGGER_MS = 70;
+const RING_STAGGER_MS = 130;
 
 // Every source below stays mounted for the life of the map and is handed an
 // empty FeatureCollection when there is nothing to draw. Mounting and
@@ -33,21 +36,42 @@ export const CentresMap = forwardRef<CentresMapHandle, CentresMapProps>(
   function CentresMap({ pins, identities, me, activeId }, ref) {
     const camera = useRef<Camera>(null);
 
+    // Pins and rings arrive in sequence rather than all at once. The reveal is
+    // a count, not a per-frame geometry change: expanding the rings by
+    // regenerating their vertices every frame would re-upload three polygons to
+    // the native map sixty times a second, which is the churn NavMap's header
+    // comment exists to warn about. Mapbox's own opacity transitions do the
+    // fading, native-side and free.
+    const reducedMotion = useReducedMotion();
+    const [revealed, setRevealed] = useState(0);
+    const [ringsShown, setRingsShown] = useState(0);
+
+    useEffect(() => {
+      if (reducedMotion) { setRevealed(pins.length); setRingsShown(RING_MILES.length); return; }
+      setRevealed(0);
+      setRingsShown(0);
+      const timers = [
+        ...pins.map((_, i) => setTimeout(() => setRevealed(i + 1), (i + 1) * PIN_STAGGER_MS)),
+        ...RING_MILES.map((_, i) => setTimeout(() => setRingsShown(i + 1), (i + 1) * RING_STAGGER_MS)),
+      ];
+      return () => timers.forEach(clearTimeout);
+    }, [pins, reducedMotion]);
+
     const rings = useMemo(() => {
       if (!me) return EMPTY;
       return {
         type: "FeatureCollection" as const,
-        features: RING_MILES.map((mi) => ({
+        features: RING_MILES.slice(0, ringsShown).map((mi) => ({
           type: "Feature" as const,
           properties: { miles: mi },
           geometry: ringPolygon(me, mi * 1609.34),
         })),
       };
-    }, [me]);
+    }, [me, ringsShown]);
 
     const pinShape = useMemo(() => ({
       type: "FeatureCollection" as const,
-      features: pins.map((c) => {
+      features: pins.slice(0, revealed).map((c) => {
         const identity = identities.get(c.id);
         return {
           type: "Feature" as const,
@@ -61,7 +85,7 @@ export const CentresMap = forwardRef<CentresMapHandle, CentresMapProps>(
           geometry: { type: "Point" as const, coordinates: [c.lng, c.lat] as [number, number] },
         };
       }),
-    }), [pins, identities, activeId]);
+    }), [pins, identities, activeId, revealed]);
 
     const meShape = useMemo(() => {
       if (!me) return EMPTY;
@@ -114,7 +138,10 @@ export const CentresMap = forwardRef<CentresMapHandle, CentresMapProps>(
         <ShapeSource id="rings" shape={rings}>
           <LineLayer
             id="ring-lines"
-            style={{ lineColor: ACCENT, lineWidth: 1.5, lineDasharray: [4, 5], lineOpacity: 0.28 }}
+            style={{
+              lineColor: ACCENT, lineWidth: 1.5, lineDasharray: [4, 5], lineOpacity: 0.28,
+              lineOpacityTransition: { duration: 600, delay: 0 },
+            }}
           />
         </ShapeSource>
 
@@ -127,6 +154,8 @@ export const CentresMap = forwardRef<CentresMapHandle, CentresMapProps>(
               circleStrokeColor: "#FFFFFF",
               circleStrokeWidth: 2,
               circleTranslate: [0, -18],
+              circleRadiusTransition: { duration: 320, delay: 0 },
+              circleOpacityTransition: { duration: 320, delay: 0 },
             }}
           />
           <SymbolLayer
