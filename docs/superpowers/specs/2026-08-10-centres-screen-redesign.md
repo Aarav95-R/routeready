@@ -219,6 +219,18 @@ Touch: rows press to 96.5% scale with a light haptic, matching `RouteCard`.
 - **The eight quarters of `pass_rate_history`.** Concept B's material. It belongs on a centre detail screen, which does not exist.
 - **Logging practice drives to `user_progress`.** Still open from the routes redesign; the `2 routes driven` chip on a centre row can only count mock tests until it is done.
 
+## Follow-ups left open after implementation
+
+Triaged by the whole-branch review as not worth blocking the merge. Roughly in the order worth doing.
+
+1. **Move `buildRows` and `rowAtOffset` into `centresView.ts`.** They are list-shaping rules and this document says the screen holds none. They are well tested where they are — through the screen — but they would be testable directly against a table of offsets, and the screen is now the third-largest file in the app.
+2. **The camera refits on every search keystroke.** Search narrows the pins, and the framed set follows, so a fast typist can start a 600ms eased fit on each letter. Nothing debounces `query`. This is the pin-stagger problem of finding 3 moved to the camera, and it is a device question, not a test question.
+3. **`src/ui/SegmentedControl.tsx` is orphaned.** The screen hand-rolls a two-axis control instead. Delete it or fold the two together — only `ui.test.tsx` keeps it alive.
+4. **The entrance stagger is uncapped.** `FadeInDown.delay(index * 60)` over forty rows means a row scrolled into view at index 30 sits invisible for 1.8s. `Math.min(index, 7)` fixes it. Same latent issue in `RouteCard`, where the lists are short enough that it has never shown.
+5. **`No centres match "".`** — the empty copy assumes a search term, but a filter alone can empty the list, and so can a database with no centres in it.
+6. **Nothing reloads after the first failure.** Pull-to-refresh went with the old list and `load()` now runs on mount and from the error retry only, so a stale cache shows the banner with no way to clear it.
+7. **Smaller:** the recentre button has no accessibility label; `CentreRow`'s label omits distance, so a list read aloud loses "how far"; `OfflineBanner` sits inside the sheet rather than between map and sheet; `getItemLayout` is still not supplied; `CentresMap` re-declares `ACCENT` instead of importing `colors.accent`; single-section headers never render, so `All centres` is dead copy; `fitBounds`' min-span floor pads latitude and longitude equally, which is not square in real distance at 51–55°N.
+
 ## Risks
 
 1. **Twelve saturated pins is close to the limit.** It holds because the map bed is desaturated and every pin carries its monogram. Weakening either — a brighter base style, dropping the monogram at small sizes — turns the map into confetti.
