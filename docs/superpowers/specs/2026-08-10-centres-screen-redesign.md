@@ -189,11 +189,13 @@ Entrance, on first load:
 
 | At | What |
 |---|---|
-| 0ms | Map is already there. Rings expand outward from the driver, 130ms apart, 1.1s each. |
+| 0ms | Map is already there. Rings appear in sequence outward from the driver — 3 miles, then 8, then 15 — 130ms apart, fading in over 600ms. |
 | 420ms | Pins drop in nearest-first, 70ms apart, 580ms each, with a slight overshoot. |
 | 300ms | Sheet rises to its 52% snap over 700ms. |
 | 700ms | Rows spring up 20pt at 60ms stagger; each emblem's mark blooms in from −24° and its ring sweeps over 950ms. |
 | 1400ms | The nearest centre becomes active. |
+
+Rings appear rather than expand: growing a ring outward would mean regenerating its 64-vertex polygon every frame and re-uploading three shapes to the native map sixty times a second — the churn `NavMap`'s header comment warns against. Appearing one at a time keeps the outward read while leaving the geometry untouched; Mapbox's own `lineOpacityTransition` does the fade natively, at no cost.
 
 Springs are `withSpring` from Reanimated, already used by `RouteCard`. Every entrance is skipped when `useReducedMotion()` is true; the pulse and the camera eases stay, since neither is decorative.
 
