@@ -64,15 +64,29 @@ export default function Centres() {
   useEffect(() => {
     load();
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      // No fix means no distances and no near set. The sort falls back rather
-      // than leaving a "Nearest" control that silently does nothing, which is
-      // what the screen this replaces did.
-      if (status !== "granted") { setSort("pass"); return; }
-      const pos = (await Location.getLastKnownPositionAsync()) ?? (await Location.getCurrentPositionAsync({}));
-      if (pos) setMe({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") return;
+        const pos = (await Location.getLastKnownPositionAsync()) ?? (await Location.getCurrentPositionAsync({}));
+        if (pos) setMe({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      } catch {
+        // Permission can be granted and the fix still never arrive: location
+        // services off at the OS level, or a timeout. Swallowed rather than
+        // left as an unhandled rejection, because `me` staying null already
+        // says everything the screen needs — and says it the same way a
+        // refused permission does.
+      }
     })();
   }, [load]);
+
+  // Nearest needs a fix, so the *effective* sort is derived from one rather
+  // than patched when a permission result comes back. Every no-fix path —
+  // denied, services off, a fix that never lands — therefore reaches the same
+  // state: pass rate, with Nearest greyed and unselected. Setting sort on the
+  // denial alone left the other paths painting Nearest as the selected pill
+  // and greying it as disabled at the same time, while the list quietly sat
+  // in pass-rate order.
+  const activeSort: CentreSort = me ? sort : "pass";
 
   // Identity is assigned from the distance-sorted list, never the displayed
   // one, so re-sorting by pass rate repaints nothing.
@@ -83,8 +97,8 @@ export default function Centres() {
   }, [centres, me]);
 
   const sections = useMemo(
-    () => buildSections({ centres: centres ?? [], me, sort, filter, query }),
-    [centres, me, sort, filter, query]
+    () => buildSections({ centres: centres ?? [], me, sort: activeSort, filter, query }),
+    [centres, me, activeSort, filter, query]
   );
 
   // Pins are the pinned entries that survived the filter and the search, not
@@ -95,6 +109,12 @@ export default function Centres() {
     () => sections.flatMap((s) => s.data).filter((v) => v.pinned).map((v) => v.centre),
     [sections]
   );
+
+  // What the camera frames. With a fix that is the pins, so choosing Manual
+  // refits to what is left; with no fix there are no pins at all and the map
+  // would otherwise open on whatever the base style ships with, so it frames
+  // all forty instead.
+  const frame = useMemo(() => (me ? pins : centres ?? []), [me, pins, centres]);
 
   // One flat array, plus a parallel table of each row's cumulative y built
   // from the same fixed constants (CENTRE_ROW_H, SECTION_HEADER_H) that size
@@ -139,6 +159,14 @@ export default function Centres() {
     }
   }, []);
 
+  // Drop a queued move outright. Anything that stops pointing the sheet at a
+  // centre has to do this, or the trailing flush below still flies the camera
+  // to a centre the sheet no longer shows as active.
+  const cancelPendingFocus = useCallback(() => {
+    clearFlush();
+    pendingFocus.current = null;
+  }, [clearFlush]);
+
   // Nothing left to flush once the screen itself goes away.
   useEffect(() => clearFlush, [clearFlush]);
 
@@ -168,7 +196,7 @@ export default function Centres() {
 
     // Rows under "Further afield" have no pin, so there is nothing to fly to
     // and a jump from London to Newcastle mid-scroll would be violent.
-    if (!row.item.pinned) { setActiveId(null); return; }
+    if (!row.item.pinned) { setActiveId(null); cancelPendingFocus(); return; }
     if (row.item.centre.id === activeId) return;
 
     setActiveId(row.item.centre.id);
@@ -179,8 +207,7 @@ export default function Centres() {
 
     if (elapsed >= 150) {
       // A real move fires now, superseding whatever was still queued.
-      clearFlush();
-      pendingFocus.current = null;
+      cancelPendingFocus();
       lastMove.current = now;
       map.current?.focus(target);
       return;
@@ -201,7 +228,7 @@ export default function Centres() {
         }
       }, 150 - elapsed);
     }
-  }, [rows, rowOffsets, activeId, clearFlush]);
+  }, [rows, rowOffsets, activeId, cancelPendingFocus]);
 
   // The first pin is active from the start, so the map opens already pointed
   // at something rather than at the middle of nowhere. Gated on a ref, not on
@@ -216,9 +243,20 @@ export default function Centres() {
     }
   }, [pins]);
 
+  // Filtering or searching away the active centre takes its pin and its row
+  // with it, and the one-shot seed above will not fire again — so activeId
+  // would keep naming a centre that is no longer anywhere on the screen: no
+  // label on the map, no tinted row. A null activeId is left alone, since
+  // that is what scrolling onto "Further afield" legitimately means.
+  useEffect(() => {
+    if (!activeId || pins.some((p) => p.id === activeId)) return;
+    setActiveId(pins.length ? pins[0].id : null);
+    cancelPendingFocus();
+  }, [pins, activeId, cancelPendingFocus]);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <CentresMap ref={map} pins={pins} identities={identities} me={me} activeId={activeId} />
+      <CentresMap ref={map} pins={pins} frame={frame} identities={identities} me={me} activeId={activeId} />
 
       <View style={{ position: "absolute", top: insets.top + 6, left: 16, right: 16, flexDirection: "row", gap: 8 }}>
         <View style={pillStyle}>
@@ -230,10 +268,15 @@ export default function Centres() {
             testID="enable-location"
             style={pillStyle}
             onPress={async () => {
-              const { status } = await Location.requestForegroundPermissionsAsync();
-              if (status !== "granted") return;
-              const pos = await Location.getCurrentPositionAsync({});
-              setMe({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+              try {
+                const { status } = await Location.requestForegroundPermissionsAsync();
+                if (status !== "granted") return;
+                const pos = await Location.getCurrentPositionAsync({});
+                setMe({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+              } catch {
+                // Same as on mount: granted is not the same as located, and a
+                // rejection here just leaves the pill where it was.
+              }
             }}
           >
             <Text style={{ fontSize: 12.5, fontWeight: "500", color: "#64748B" }}>Turn on location for distances</Text>
@@ -266,9 +309,9 @@ export default function Centres() {
                 testID={`sort-${s.key}`}
                 disabled={s.key === "nearest" && !me}
                 onPress={() => setSort(s.key)}
-                style={[segStyle, sort === s.key && segOnStyle]}
+                style={[segStyle, activeSort === s.key && segOnStyle]}
               >
-                <Text style={{ fontSize: 12, fontWeight: "600", color: segTextColor(sort === s.key, s.key === "nearest" && !me) }}>
+                <Text style={{ fontSize: 12, fontWeight: "600", color: segTextColor(activeSort === s.key, s.key === "nearest" && !me) }}>
                   {s.label}
                 </Text>
               </Pressable>

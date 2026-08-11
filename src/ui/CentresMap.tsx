@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { BackgroundLayer, Camera, CircleLayer, LineLayer, MapView, ShapeSource, SymbolLayer } from "@rnmapbox/maps";
 import { useReducedMotion } from "react-native-reanimated";
 import { ringPolygon, type LatLng } from "@/lib/geo";
@@ -11,6 +11,12 @@ const RING_MILES = [3, 8, 15];
 const ACCENT = "#059669";
 const PIN_STAGGER_MS = 70;
 const RING_STAGGER_MS = 130;
+
+// A frame of one point is degenerate bounds, and Mapbox answers those by
+// zooming to the maximum — a street-level view of one pin, which is not what
+// "fit what is left" means. Searching down to a single match reaches this
+// routinely, so the bounds are widened to at least this span (~2.2km) first.
+const MIN_SPAN_DEG = 0.02;
 
 // Every source below stays mounted for the life of the map and is handed an
 // empty FeatureCollection when there is nothing to draw. Mounting and
@@ -27,29 +33,49 @@ export type CentresMapHandle = {
 
 export type CentresMapProps = {
   pins: Centre[];
+  /**
+   * What the camera must contain: the near set when there is a fix, every
+   * centre when there is not. Kept separate from `pins` because the two
+   * answer different questions — with no fix there are no pins at all, and
+   * the map must still open framed on the country rather than on whatever
+   * the base style happens to ship with.
+   */
+  frame: Centre[];
   identities: Map<string, CentreIdentity>;
   me: LatLng | null;
   activeId: string | null;
 };
 
 export const CentresMap = forwardRef<CentresMapHandle, CentresMapProps>(
-  function CentresMap({ pins, identities, me, activeId }, ref) {
+  function CentresMap({ pins, frame, identities, me, activeId }, ref) {
     const camera = useRef<Camera>(null);
 
     // Pins and rings arrive in sequence rather than all at once. The reveal is
     // a count, not a per-frame geometry change: expanding the rings by
     // regenerating their vertices every frame would re-upload three polygons to
     // the native map sixty times a second, which is the churn NavMap's header
-    // comment exists to warn about. Mapbox's own opacity transitions do the
-    // fading, native-side and free.
+    // comment exists to warn about. They appear rather than fade — the changes
+    // arrive as source data, and Mapbox's paint transitions only animate
+    // changes to a property's own value.
     const reducedMotion = useReducedMotion();
     const [revealed, setRevealed] = useState(0);
     const [ringsShown, setRingsShown] = useState(0);
 
+    // The stagger is a first impression, not a response to data. It keyed on
+    // `pins` identity before, and `pins` is a fresh array on every recompute,
+    // so one keystroke in search emptied the map and re-dropped every pin at
+    // 70ms apiece.
+    const staggered = useRef(false);
+
     useEffect(() => {
-      if (reducedMotion) { setRevealed(pins.length); setRingsShown(RING_MILES.length); return; }
-      setRevealed(0);
-      setRingsShown(0);
+      const showEverything = () => { setRevealed(pins.length); setRingsShown(RING_MILES.length); };
+      if (reducedMotion) { staggered.current = true; showEverything(); return; }
+      if (staggered.current) { showEverything(); return; }
+
+      // Nothing to make an entrance with yet; the first non-empty set owns it.
+      if (!pins.length) return;
+
+      staggered.current = true;
       const timers = [
         ...pins.map((_, i) => setTimeout(() => setRevealed(i + 1), (i + 1) * PIN_STAGGER_MS)),
         ...RING_MILES.map((_, i) => setTimeout(() => setRingsShown(i + 1), (i + 1) * RING_STAGGER_MS)),
@@ -99,26 +125,44 @@ export const CentresMap = forwardRef<CentresMapHandle, CentresMapProps>(
       };
     }, [me]);
 
+    const fitAll = useCallback(() => {
+      const points = frame.map((p) => [p.lng, p.lat] as [number, number]);
+      if (me) points.push([me.lng, me.lat]);
+      if (!points.length) return;
+      const lngs = points.map((p) => p[0]);
+      const lats = points.map((p) => p[1]);
+      const padLng = Math.max(0, MIN_SPAN_DEG - (Math.max(...lngs) - Math.min(...lngs))) / 2;
+      const padLat = Math.max(0, MIN_SPAN_DEG - (Math.max(...lats) - Math.min(...lats))) / 2;
+      camera.current?.fitBounds(
+        [Math.max(...lngs) + padLng, Math.max(...lats) + padLat],
+        [Math.min(...lngs) - padLng, Math.min(...lats) - padLat],
+        [80, 40, 380, 40],   // top, right, bottom, left — the sheet covers the bottom half
+        600
+      );
+    }, [frame, me]);
+
     useImperativeHandle(ref, () => ({
       focus: (c) => camera.current?.setCamera({
         centerCoordinate: [c.lng, c.lat],
         animationDuration: 350,
         animationMode: "easeTo",
       }),
-      fitAll: () => {
-        const points = [...pins.map((p) => [p.lng, p.lat] as [number, number])];
-        if (me) points.push([me.lng, me.lat]);
-        if (!points.length) return;
-        const lngs = points.map((p) => p[0]);
-        const lats = points.map((p) => p[1]);
-        camera.current?.fitBounds(
-          [Math.max(...lngs), Math.max(...lats)],
-          [Math.min(...lngs), Math.min(...lats)],
-          [80, 40, 380, 40],   // top, right, bottom, left — the sheet covers the bottom half
-          600
-        );
-      },
-    }), [pins, me]);
+      fitAll,
+    }), [fitAll]);
+
+    // The camera frames itself: on first paint, and again whenever the framed
+    // *set* changes — which is how selecting Manual refits to what is left.
+    // Keyed on the sorted ids, not on `frame`'s array identity, so switching
+    // Nearest to Pass rate reorders the sheet and moves nothing on the map.
+    // An empty frame is left alone rather than fitted to nothing, so a search
+    // matching no centres keeps the last fit.
+    const frameKey = frame.map((c) => c.id).sort().join("|");
+    useEffect(() => {
+      if (frameKey) fitAll();
+      // fitAll closes over `frame` itself, which changes identity far more
+      // often than the set it describes; frameKey is the change that matters.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [frameKey]);
 
     return (
       <MapView

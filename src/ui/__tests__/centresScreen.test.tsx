@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 jest.mock("@rnmapbox/maps", () => require("../../test/rnmapboxMock"));
 jest.mock("expo-location", () => require("../../test/locationMock"));
@@ -35,7 +36,10 @@ jest.mock("@gorhom/bottom-sheet", () => {
 // eslint-disable-next-line import/first
 import { listCentres } from "@/services/centresRepo";
 // eslint-disable-next-line import/first
-import { resetLocationMock, requestForegroundPermissionsAsync, setLastKnownPosition } from "../../test/locationMock";
+import {
+  resetLocationMock, requestForegroundPermissionsAsync,
+  getCurrentPositionAsync, getLastKnownPositionAsync, setLastKnownPosition,
+} from "../../test/locationMock";
 // eslint-disable-next-line import/first
 import type { Centre } from "@/types/db";
 // eslint-disable-next-line import/first
@@ -134,14 +138,14 @@ test("a failed load with no cache offers a retry rather than an empty list", asy
 // radius of the test fix, so filtering to Manual must drop its pin from the
 // map source alongside its row — nearSet() alone would still hand it over,
 // since nearSet is computed from the unfiltered list to keep identity stable.
-// Task 9 puts the map's pins behind a reveal stagger (CentresMap.tsx): a
-// fresh pin set starts empty and fills in one setTimeout at a time, so
-// reading source:pins right after a render or a filter change would
-// otherwise catch the reveal mid-flight rather than the settled set this
-// test is actually about. The two advanceTimersByTime calls (the file's fake
-// timers are frozen by default — see the top-level beforeEach) just flush
-// that animation past its own worst case (3 pins * 70ms) before each read;
-// the assertions they gate are unchanged from before Task 9.
+// CentresMap puts the map's pins behind a reveal stagger (CentresMap.tsx):
+// on first load they fill in one setTimeout at a time, so reading
+// source:pins right after the first render would catch the reveal mid-flight
+// rather than the settled set this test is actually about. The
+// advanceTimersByTime below (the file's fake timers are frozen by default —
+// see the top-level beforeEach) flushes that entrance past its own worst
+// case (3 pins * 70ms). The filter change afterwards needs no such flush:
+// the entrance runs once, and every later pin set renders immediately.
 test("a car-type filter removes non-matching centres from the map pins too", async () => {
   render(<Centres />);
   await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(3));
@@ -153,7 +157,6 @@ test("a car-type filter removes non-matching centres from the map pins too", asy
   fireEvent.press(screen.getByText("Manual"));
 
   await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(2));
-  act(() => jest.advanceTimersByTime(10_000));
   expect(screen.queryByText("Chingford")).toBeNull();
   expect(pinIds()).not.toEqual(expect.arrayContaining(["Chingford"]));
 });
@@ -343,4 +346,149 @@ test("throttled moves in quick succession still end with the camera on the last 
   } finally {
     jest.useRealTimers();
   }
+});
+
+// The camera itself has to be framed before anyone touches anything. The
+// screen used to render a bare <Camera /> and call fitAll() only from the
+// recentre button, so the first screen of the app opened on whatever camera
+// the Mapbox base style ships with. rnmapboxMock exposes fitBounds the same
+// way it exposes setCamera.
+const fitCalls = () => screen.getByTestId("camera:").props.fitBounds.mock.calls;
+const lastFit = () => fitCalls()[fitCalls().length - 1];
+
+test("the camera frames the near set on first paint", async () => {
+  render(<Centres />);
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(3));
+
+  await waitFor(() => expect(fitCalls().length).toBeGreaterThan(0));
+  const [ne, sw] = lastFit();
+  // Chingford east, Hendon west and south, Chingford north — every pin inside.
+  expect(ne[0]).toBeGreaterThanOrEqual(-0.006);
+  expect(ne[1]).toBeGreaterThanOrEqual(51.6316);
+  expect(sw[0]).toBeLessThanOrEqual(-0.2495);
+  expect(sw[1]).toBeLessThanOrEqual(51.5921);
+});
+
+// The other half of the same requirement, and the one fitting from `pins`
+// cannot reach: with no fix there is no near set, so there are no pins, so a
+// pin-derived fit finds no points and leaves the camera where it started.
+test("with no location permission the camera frames all centres", async () => {
+  requestForegroundPermissionsAsync.mockResolvedValue({ status: "denied" });
+  (listCentres as jest.Mock).mockResolvedValue({
+    data: [...CENTRES, centre("Newcastle", { lat: 54.97, lng: -1.61, region: "Tyne and Wear" })],
+    stale: false,
+  });
+  render(<Centres />);
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(4));
+
+  await waitFor(() => expect(fitCalls().length).toBeGreaterThan(0));
+  const [ne, sw] = lastFit();
+  expect(ne[1]).toBeGreaterThanOrEqual(54.97);    // Newcastle, 250 miles up
+  expect(sw[0]).toBeLessThanOrEqual(-1.61);
+});
+
+// Spec, "Filters, honestly": Manual/Auto remove non-matching centres from the
+// list and their pins from the map, "and refits the camera to what is left".
+// The pin removal shipped; the refit did not.
+test("a car-type filter refits the camera to the centres that are left", async () => {
+  render(<Centres />);
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(3));
+  await waitFor(() => expect(fitCalls().length).toBeGreaterThan(0));
+
+  const before = fitCalls().length;
+  expect(lastFit()[0][0]).toBeGreaterThanOrEqual(-0.006);   // Chingford sets the eastern edge
+
+  fireEvent.press(screen.getByText("Manual"));
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(2));
+
+  await waitFor(() => expect(fitCalls().length).toBeGreaterThan(before));
+  // Chingford is gone, so the eastern edge falls back to Mill Hill.
+  expect(lastFit()[0][0]).toBeLessThan(-0.2);
+});
+
+// Permission granted and the fix never arrives — location services off at the
+// OS level, or a timeout. The screen used to key its sort fallback on the
+// permission status alone, so this state painted Nearest as the selected pill
+// *and* greyed it as disabled, while the list quietly sat in pass-rate order.
+// The spec's states table: identical to having no permission.
+const pillBackground = (testID: string) =>
+  StyleSheet.flatten(screen.getByTestId(testID).props.style)?.backgroundColor;
+
+test("permission granted but no fix is identical to having no permission", async () => {
+  getLastKnownPositionAsync.mockResolvedValue(null);
+  getCurrentPositionAsync.mockRejectedValue(new Error("location services are off"));
+
+  render(<Centres />);
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(3));
+
+  expect(screen.getByTestId("sort-nearest")).toBeDisabled();
+  // Not both selected and disabled: the white pill sits on Pass rate.
+  expect(pillBackground("sort-nearest")).not.toBe("#FFFFFF");
+  expect(pillBackground("sort-pass")).toBe("#FFFFFF");
+
+  const names = screen.getAllByTestId("centre-row-name").map((n) => n.props.children);
+  expect(names[0]).toBe("Chingford");   // 50%, the highest — the order the control now claims
+  expect(screen.getAllByTestId("centre-row-meta")[0]).toHaveTextContent("Greater London");
+});
+
+// activeId was seeded once and never reconciled, so filtering away the active
+// centre left it naming a centre with no pin and no row: no label on the map,
+// no tinted row, and the one-shot seed will not fire again.
+test("filtering away the active centre moves it to one that still has a pin", async () => {
+  (listCentres as jest.Mock).mockResolvedValue({
+    data: [
+      // Alpha is nearest, so the seed makes it active — and it is auto-only,
+      // so choosing Manual is exactly what removes the active centre.
+      centre("Alpha", { lat: 51.611, lng: -0.235, test_types: ["auto"] }),
+      centre("Beta", { lat: 51.651, lng: -0.235, test_types: ["manual"] }),
+    ],
+    stale: false,
+  });
+  render(<Centres />);
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(2));
+
+  const activeName = () => {
+    const rows = screen.getAllByTestId("centre-row");
+    const names = screen.getAllByTestId("centre-row-name").map((n) => n.props.children);
+    const i = rows.findIndex((r) => r.props.style.backgroundColor !== "#FFFFFF");
+    return i < 0 ? null : names[i];
+  };
+  await waitFor(() => expect(activeName()).toBe("Alpha"));
+
+  fireEvent.press(screen.getByText("Manual"));
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(1));
+  expect(activeName()).toBe("Beta");
+});
+
+// The other half: scrolling onto "Further afield" clears the active centre,
+// but it used to leave a throttled move still queued, so the trailing flush
+// afterwards flew the camera to a centre the sheet was showing as inactive.
+test("scrolling onto an unpinned row drops the move that was still queued", async () => {
+  (listCentres as jest.Mock).mockResolvedValue({
+    data: [
+      centre("A", { lat: 51.611, lng: -0.235 }),
+      centre("B", { lat: 51.651, lng: -0.235 }),
+      centre("Far D", { lat: 54.97, lng: -1.61, region: "Tyne and Wear" }),
+    ],
+    stale: false,
+  });
+
+  jest.setSystemTime(10_000);   // far enough past 0 that the first move is never itself throttled
+  render(<Centres />);
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(3));
+
+  // Rows: "Near you" (32) A (88) B (88) | "Further afield" (32) Far D (88)
+  scrollTo(120);   // B — first real move, fires immediately
+  await waitFor(() => expect(cameraCalls().length).toBe(1));
+
+  act(() => jest.advanceTimersByTime(50));
+  scrollTo(32);    // back to A, inside the 150ms floor: stashed, flush scheduled
+
+  act(() => jest.advanceTimersByTime(50));
+  scrollTo(240);   // Far D, unpinned — active clears, and so must the queued move
+
+  act(() => jest.advanceTimersByTime(1000));
+  expect(cameraCalls().length).toBe(1);
+  const active = screen.getAllByTestId("centre-row").filter((r) => r.props.style.backgroundColor !== "#FFFFFF");
+  expect(active).toHaveLength(0);
 });

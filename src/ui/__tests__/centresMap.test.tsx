@@ -26,6 +26,7 @@ const setup = (over: Partial<React.ComponentProps<typeof CentresMap>> = {}) =>
     <CentresMap
       ref={createRef<CentresMapHandle>()}
       pins={pins}
+      frame={pins}
       identities={identities}
       me={{ lat: 51.601, lng: -0.235 }}
       activeId={null}
@@ -34,6 +35,7 @@ const setup = (over: Partial<React.ComponentProps<typeof CentresMap>> = {}) =>
   );
 
 const shapeOf = (id: string) => screen.getByTestId(`source:${id}`).props.shape;
+const fitCalls = () => screen.getByTestId("camera:").props.fitBounds.mock.calls;
 
 // Pins and rings now arrive on a stagger (see the two tests below), so any
 // test that wants the *settled* map — every pin, every ring, present — has
@@ -101,22 +103,105 @@ test("pins arrive one at a time rather than all at once", () => {
   jest.useRealTimers();
 });
 
-test("a changed pin set restarts the reveal rather than jumping", () => {
+// Replaces "a changed pin set restarts the reveal rather than jumping". The
+// stagger is an entrance, and `pins` is a fresh array on every recompute of
+// the screen's sections — so keying the reveal on its identity meant one
+// keystroke in search blanked the map and re-dropped every pin at 70ms
+// apiece, which is the opposite of the spec's "re-sorting never repaints
+// anything". The entrance now runs once, on the first non-empty set.
+test("a changed pin set after the first reveal renders at once, without restarting it", () => {
   jest.useFakeTimers();
   const { rerender } = setup();
-  act(() => jest.advanceTimersByTime(70 * 4));
+  settleReveal();
   expect(shapeOf("pins").features).toHaveLength(2);
 
+  const grown = [...pins, centre("c", 51.65, -0.08)];
   rerender(
     <CentresMap
-      pins={[...pins, centre("c", 51.65, -0.08)]}
+      pins={grown}
+      frame={grown}
       identities={new Map([...identities, ["c", identity]])}
       me={{ lat: 51.601, lng: -0.235 }}
       activeId={null}
     />
   );
-  expect(shapeOf("pins").features).toHaveLength(0);
-  act(() => jest.advanceTimersByTime(70 * 4));
+
+  // No return to zero, and no timers left to advance for.
   expect(shapeOf("pins").features).toHaveLength(3);
+  jest.useRealTimers();
+});
+
+test("the camera fits the frame on first paint", () => {
+  jest.useFakeTimers();
+  setup();
+  expect(fitCalls()).toHaveLength(1);
+  const [ne, sw] = fitCalls()[0];
+  // Both pins and the driver, inside the bounds rather than merely near them.
+  expect(ne[0]).toBeGreaterThanOrEqual(-0.16);
+  expect(ne[1]).toBeGreaterThanOrEqual(51.63);
+  expect(sw[0]).toBeLessThanOrEqual(-0.24);
+  expect(sw[1]).toBeLessThanOrEqual(51.60);
+  jest.useRealTimers();
+});
+
+// The no-permission half of the same requirement: there are no pins at all,
+// so a fit computed from `pins` would find no points and return early,
+// leaving the base style's own camera wherever it happened to open.
+test("with no fix and no pins, the camera still fits every centre in the frame", () => {
+  jest.useFakeTimers();
+  const all = [...pins, centre("newcastle", 54.97, -1.61)];
+  setup({ me: null, pins: [], identities: new Map(), frame: all });
+
+  expect(fitCalls()).toHaveLength(1);
+  const [ne, sw] = fitCalls()[0];
+  expect(ne[1]).toBeGreaterThanOrEqual(54.97);
+  expect(sw[0]).toBeLessThanOrEqual(-1.61);
+  jest.useRealTimers();
+});
+
+test("a frame losing a point refits the camera to what is left", () => {
+  jest.useFakeTimers();
+  const wide = [...pins, centre("newcastle", 54.97, -1.61)];
+  const { rerender } = setup({ frame: wide });
+  expect(fitCalls()).toHaveLength(1);
+  expect(fitCalls()[0][0][1]).toBeGreaterThanOrEqual(54.97);
+
+  rerender(
+    <CentresMap pins={pins} frame={pins} identities={identities}
+      me={{ lat: 51.601, lng: -0.235 }} activeId={null} />
+  );
+
+  expect(fitCalls()).toHaveLength(2);
+  expect(fitCalls()[1][0][1]).toBeLessThan(52);
+  jest.useRealTimers();
+});
+
+// The spec's rule that re-sorting "never repaints anything" reaches the
+// camera too: Nearest to Pass rate hands the map the same centres in a
+// different order, and a fit keyed on array order would ease to identical
+// bounds for no reason.
+test("reordering the frame without changing the set does not refit", () => {
+  jest.useFakeTimers();
+  const { rerender } = setup();
+  expect(fitCalls()).toHaveLength(1);
+
+  rerender(
+    <CentresMap pins={pins} frame={[...pins].reverse()} identities={identities}
+      me={{ lat: 51.601, lng: -0.235 }} activeId={null} />
+  );
+
+  expect(fitCalls()).toHaveLength(1);
+  jest.useRealTimers();
+});
+
+// A search narrowing to one match is degenerate bounds, which Mapbox answers
+// by zooming to the maximum — a street view of a single pin.
+test("a single-point frame is widened rather than fitted to a zero span", () => {
+  jest.useFakeTimers();
+  const one = [centre("a", 51.60, -0.24)];
+  setup({ me: null, pins: one, identities, frame: one });
+  const [ne, sw] = fitCalls()[0];
+  expect(ne[0] - sw[0]).toBeGreaterThan(0.01);
+  expect(ne[1] - sw[1]).toBeGreaterThan(0.01);
   jest.useRealTimers();
 });
