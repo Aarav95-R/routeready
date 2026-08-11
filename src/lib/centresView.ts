@@ -18,7 +18,13 @@ export const NEAR_RADIUS_M = 30 * 1609.34;
 export const NEAR_MAX = 12;   // the identity palette is twelve, so a full near set never repeats a colour
 export const NEAR_MIN = 8;    // a rural driver with nothing in range still gets a map worth looking at
 
-const byDistance = (me: LatLng) => (a: Centre, b: Centre) =>
+/**
+ * Nearest-first comparator, curried on the fix so `[...list].sort(byDistance(me))`
+ * reads at the call site. The one definition, shared by this module's own
+ * near-set/sort logic and by the screen's identity-assignment ordering, so
+ * "nearest" cannot mean two slightly different things in two places.
+ */
+export const byDistance = (me: LatLng) => (a: Centre, b: Centre) =>
   haversineM(me, { lat: a.lat, lng: a.lng }) - haversineM(me, { lat: b.lat, lng: b.lng });
 
 /**

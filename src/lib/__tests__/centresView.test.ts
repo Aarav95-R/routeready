@@ -1,5 +1,5 @@
 import type { Centre } from "@/types/db";
-import { buildSections, nearSet, NEAR_MAX, NEAR_MIN } from "../centresView";
+import { buildSections, byDistance, nearSet, NEAR_MAX, NEAR_MIN } from "../centresView";
 
 const MILL_HILL = { lat: 51.6087, lng: -0.2412 };
 
@@ -8,6 +8,14 @@ const at = (id: string, milesNorth: number, over: Partial<Centre> = {}): Centre 
   id, name: id, address: "", lat: MILL_HILL.lat + milesNorth * 0.0145, lng: MILL_HILL.lng,
   pass_rate: 40, pass_rate_history: [], test_types: ["manual", "auto"], region: "Greater London",
   ...over,
+});
+
+// Exported so the screen can order the identity-assignment list the same
+// way this module orders the near set and the "nearest" sort — one
+// definition of "nearest" rather than a second comparator drifting from it.
+test("byDistance sorts nearest first", () => {
+  const centres = [at("far", 10), at("near", 1), at("mid", 5)];
+  expect([...centres].sort(byDistance(MILL_HILL)).map((c) => c.id)).toEqual(["near", "mid", "far"]);
 });
 
 test("the near set takes what is within thirty miles", () => {

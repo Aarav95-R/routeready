@@ -1,11 +1,15 @@
-// Screens that reach networkStore pull in progressRepo -> supabase.ts, which
-// calls createClient at import time. Expo inlines EXPO_PUBLIC_* vars from
-// .env when the app runs, but a bare `jest` process never loads .env on its
-// own, so without this the client constructor throws before any mock can
-// intervene.
-require("dotenv").config();
-
 jest.mock("@react-native-async-storage/async-storage", () => require("@react-native-async-storage/async-storage/jest/async-storage-mock"));
+
+// Screens that reach networkStore pull in progressRepo -> supabase.ts, whose
+// module-level createClient() call needs real Supabase credentials that a
+// fresh clone or a CI runner without secrets does not have. sessionStore's
+// and centresRepo's own suites already mock this module per-file for the
+// same reason (see src/stores/__tests__/sessionStore.test.ts and
+// src/services/__tests__/repos.test.ts); this is the same fix generalised so
+// no screen test needs to know supabase.ts sits behind networkStore just to
+// mount. A test-file-level jest.mock("@/lib/supabase", ...) — as those two
+// suites use — still wins over this one for its own file.
+jest.mock("@/lib/supabase", () => ({ supabase: {} }));
 
 // useSafeAreaInsets() throws without a <SafeAreaProvider> ancestor. Screens
 // that call it directly (the centres screen among them) render standalone

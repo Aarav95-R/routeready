@@ -7,10 +7,10 @@ import BottomSheet, { BottomSheetFlatList } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { assignIdentities } from "@/lib/centreIdentity";
 import {
-  buildSections,
+  buildSections, byDistance,
   type CentreFilter, type CentreSort, type ViewCentre,
 } from "@/lib/centresView";
-import { haversineM, type LatLng } from "@/lib/geo";
+import type { LatLng } from "@/lib/geo";
 import { listCentres } from "@/services/centresRepo";
 import { useNetwork } from "@/stores/networkStore";
 import type { Centre } from "@/types/db";
@@ -73,10 +73,7 @@ export default function Centres() {
   // one, so re-sorting by pass rate repaints nothing.
   const identities = useMemo(() => {
     const all = centres ?? [];
-    const ordered = me
-      ? [...all].sort((a, b) =>
-          haversineM(me, { lat: a.lat, lng: a.lng }) - haversineM(me, { lat: b.lat, lng: b.lng }))
-      : all;
+    const ordered = me ? [...all].sort(byDistance(me)) : all;
     return assignIdentities(ordered);
   }, [centres, me]);
 
