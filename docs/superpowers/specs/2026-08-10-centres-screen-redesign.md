@@ -195,7 +195,11 @@ Entrance, on first load:
 | 700ms | Rows spring up 20pt at 60ms stagger; each emblem's mark blooms in from −24° and its ring sweeps over 950ms. |
 | 1400ms | The nearest centre becomes active. |
 
-Rings appear rather than expand: growing a ring outward would mean regenerating its 64-vertex polygon every frame and re-uploading three shapes to the native map sixty times a second — the churn `NavMap`'s header comment warns against. Appearing one at a time keeps the outward read while leaving the geometry untouched; Mapbox's own `lineOpacityTransition` does the fade natively, at no cost.
+Rings appear rather than expand: growing a ring outward would mean regenerating its 64-vertex polygon every frame and re-uploading three shapes to the native map sixty times a second — the churn `NavMap`'s header comment warns against. Appearing one at a time keeps the outward read while leaving the geometry untouched.
+
+They appear without a fade, and so do the pins. An earlier revision of this section claimed `lineOpacityTransition` would fade them natively; that was wrong. Mapbox's paint transitions animate a paint property's own *value* changing, and neither property here changes value: `lineOpacity` is the constant `0.28`, and `circleRadius` is a `["case", ...]` expression. What changes is the source data — a ring or a pin arriving in the `ShapeSource`'s `FeatureCollection` — and a feature appearing in a source is not a paint-property change, so nothing transitions. Rings and pins pop in.
+
+Whether they need a real fade is a Task 10 question, to be answered on device rather than here: the honest options are a per-feature opacity driven off a `["get", ...]` property that the reveal steps, or accepting the pop. Both are cheap; neither is worth choosing without seeing it run.
 
 Springs are `withSpring` from Reanimated, already used by `RouteCard`. Every entrance is skipped when `useReducedMotion()` is true; the pulse and the camera eases stay, since neither is decorative.
 
