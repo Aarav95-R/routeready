@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 jest.mock("@rnmapbox/maps", () => require("../../test/rnmapboxMock"));
 jest.mock("expo-location", () => require("../../test/locationMock"));
@@ -6,15 +6,29 @@ jest.mock("@/services/centresRepo", () => ({ listCentres: jest.fn() }));
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn() }) }));
 
 // The bottom sheet needs a real native layout pass the test renderer never
-// gives it — under test it renders nothing without this. See Task 8, which
-// reaches the list through this mock's BottomSheetFlatList via
-// UNSAFE_getByType(FlatList).
+// gives it — under test it renders nothing without this. BottomSheetFlatList
+// stands in as a lean, non-virtualizing list rather than react-native's real
+// FlatList: it renders `data` straight through `renderItem`, and forwards
+// `onScroll` as a plain prop reachable via getByTestId (see Task 8's
+// scrollTo below). The real FlatList's VirtualizedList schedules its own
+// cell-recalculation off a bare setTimeout on every render, unrelated to
+// anything this screen does, and that timer routinely outlives a test under
+// Jest's full-suite parallelism, firing on an unmounted tree and tripping an
+// "update ... not wrapped in act(...)" warning — noise from react-native's
+// own internals, not from this screen's scroll binding.
 jest.mock("@gorhom/bottom-sheet", () => {
-  const { View, FlatList } = require("react-native");
+  const { View } = require("react-native");
+  const FakeFlatList = ({ data, renderItem, keyExtractor, onScroll }: any) => (
+    <View testID="centres-list" onScroll={onScroll}>
+      {data.map((item: any, index: number) => (
+        <View key={keyExtractor(item, index)}>{renderItem({ item, index })}</View>
+      ))}
+    </View>
+  );
   return {
     __esModule: true,
     default: ({ children }: any) => <View>{children}</View>,
-    BottomSheetFlatList: FlatList,
+    BottomSheetFlatList: FakeFlatList,
   };
 });
 
@@ -121,4 +135,87 @@ test("a car-type filter removes non-matching centres from the map pins too", asy
   await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(2));
   expect(screen.queryByText("Chingford")).toBeNull();
   expect(pinIds()).not.toEqual(expect.arrayContaining(["Chingford"]));
+});
+
+// Calls the onScroll prop we handed the list directly, rather than dispatching
+// a scroll event: the mocked BottomSheetFlatList above is a lean stand-in, so
+// its onScroll prop is reachable straight off the element, and calling it
+// exercises exactly the handler this screen wired up.
+const scrollTo = (y: number) => {
+  act(() => {
+    screen.getByTestId("centres-list").props.onScroll({
+      nativeEvent: {
+        contentOffset: { y, x: 0 },
+        contentSize: { height: 1000, width: 390 },
+        layoutMeasurement: { height: 400, width: 390 },
+      },
+    });
+  });
+};
+
+test("scrolling the sheet makes the arrived-at centre active", async () => {
+  render(<Centres />);
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(3));
+
+  // 88pt rows: an offset of two rows lands on the third centre.
+  scrollTo(176);
+  await waitFor(() => {
+    const active = screen.getAllByTestId("centre-row").filter((r) => r.props.style.backgroundColor !== "#FFFFFF");
+    expect(active).toHaveLength(1);
+  });
+});
+
+test("a row under Further afield does not become active", async () => {
+  // Newcastle is 250 miles out, so it is listed but never pinned.
+  (listCentres as jest.Mock).mockResolvedValue({
+    data: [...CENTRES, centre("Newcastle", { lat: 54.97, lng: -1.61, region: "Tyne and Wear" })],
+    stale: false,
+  });
+  render(<Centres />);
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(4));
+
+  scrollTo(2000);   // far past the end, onto the unpinned section
+  await waitFor(() => {
+    const names = screen.getAllByTestId("centre-row-name").map((n) => n.props.children);
+    expect(names).toContain("Newcastle");
+  });
+  const active = screen.getAllByTestId("centre-row").filter((r) => r.props.style.backgroundColor !== "#FFFFFF");
+  expect(active).toHaveLength(0);
+});
+
+// Regression for the plan's original bug: computing the active row as
+// `offsetY / CENTRE_ROW_H` assumes every pixel above the target belongs to an
+// 88pt centre row. Once "Near you" and "Further afield" both exist, a 32pt
+// section header sits above the second and third near rows, and the bare
+// division drifts by a header's worth of pixels — landing one row too far.
+// The offset table (built from CENTRE_ROW_H and SECTION_HEADER_H, not
+// measured) must not have that drift.
+test("a section header above the target row does not shift which centre becomes active", async () => {
+  (listCentres as jest.Mock).mockResolvedValue({
+    data: [
+      // Same longitude as `me` (set in beforeEach), increasing latitude, so
+      // distance order is exactly Near A, Near B, Near C — all comfortably
+      // inside the 30-mile near radius.
+      centre("Near A", { lat: 51.651, lng: -0.235 }),
+      centre("Near B", { lat: 51.701, lng: -0.235 }),
+      centre("Near C", { lat: 51.751, lng: -0.235 }),
+      centre("Far D", { lat: 54.97, lng: -1.61, region: "Tyne and Wear" }),
+    ],
+    stale: false,
+  });
+  render(<Centres />);
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(4));
+
+  // Row layout: "Near you" header (32) + Near A (88) + Near B (88) + Near C
+  // (88) + "Further afield" header (32) + Far D (88). y=150 falls inside
+  // Near B's band [120, 208). The brief's bare division — round(150/88) = 2 —
+  // ignores the 32pt header and picks the third centre row (Near C) instead.
+  scrollTo(150);
+  await waitFor(() => {
+    const rows = screen.getAllByTestId("centre-row");
+    const names = screen.getAllByTestId("centre-row-name").map((n) => n.props.children);
+    const activeIndex = rows.findIndex((r) => r.props.style.backgroundColor !== "#FFFFFF");
+    expect(activeIndex).toBeGreaterThanOrEqual(0);
+    expect(names[activeIndex]).toBe("Near B");
+  });
 });

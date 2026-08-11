@@ -31,6 +31,11 @@ const FILTERS: { key: CentreFilter; label: string }[] = [
 
 type Row = { kind: "header"; title: string } | { kind: "centre"; item: ViewCentre; index: number };
 
+// Fixed and named, like CENTRE_ROW_H, so the header's rendered height is a
+// known number the scroll-to-camera binding can add up rather than something
+// it would otherwise have to measure after layout.
+const SECTION_HEADER_H = 32;
+
 export default function Centres() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -91,23 +96,89 @@ export default function Centres() {
     [sections]
   );
 
-  // One flat array, because a fixed row height is what lets the map binding
-  // work out the active centre from a scroll offset without measuring.
-  const rows = useMemo<Row[]>(() => {
-    const out: Row[] = [];
+  // One flat array, plus a parallel table of each row's cumulative y built
+  // from the same fixed constants (CENTRE_ROW_H, SECTION_HEADER_H) that size
+  // the rows. Section headers are not 88pt, so this table — not
+  // offsetY / CENTRE_ROW_H — is what keeps the scroll binding pointed at the
+  // right centre once a header sits above it.
+  const { rows, rowOffsets } = useMemo(() => {
+    const outRows: Row[] = [];
+    const offsets: number[] = [];
+    let y = 0;
     let index = 0;
     for (const section of sections) {
-      if (sections.length > 1) out.push({ kind: "header", title: section.title });
-      for (const item of section.data) out.push({ kind: "centre", item, index: index++ });
+      if (sections.length > 1) {
+        outRows.push({ kind: "header", title: section.title });
+        offsets.push(y);
+        y += SECTION_HEADER_H;
+      }
+      for (const item of section.data) {
+        outRows.push({ kind: "centre", item, index: index++ });
+        offsets.push(y);
+        y += CENTRE_ROW_H;
+      }
     }
-    return out;
+    return { rows: outRows, rowOffsets: offsets };
   }, [sections]);
 
   const empty = centres !== null && !error && rows.length === 0;
 
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const lastMove = useRef(0);
+
+  /**
+   * The sheet and the map are one instrument: scrolling the cards is the same
+   * gesture as panning the map.
+   *
+   * rowOffsets holds each row's cumulative y from the fixed row/header
+   * constants, so finding the row at the top of the viewport is a lookup
+   * against known numbers, not a measurement. Two guards keep the camera from
+   * feeling seasick: it only moves when the row actually changes, and never
+   * twice inside 150ms, so a flung list settles before the map chases it.
+   */
+  const onScroll = useCallback((offsetY: number) => {
+    if (!rows.length) return;
+
+    // Walk forward while the *next* row's band would still contain offsetY,
+    // so `i` lands on the row currently at the top of the viewport.
+    let i = 0;
+    while (i < rowOffsets.length - 1 && rowOffsets[i + 1] <= offsetY) i++;
+    const row = rows[i];
+
+    // A header itself has no centre to focus, and skipping it here (rather
+    // than falling through to the nearest centre) means the map holds still
+    // while the header scrolls past instead of jittering onto a guess.
+    if (row.kind === "header") return;
+
+    // Rows under "Further afield" have no pin, so there is nothing to fly to
+    // and a jump from London to Newcastle mid-scroll would be violent.
+    if (!row.item.pinned) { setActiveId(null); return; }
+    if (row.item.centre.id === activeId) return;
+
+    setActiveId(row.item.centre.id);
+
+    const now = Date.now();
+    if (now - lastMove.current < 150) return;
+    lastMove.current = now;
+    map.current?.focus({ lat: row.item.centre.lat, lng: row.item.centre.lng });
+  }, [rows, rowOffsets, activeId]);
+
+  // The first pin is active from the start, so the map opens already pointed
+  // at something rather than at the middle of nowhere. Gated on a ref, not on
+  // activeId being null, because activeId legitimately goes back to null once
+  // the user scrolls onto "Further afield" — an activeId dependency here
+  // would re-seize the camera back to pins[0] the instant that happened.
+  const seededActive = useRef(false);
+  useEffect(() => {
+    if (pins.length && !seededActive.current) {
+      seededActive.current = true;
+      setActiveId(pins[0].id);
+    }
+  }, [pins]);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <CentresMap ref={map} pins={pins} identities={identities} me={me} activeId={null} />
+      <CentresMap ref={map} pins={pins} identities={identities} me={me} activeId={activeId} />
 
       <View style={{ position: "absolute", top: insets.top + 6, left: 16, right: 16, flexDirection: "row", gap: 8 }}>
         <View style={pillStyle}>
@@ -211,16 +282,18 @@ export default function Centres() {
             data={rows}
             keyExtractor={(r) => (r.kind === "header" ? `h:${r.title}` : r.item.centre.id)}
             contentContainerStyle={{ paddingBottom: 120 }}
+            scrollEventThrottle={16}
+            onScroll={(e) => onScroll(e.nativeEvent.contentOffset.y)}
             renderItem={({ item: row }) =>
               row.kind === "header" ? (
-                <Text style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, fontSize: 11, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase", color: "#94A3B8" }}>
+                <Text style={{ height: SECTION_HEADER_H, paddingHorizontal: 16, paddingTop: 12, fontSize: 11, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase", color: "#94A3B8" }}>
                   {row.title}
                 </Text>
               ) : (
                 <CentreRow
                   item={row.item}
                   identity={identities.get(row.item.centre.id)!}
-                  active={false}
+                  active={row.item.centre.id === activeId}
                   index={row.index}
                   onPress={() => router.push(`/centre/${row.item.centre.id}`)}
                 />
