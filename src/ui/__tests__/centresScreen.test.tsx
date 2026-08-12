@@ -28,7 +28,10 @@ jest.mock("@gorhom/bottom-sheet", () => {
   );
   return {
     __esModule: true,
-    default: ({ children }: any) => <View>{children}</View>,
+    // snapPoints is forwarded so the one-detent invariant can be asserted.
+    default: ({ children, snapPoints }: any) => (
+      <View testID="sheet" snapPoints={snapPoints}>{children}</View>
+    ),
     BottomSheetFlatList: FakeFlatList,
   };
 });
@@ -491,4 +494,13 @@ test("scrolling onto an unpinned row drops the move that was still queued", asyn
   expect(cameraCalls().length).toBe(1);
   const active = screen.getAllByTestId("centre-row").filter((r) => r.props.style.backgroundColor !== "#FFFFFF");
   expect(active).toHaveLength(0);
+});
+
+test("the sheet has exactly one detent, so scrolling the list never covers the map", async () => {
+  // gorhom locks the scrollable unless the sheet is at its highest detent, so
+  // a second snap point does not merely add a position — it makes the first
+  // scroll gesture drag the sheet up over the map before the list moves.
+  render(<Centres />);
+  await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(3));
+  expect(screen.getByTestId("sheet").props.snapPoints).toHaveLength(1);
 });

@@ -51,6 +51,11 @@ const ScrollableRows = BottomSheetFlatList as unknown as React.ComponentType<{
 // it would otherwise have to measure after layout.
 const SECTION_HEADER_H = 32;
 
+// Exactly one detent — the map is half the point of this screen and must not
+// be scrollable away. See the comment on <BottomSheet> for why a second one
+// breaks scrolling rather than merely adding a position.
+const SHEET_SNAP_POINTS = ["52%"];
+
 export default function Centres() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -303,7 +308,14 @@ export default function Centres() {
         </Pressable>
       </View>
 
-      <BottomSheet index={0} snapPoints={["52%", "92%"]} bottomInset={0}>
+      {/* One snap point, deliberately.
+          gorhom locks the scrollable unless the sheet sits at its highest
+          detent (useScrollEventsHandlersDefault scrolls it back to its lock
+          position otherwise), so a second detent at 92% meant the first
+          scroll gesture was always spent dragging the sheet up over the map
+          before the list would move at all. With a single detent the sheet is
+          always extended, the list scrolls in place, and the map stays. */}
+      <BottomSheet index={0} snapPoints={SHEET_SNAP_POINTS} bottomInset={0}>
         <View style={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderColor: "#E2E8F0", backgroundColor: "#FFF", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
             <Ionicons name="search" size={15} color={colors.ink3} />

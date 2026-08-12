@@ -34,7 +34,7 @@ The mockup showed things the data does not support. Same rule as the routes rede
 
 ## The shape of the screen
 
-Behind everything is the map. In front of it, a sheet that starts at 52% and can be dragged to 92%.
+Behind everything is the map. In front of it, a sheet fixed at 52% — it does not move.
 
 ```
 ┌────────────────────────────────────────┐
@@ -134,7 +134,11 @@ Nothing about the emblem is hand-authored, so seeding a new centre never needs a
 
 ## The binding
 
-The sheet is `@gorhom/bottom-sheet` (already a dependency, already driving `mock.tsx` and `practice.tsx`), snap points `["52%", "92%"]`, with a `BottomSheetFlatList` inside.
+The sheet is `@gorhom/bottom-sheet` (already a dependency, already driving `mock.tsx` and `practice.tsx`), with a `BottomSheetFlatList` inside and **exactly one snap point, `["52%"]`**.
+
+The single detent is not a simplification, it is the fix for a real defect. gorhom locks its scrollable unless the sheet sits at its highest detent — `useScrollEventsHandlersDefault` scrolls it back to a lock position otherwise — so a second detent at 92% did not merely add a position the user could reach. It meant the *first scroll gesture on the list was always spent dragging the sheet up over the map*, and only then did the rows move. On a screen whose entire premise is that the map and the list are one instrument, scrolling the list swallowed the map. With one detent the sheet is permanently extended, the list scrolls in place, and the map cannot be scrolled away.
+
+The consequence to accept: the sheet cannot be pulled up to show more rows at once. About four are visible. That is the trade the premise demands.
 
 Rows are a fixed 88pt with `getItemLayout` supplied, so the active index is `Math.round(offsetY / 88)` — no measurement, no layout pass. On change:
 
