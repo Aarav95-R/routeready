@@ -136,9 +136,17 @@ Nothing about the emblem is hand-authored, so seeding a new centre never needs a
 
 The sheet is `@gorhom/bottom-sheet` (already a dependency, already driving `mock.tsx` and `practice.tsx`), with a `BottomSheetFlatList` inside and **exactly one snap point, `["52%"]`**.
 
-The single detent is not a simplification, it is the fix for a real defect. gorhom locks its scrollable unless the sheet sits at its highest detent — `useScrollEventsHandlersDefault` scrolls it back to a lock position otherwise — so a second detent at 92% did not merely add a position the user could reach. It meant the *first scroll gesture on the list was always spent dragging the sheet up over the map*, and only then did the rows move. On a screen whose entire premise is that the map and the list are one instrument, scrolling the list swallowed the map. With one detent the sheet is permanently extended, the list scrolls in place, and the map cannot be scrolled away.
+**The sheet does not move at all**, and making that true took three props, none of them a gorhom default. It is worth writing down why, because each closes a different route and the first attempt — one snap point — fixed none of them:
 
-The consequence to accept: the sheet cannot be pulled up to show more rows at once. About four are visible. That is the trade the premise demands.
+| Prop | What it closes |
+|---|---|
+| `enableContentPanningGesture={false}` | The important one. gorhom locks its scrollable unless the sheet sits at its highest detent, so the first scroll gesture on the list is spent hauling the sheet up before a row moves. `useScrollable`'s first rule is `if (!enableContentPanningGesture) return SCROLLABLE_STATUS.UNLOCKED` — disabling it both frees the list to scroll in place and removes the gesture that drags the sheet from its content. |
+| `enableDynamicSizing={false}` | Defaults to **true**, and inserts a content-height detent alongside `snapPoints`. One snap point is therefore not one detent, which is why setting `["52%"]` alone changed nothing. |
+| `enableHandlePanningGesture={false}` | The last route: dragging the top edge. |
+
+`handleComponent={null}` follows from those — a grabber advertising a drag that cannot happen is a lie, so the handle is gone and its space is replaced by padding on the content.
+
+The consequence to accept: the sheet cannot be pulled up to show more rows at once. About four are visible. That is the trade the premise demands — the map is half of this screen and must not be scrollable away.
 
 Rows are a fixed 88pt with `getItemLayout` supplied, so the active index is `Math.round(offsetY / 88)` — no measurement, no layout pass. On change:
 

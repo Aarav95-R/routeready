@@ -308,15 +308,36 @@ export default function Centres() {
         </Pressable>
       </View>
 
-      {/* One snap point, deliberately.
-          gorhom locks the scrollable unless the sheet sits at its highest
-          detent (useScrollEventsHandlersDefault scrolls it back to its lock
-          position otherwise), so a second detent at 92% meant the first
-          scroll gesture was always spent dragging the sheet up over the map
-          before the list would move at all. With a single detent the sheet is
-          always extended, the list scrolls in place, and the map stays. */}
-      <BottomSheet index={0} snapPoints={SHEET_SNAP_POINTS} bottomInset={0}>
-        <View style={{ paddingHorizontal: 16, paddingBottom: 8, gap: 8 }}>
+      {/* The sheet does not move. All three props are load-bearing, and each
+          closes a different way gorhom would otherwise raise it over the map:
+
+          - enableContentPanningGesture={false} is the important one.
+            useScrollable's first rule is `if (!enableContentPanningGesture)
+            return SCROLLABLE_STATUS.UNLOCKED`, so this both unlocks the list
+            unconditionally and removes the gesture that drags the sheet from
+            its content. Without it, gorhom locks the scrollable unless the
+            sheet is at its highest detent, and the first scroll gesture is
+            spent hauling the sheet up before a row moves.
+          - enableDynamicSizing defaults to TRUE, which inserts a
+            content-height detent alongside snapPoints. One snap point alone
+            therefore did not give one detent.
+          - enableHandlePanningGesture={false} closes the last route: dragging
+            the top edge.
+
+          The map is half of this screen. It must not be scrollable away. */}
+      <BottomSheet
+        index={0}
+        snapPoints={SHEET_SNAP_POINTS}
+        bottomInset={0}
+        enableDynamicSizing={false}
+        enableContentPanningGesture={false}
+        enableHandlePanningGesture={false}
+        handleComponent={null}
+      >
+        {/* paddingTop replaces the space gorhom's handle used to occupy — the
+            handle is gone because the sheet can no longer be dragged, and a
+            grabber advertising a gesture that does nothing is a lie. */}
+        <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8, gap: 8 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, borderWidth: 1, borderColor: "#E2E8F0", backgroundColor: "#FFF", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9 }}>
             <Ionicons name="search" size={15} color={colors.ink3} />
             <TextInput

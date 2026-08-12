@@ -28,9 +28,10 @@ jest.mock("@gorhom/bottom-sheet", () => {
   );
   return {
     __esModule: true,
-    // snapPoints is forwarded so the one-detent invariant can be asserted.
-    default: ({ children, snapPoints }: any) => (
-      <View testID="sheet" snapPoints={snapPoints}>{children}</View>
+    // The props that make the sheet immovable are forwarded so a test can
+    // assert them; none of them is a gorhom default.
+    default: ({ children, ...props }: any) => (
+      <View testID="sheet" {...props}>{children}</View>
     ),
     BottomSheetFlatList: FakeFlatList,
   };
@@ -496,11 +497,22 @@ test("scrolling onto an unpinned row drops the move that was still queued", asyn
   expect(active).toHaveLength(0);
 });
 
-test("the sheet has exactly one detent, so scrolling the list never covers the map", async () => {
-  // gorhom locks the scrollable unless the sheet is at its highest detent, so
-  // a second snap point does not merely add a position — it makes the first
-  // scroll gesture drag the sheet up over the map before the list moves.
+test("the sheet cannot move, so scrolling the list never covers the map", async () => {
+  // Each of these closes a different route by which gorhom would otherwise
+  // raise the sheet over the map, and not one of them is its default:
+  //   - content panning locks the scrollable until the sheet reaches its
+  //     highest detent, so the first scroll gesture hauls the sheet up
+  //     instead of moving a row. useScrollable returns UNLOCKED outright
+  //     when it is disabled, which is what makes the list scroll in place.
+  //   - enableDynamicSizing defaults to true and adds a content-height
+  //     detent, so one snap point is not the same as one detent.
+  //   - handle panning drags it by the top edge.
   render(<Centres />);
   await waitFor(() => expect(screen.getAllByTestId("centre-row")).toHaveLength(3));
-  expect(screen.getByTestId("sheet").props.snapPoints).toHaveLength(1);
+
+  const sheet = screen.getByTestId("sheet").props;
+  expect(sheet.snapPoints).toHaveLength(1);
+  expect(sheet.enableContentPanningGesture).toBe(false);
+  expect(sheet.enableDynamicSizing).toBe(false);
+  expect(sheet.enableHandlePanningGesture).toBe(false);
 });
