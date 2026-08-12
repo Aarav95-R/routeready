@@ -5,10 +5,11 @@
 import { forwardRef, createElement, useImperativeHandle, useRef } from "react";
 import { View } from "react-native";
 
-// `shape` is forwarded so the tests can read what each source was handed.
+// `shape` is forwarded so the tests can read what each source was handed, and
+// `filter` so they can read which features a layer excludes.
 const stub = (kind: string) => {
-  const Stub = forwardRef<unknown, any>(({ children, id, shape }, ref) =>
-    createElement(View as any, { ref, testID: `${kind}:${id ?? ""}`, shape }, children)
+  const Stub = forwardRef<unknown, any>(({ children, id, shape, filter }, ref) =>
+    createElement(View as any, { ref, testID: `${kind}:${id ?? ""}`, shape, filter }, children)
   );
   Stub.displayName = kind;
   return Stub;

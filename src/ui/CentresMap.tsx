@@ -1,9 +1,10 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { BackgroundLayer, Camera, CircleLayer, LineLayer, MapView, ShapeSource, SymbolLayer } from "@rnmapbox/maps";
+import { BackgroundLayer, Camera, CircleLayer, LineLayer, MapView, MarkerView, ShapeSource, SymbolLayer } from "@rnmapbox/maps";
 import { useReducedMotion } from "react-native-reanimated";
-import { ringPolygon, type LatLng } from "@/lib/geo";
+import { haversineM, ringPolygon, type LatLng } from "@/lib/geo";
 import type { CentreIdentity } from "@/lib/centreIdentity";
 import type { Centre } from "@/types/db";
+import { ActiveCentreMarker } from "@/ui/ActiveCentreMarker";
 import { mapColors } from "@/ui/mapStyle";
 
 const OVERVIEW_STYLE = "mapbox://styles/mapbox/navigation-day-v1";
@@ -17,6 +18,10 @@ const RING_STAGGER_MS = 130;
 // "fit what is left" means. Searching down to a single match reaches this
 // routinely, so the bounds are widened to at least this span (~2.2km) first.
 const MIN_SPAN_DEG = 0.02;
+
+// The static layers draw everything except the centre the sheet is on; that
+// one is a MarkerView so it can actually animate.
+const INACTIVE = ["!", ["get", "active"]] as const;
 
 // Every source below stays mounted for the life of the map and is handed an
 // empty FeatureCollection when there is nothing to draw. Mounting and
@@ -94,6 +99,11 @@ export const CentresMap = forwardRef<CentresMapHandle, CentresMapProps>(
         })),
       };
     }, [me, ringsShown]);
+
+    // Only a revealed pin gets a marker, so the entrance stagger still reads
+    // as pins arriving rather than one of them jumping the queue.
+    const activeCentre = pins.slice(0, revealed).find((c) => c.id === activeId) ?? null;
+    const activeIdentity = activeCentre ? identities.get(activeCentre.id) ?? null : null;
 
     const pinShape = useMemo(() => ({
       type: "FeatureCollection" as const,
@@ -189,44 +199,49 @@ export const CentresMap = forwardRef<CentresMapHandle, CentresMapProps>(
           />
         </ShapeSource>
 
+        {/* The inactive pins only. The active one is filtered out here and
+            drawn as a MarkerView below, because a layer cannot animate a
+            change that arrives as source data — see ActiveCentreMarker. */}
         <ShapeSource id="pins" shape={pinShape}>
           <CircleLayer
             id="pin-body"
+            filter={INACTIVE}
             style={{
               circleColor: ["get", "hue"],
-              circleRadius: ["case", ["get", "active"], 15, 11],
+              circleRadius: 11,
               circleStrokeColor: "#FFFFFF",
               circleStrokeWidth: 2,
               circleTranslate: [0, -18],
-              circleRadiusTransition: { duration: 320, delay: 0 },
-              circleOpacityTransition: { duration: 320, delay: 0 },
             }}
           />
           <SymbolLayer
             id="pin-initials"
+            filter={INACTIVE}
             style={{
               textField: ["get", "initials"],
-              textSize: ["case", ["get", "active"], 13, 9.5],
+              textSize: 9.5,
               textColor: "#FFFFFF",
               textFont: ["DIN Offc Pro Bold", "Arial Unicode MS Bold"],
               textOffset: [0, -1.6],
               textAllowOverlap: true,
             }}
           />
-          <SymbolLayer
-            id="pin-label"
-            style={{
-              textField: ["case", ["get", "active"], ["get", "name"], ""],
-              textSize: 11,
-              textColor: ["get", "hue"],
-              textHaloColor: "#FFFFFF",
-              textHaloWidth: 1.6,
-              textFont: ["DIN Offc Pro Bold", "Arial Unicode MS Bold"],
-              textOffset: [0, -3.6],
-              textAllowOverlap: true,
-            }}
-          />
         </ShapeSource>
+
+        {activeCentre && activeIdentity && (
+          <MarkerView
+            id="active-centre"
+            coordinate={[activeCentre.lng, activeCentre.lat]}
+            anchor={{ x: 0.5, y: 1 }}
+            allowOverlap
+          >
+            <ActiveCentreMarker
+              centre={activeCentre}
+              identity={activeIdentity}
+              distanceM={me ? haversineM(me, { lat: activeCentre.lat, lng: activeCentre.lng }) : null}
+            />
+          </MarkerView>
+        )}
 
         <ShapeSource id="me" shape={meShape}>
           <CircleLayer

@@ -56,3 +56,15 @@ test("pressing the row opens the centre", () => {
   fireEvent.press(screen.getByTestId("centre-row"));
   expect(onPress).toHaveBeenCalled();
 });
+
+test("the active row grows a rail in the centre's full hue", () => {
+  // The tint alone is invisible on a white row — every one of the twelve was
+  // chosen to sit behind hue-coloured text, not to be a highlight.
+  setup({}, { active: true });
+  expect(screen.getByTestId("centre-row-rail")).toHaveStyle({ backgroundColor: "#BE123C" });
+});
+
+test("an inactive row has no rail", () => {
+  setup();
+  expect(screen.queryByTestId("centre-row-rail")).toBeNull();
+});

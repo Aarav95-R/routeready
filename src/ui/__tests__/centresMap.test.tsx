@@ -205,3 +205,35 @@ test("a single-point frame is widened rather than fitted to a zero span", () => 
   expect(ne[1] - sw[1]).toBeGreaterThan(0.01);
   jest.useRealTimers();
 });
+
+test("the active centre is drawn as a marker, not as one of the static pins", () => {
+  jest.useFakeTimers();
+  setup({ activeId: "b" });
+  act(() => jest.advanceTimersByTime(10_000));
+
+  // A layer cannot animate a change that arrives as source data, so the active
+  // pin is filtered out of the layers and drawn as a view instead.
+  expect(screen.getByTestId("marker:active-centre")).toBeTruthy();
+  expect(screen.getByTestId("active-marker-name")).toHaveTextContent("b");
+  for (const layer of ["pin-body", "pin-initials"]) {
+    expect(screen.getByTestId(`layer:${layer}`).props.filter).toEqual(["!", ["get", "active"]]);
+  }
+  jest.useRealTimers();
+});
+
+test("no active centre means no marker at all", () => {
+  jest.useFakeTimers();
+  setup({ activeId: null });
+  act(() => jest.advanceTimersByTime(10_000));
+  expect(screen.queryByTestId("marker:active-centre")).toBeNull();
+  jest.useRealTimers();
+});
+
+test("the marker's distance comes from the driver's own position", () => {
+  jest.useFakeTimers();
+  setup({ activeId: "a", me: { lat: 51.55, lng: -0.24 } });
+  act(() => jest.advanceTimersByTime(10_000));
+  // (51.55,-0.24) to a's (51.60,-0.24) is ~5.6km, ~3.5 miles.
+  expect(screen.getByTestId("active-marker-distance")).toHaveTextContent("3.5 mi away");
+  jest.useRealTimers();
+});

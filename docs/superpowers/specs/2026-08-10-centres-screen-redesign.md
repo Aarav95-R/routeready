@@ -126,7 +126,9 @@ Nothing about the emblem is hand-authored, so seeding a new centre never needs a
 
 - Style: `mapbox://styles/mapbox/navigation-day-v1`, the same base as the nav map, with a `BackgroundLayer` in `mapColors.land` beneath it. The background is what shows when tiles have not loaded, which is what offline looks like; a flat warm ground reads as deliberate where a grey void reads as broken.
 - Rings at 3, 8 and 15 miles, drawn as **GeoJSON polygons**, not `circle-radius`. A pixel radius does not scale with zoom, so a pixel ring is a lie at every zoom but one. `lib/geo.ts` gains `ringPolygon(centre: LatLng, radiusM: number, segments = 64): GeoPolygon`, and `types/db.ts` gains `GeoPolygon = { type: "Polygon"; coordinates: [number, number][][] }` alongside the `GeoLineString` it already exports. The ring is stroked, not filled, so it is a `LineLayer` over a Polygon source with the first vertex repeated to close it.
-- Pins are a `ShapeSource` over the near set. Each is a teardrop in the centre's hue with a white 2pt stroke and its white monogram — the same emblem the row carries, which is the entire point of the mix.
+- Pins are a `ShapeSource` over the near set, drawn as a `CircleLayer` in the centre's hue with a white 2pt stroke and its white monogram — the same colour and letters the row carries, which is the entire point of the mix.
+- **The active centre is not one of them.** It is filtered out of those layers and drawn instead as a single `MarkerView` (`ui/ActiveCentreMarker.tsx`): a teardrop that pops, under a callout carrying its name, pass rate and distance. The reason is mechanical — a layer's `circleRadius` reading `["case", ["get","active"], …]` changes because the *source data* changed, not the property, and Mapbox's paint transitions only animate a property's own value, so the pin could only ever snap. A view can spring. Exactly one marker is ever mounted, so the cost scales with how many centres are active rather than how many exist.
+- The callout's three facts all come off the row beneath it, so the map and the sheet cannot disagree and nothing extra is fetched.
 - The driver is a 6pt emerald dot with a white ring and one slow pulse. It is the only looping animation on the screen.
 - The recentre button refits the camera to the driver plus the near set.
 
@@ -136,8 +138,8 @@ The sheet is `@gorhom/bottom-sheet` (already a dependency, already driving `mock
 
 Rows are a fixed 88pt with `getItemLayout` supplied, so the active index is `Math.round(offsetY / 88)` — no measurement, no layout pass. On change:
 
-- the arrived-at pin scales to 1.35 and shows its label chip in its hue,
-- its row takes its tint as a background,
+- the arrived-at pin pops — overshooting to 1.42 and settling at 1.24, never leaving the ground, so it does not cover the neighbours it sits between — and its callout fades in above it while holding still, because text that springs is text you cannot read,
+- its row takes its tint as a background **and grows a 4pt rail in the centre's full hue down its left edge** — the tint cannot carry this alone, since all twelve were picked to sit behind hue-coloured text and are invisible against a white row,
 - the camera moves to it.
 
 Camera moves are the one thing here that can feel bad. Rules: fire only when the index changes, never on raw scroll; `animationDuration: 350`; ignore a change arriving less than 150ms after the last one, so a flung list settles before the map chases it; and do not move at all for rows under `Further afield`, which have no pin.

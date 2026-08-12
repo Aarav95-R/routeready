@@ -62,6 +62,17 @@ export function CentreRow({
           borderBottomWidth: 1, borderBottomColor: "#F5F8FA",
         }}
       >
+        {/* The tint alone could not carry this. Every one of the twelve was
+            chosen to sit *behind* hue-coloured text, so #FFF1F2 against a
+            white row is invisible at arm's length — the rail is what makes
+            the active row findable without looking for it. */}
+        {active && (
+          <View
+            testID="centre-row-rail"
+            style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, backgroundColor: identity.hue }}
+          />
+        )}
+
         <CentreEmblem identity={identity} />
 
         <View style={{ flex: 1, minWidth: 0 }}>
