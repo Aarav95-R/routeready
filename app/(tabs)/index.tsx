@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { NativeScrollEvent, NativeSyntheticEvent, Pressable, StyleProp, Text, TextInput, View, ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Location from "expo-location";
@@ -30,6 +30,21 @@ const FILTERS: { key: CentreFilter; label: string }[] = [
 ];
 
 type Row = { kind: "header"; title: string } | { kind: "centre"; item: ViewCentre; index: number };
+
+// gorhom's scrollables omit `onScroll` (and `scrollEventThrottle`, which they
+// hardcode to 16) from their published prop types, but the component does
+// destructure `onScroll` out of `rest` and call it through `runOnJS` with a
+// `{ nativeEvent }` payload — see createBottomSheetScrollableComponent in the
+// installed package. The prop works; only the types disown it. Declare the
+// shape this screen actually uses once, here, rather than casting at the call
+// site or leaving the handler's parameter implicitly `any`.
+const ScrollableRows = BottomSheetFlatList as unknown as React.ComponentType<{
+  data: Row[];
+  keyExtractor: (row: Row) => string;
+  contentContainerStyle?: StyleProp<ViewStyle>;
+  onScroll?: (e: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  renderItem: (info: { item: Row }) => React.ReactElement | null;
+}>;
 
 // Fixed and named, like CENTRE_ROW_H, so the header's rendered height is a
 // known number the scroll-to-camera binding can add up rather than something
@@ -361,12 +376,11 @@ export default function Centres() {
         )}
 
         {!error && rows.length > 0 && (
-          <BottomSheetFlatList
+          <ScrollableRows
             data={rows}
             keyExtractor={(r) => (r.kind === "header" ? `h:${r.title}` : r.item.centre.id)}
             contentContainerStyle={{ paddingBottom: 120 }}
-            scrollEventThrottle={16}
-            onScroll={(e) => onScroll(e.nativeEvent.contentOffset.y)}
+            onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => onScroll(e.nativeEvent.contentOffset.y)}
             renderItem={({ item: row }) =>
               row.kind === "header" ? (
                 <Text style={{ height: SECTION_HEADER_H, paddingHorizontal: 16, paddingTop: 12, fontSize: 11, fontWeight: "700", letterSpacing: 0.6, textTransform: "uppercase", color: "#94A3B8" }}>
