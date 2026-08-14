@@ -1,9 +1,9 @@
 import { Pressable, Text, View } from "react-native";
 import type { FaultCount, NextStep } from "@/lib/homeView";
+import { Cell, Group, GroupHeader } from "@/ui/List";
+import { colors } from "@/ui/theme";
+import { headline, MAX_DISPLAY_SCALE, subheadline, title2 } from "@/ui/type";
 import { FaultBars } from "@/ui/FaultBars";
-
-/** Matches the cap in app/(tabs)/index.tsx, so display type cannot balloon. */
-const DISPLAY_SCALE = 1.1;
 
 /** "a and b", "a, b and c" — a list of tags read aloud rather than punctuated. */
 function andList(items: string[]): string {
@@ -85,43 +85,59 @@ export function NextStepCard({ step, onAction }: { step: NextStep; onAction: () 
   const copy = copyFor(step);
 
   return (
-    <View
-      className="mx-5 rounded-[20px] bg-card p-5"
-      style={{ shadowColor: "#221F1C", shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}
-    >
-      <Text maxFontSizeMultiplier={DISPLAY_SCALE} className="text-[18.5px] font-semibold tracking-tight text-primary">
-        {copy.title}
-      </Text>
-      <Text
-        testID="diagnosis"
-        maxFontSizeMultiplier={DISPLAY_SCALE}
-        className="mt-2 text-[27px] leading-[32px] font-semibold tracking-tight text-primary"
-      >
-        {copy.claim}
-      </Text>
-      <Text className="mt-2 text-[16.5px] leading-[24px] text-slate-600">{copy.because}</Text>
+    <>
+      <GroupHeader>{copy.title}</GroupHeader>
+      <Group>
+        <Cell>
+          <View style={{ flex: 1 }}>
+            <Text
+              testID="diagnosis"
+              maxFontSizeMultiplier={MAX_DISPLAY_SCALE}
+              style={{ ...title2, color: colors.label }}
+            >
+              {copy.claim}
+            </Text>
+            <Text style={{ ...subheadline, color: colors.labelSecondary, marginTop: 6 }}>
+              {copy.because}
+            </Text>
 
-      {copy.bars && <FaultBars faults={copy.bars} lead />}
+            {copy.bars && <FaultBars faults={copy.bars} lead />}
 
-      {copy.tags && copy.tags.length > 0 && (
-        <View testID="baseline-tags" className="mt-3.5">
-          {copy.tags.map((tag) => (
-            <View key={tag} className="border-t border-slate-200 py-2.5">
-              <Text className="text-[16.5px] text-slate-600">{tag}</Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      <Pressable
-        accessibilityRole="button"
-        onPress={onAction}
-        className="mt-5 items-center rounded-[19px] bg-accent py-[17px] active:opacity-80"
-      >
-        <Text maxFontSizeMultiplier={DISPLAY_SCALE} className="text-[18px] font-semibold text-white">
-          {copy.action}
-        </Text>
-      </Pressable>
-    </View>
+            {copy.tags && copy.tags.length > 0 && (
+              <View testID="baseline-tags" style={{ marginTop: 14 }}>
+                {copy.tags.map((tag) => (
+                  <View
+                    key={tag}
+                    style={{ borderTopWidth: 1, borderTopColor: colors.separator, paddingVertical: 10 }}
+                  >
+                    <Text style={{ ...subheadline, color: colors.labelSecondary }}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </Cell>
+        <Cell>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onAction}
+            style={({ pressed }) => [
+              {
+                flex: 1,
+                alignItems: "center",
+                borderRadius: 12,
+                backgroundColor: colors.accent,
+                paddingVertical: 14,
+              },
+              pressed && { opacity: 0.8 },
+            ]}
+          >
+            <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...headline, color: "#FFFFFF" }}>
+              {copy.action}
+            </Text>
+          </Pressable>
+        </Cell>
+      </Group>
+    </>
   );
 }

@@ -2,9 +2,10 @@ import { Text, View } from "react-native";
 import { averageScore, durationWords, recentDrives } from "@/lib/homeView";
 import type { ScoreSummary } from "@/lib/homeView";
 import type { ProgressEntryWithRoute } from "@/types/db";
+import { Cell, Group, GroupHeader } from "@/ui/List";
+import { colors } from "@/ui/theme";
+import { body, caption, footnote, largeTitle, MAX_DISPLAY_SCALE, subheadline } from "@/ui/type";
 import { ScoreSparkline } from "@/ui/ScoreSparkline";
-
-const DISPLAY_SCALE = 1.1;
 
 /** "2 Jul" — the ends of the sparkline, in words, since it draws no axis. */
 function shortDate(ms: number | null): string | null {
@@ -12,27 +13,13 @@ function shortDate(ms: number | null): string | null {
   return new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-function Stat({ id, label, value }: { id: string; label: string; value: string }) {
-  return (
-    <View className="flex-1">
-      <Text className="text-[12.5px] font-semibold uppercase tracking-wider text-slate-500">{label}</Text>
-      <Text
-        testID={id}
-        maxFontSizeMultiplier={DISPLAY_SCALE}
-        className="mt-0.5 text-[22px] font-semibold tracking-tight text-primary"
-      >
-        {value}
-      </Text>
-    </View>
-  );
-}
-
 /**
  * The record, as evidence for the card above it.
  *
- * Four registers in one container rather than four cards: score, shape, stats,
- * history. Everything here is already computed by `scoreSummary` or is one
- * line of arithmetic on it — the card fetches nothing and decides nothing.
+ * Score, shape, stats and history, each as rows in a grouped list rather than
+ * four registers in one card. Everything here is already computed by
+ * `scoreSummary` or is one line of arithmetic on it — the card fetches
+ * nothing and decides nothing.
  *
  * No verdict is shown anywhere, and none can be: `user_progress` stores no
  * pass/fail, and it is not derivable from the score, because `aggregate` caps
@@ -57,119 +44,133 @@ export function RecordCard({
   // guard it cannot see through.
   const hasShape = summary.count > 1 && summary.best !== null && average !== null;
 
-  return (
-    <View
-      className="mx-5 mt-4 rounded-[20px] bg-card p-5"
-      style={{ shadowColor: "#221F1C", shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}
-    >
-      <View className="flex-row items-baseline">
-        <Text maxFontSizeMultiplier={DISPLAY_SCALE} className="text-[18.5px] font-semibold tracking-tight text-primary">
-          Your record
-        </Text>
-        {summary.count > 0 && (
-          <Text className="ml-auto text-[13px] text-slate-500">
-            {summary.count === 1 ? "1 mock test" : `${summary.count} mock tests`}
-          </Text>
-        )}
-      </View>
+  if (summary.count === 0) {
+    return (
+      <>
+        <GroupHeader>Record</GroupHeader>
+        <Group>
+          <Cell>
+            <Text style={{ ...subheadline, color: colors.labelSecondary, flex: 1 }}>
+              {failed
+                ? "Your scores will appear here once you're back online."
+                : "Nothing recorded yet. Your first score lands here, and the faults you pick up become the thing this screen tells you to work on."}
+            </Text>
+          </Cell>
+        </Group>
+      </>
+    );
+  }
 
-      {summary.count === 0 ? (
-        <Text className="mt-2.5 text-[17px] leading-[24px] text-slate-600">
-          {failed
-            ? "Your scores will appear here once you're back online."
-            : "Nothing recorded yet. Your first score lands here, and the faults you pick up become the thing this screen tells you to work on."}
-        </Text>
-      ) : (
-        <>
-          <View className="mt-2.5 flex-row items-end gap-3">
+  return (
+    <>
+      <GroupHeader>Record</GroupHeader>
+      <Group testID={hasShape ? "stat-row" : undefined}>
+        <Cell>
+          <View style={{ flex: 1 }}>
             <Text
               testID="latest-score"
-              maxFontSizeMultiplier={DISPLAY_SCALE}
-              className="text-[62px] font-bold leading-[62px] tracking-tighter text-primary"
+              maxFontSizeMultiplier={MAX_DISPLAY_SCALE}
+              style={{ ...largeTitle, color: colors.label }}
             >
               {summary.latest}
             </Text>
-            <Text className="pb-2 text-[21px] font-semibold text-slate-500">/100</Text>
-            <View className="flex-1" />
-            {summary.delta !== null && summary.delta !== 0 && (
-              <Text
-                testID="delta"
-                maxFontSizeMultiplier={DISPLAY_SCALE}
-                className={`mb-3 rounded-lg px-2.5 py-1 text-[15px] font-bold ${
-                  summary.delta > 0
-                    ? "bg-[#ECFDF5] text-accent-pressed"
-                    : "bg-slate-100 text-slate-600"
-                }`}
-              >
-                {summary.delta > 0 ? `▲ ${summary.delta}` : `▼ ${-summary.delta}`}
-              </Text>
-            )}
+            <Text style={{ ...subheadline, color: colors.labelSecondary, marginTop: 2 }}>
+              Latest, out of 100
+            </Text>
           </View>
+          {summary.delta !== null && summary.delta !== 0 && (
+            <Text
+              testID="delta"
+              maxFontSizeMultiplier={MAX_DISPLAY_SCALE}
+              style={{
+                ...footnote,
+                color: summary.delta > 0 ? colors.accent : colors.labelTertiary,
+              }}
+            >
+              {summary.delta > 0 ? `▲ ${summary.delta}` : `▼ ${-summary.delta}`}
+            </Text>
+          )}
+        </Cell>
 
-          {hasShape ? (
-            <>
-              <View className="mt-4">
-                <ScoreSparkline attempts={summary.attempts} width={width} height={74} />
-              </View>
+        {hasShape ? (
+          <Cell>
+            <View style={{ flex: 1 }}>
+              <ScoreSparkline attempts={summary.attempts} width={width} height={74} />
               {/* The sparkline draws no axis, so both ends are named here. */}
-              <View className="mt-2 flex-row justify-between">
-                <Text className="text-[13px] text-slate-500">
+              <View style={{ marginTop: 8, flexDirection: "row", justifyContent: "space-between" }}>
+                <Text style={{ ...caption, color: colors.labelTertiary }}>
                   {firstAt ? `${summary.attempts[0].score} on ${firstAt}` : `${summary.attempts[0].score} to start`}
                 </Text>
-                <Text className="text-[13px] text-slate-500">
+                <Text style={{ ...caption, color: colors.labelTertiary }}>
                   {lastAt ? `${summary.latest} on ${lastAt}` : `${summary.latest} latest`}
                 </Text>
               </View>
-
-              <View className="mt-4 h-px bg-slate-200" />
-              <View testID="stat-row" className="mt-4 flex-row">
-                <Stat id="stat-best" label="Best" value={String(summary.best)} />
-                <View className="w-px bg-slate-200" />
-                <View className="w-4" />
-                <Stat id="stat-average" label="Average" value={String(average)} />
-              </View>
-            </>
-          ) : (
-            <Text className="mt-3 text-[14.5px] leading-[21px] text-slate-500">
+            </View>
+          </Cell>
+        ) : (
+          <Cell>
+            <Text style={{ ...subheadline, color: colors.labelSecondary, flex: 1 }}>
               One score draws no line. Your second test starts the shape.
             </Text>
-          )}
+          </Cell>
+        )}
 
-          <View className="mt-5 h-px bg-slate-200" />
-          <Text className="mt-4 text-[12.5px] font-semibold uppercase tracking-wider text-slate-500">
-            Recent tests
-          </Text>
-          {drives.map((drive, i) => (
-            <View
-              key={drive.id ?? `${drive.completed_at}-${i}`}
-              className={`flex-row items-center gap-3 py-3 ${i > 0 ? "border-t border-slate-200" : ""}`}
+        {hasShape && (
+          <Cell>
+            <Text style={{ ...body, color: colors.label, flex: 1 }}>Best</Text>
+            <Text
+              testID="stat-best"
+              maxFontSizeMultiplier={MAX_DISPLAY_SCALE}
+              style={{ ...body, fontWeight: "600", color: colors.label, fontVariant: ["tabular-nums"] }}
             >
-              <View className="flex-1">
-                <Text className="text-[16.5px] font-semibold text-primary">
-                  {shortDate(Date.parse(drive.completed_at ?? "")) ?? "Not yet synced"}
+              {String(summary.best)}
+            </Text>
+          </Cell>
+        )}
+        {hasShape && (
+          <Cell>
+            <Text style={{ ...body, color: colors.label, flex: 1 }}>Average</Text>
+            <Text
+              testID="stat-average"
+              maxFontSizeMultiplier={MAX_DISPLAY_SCALE}
+              style={{ ...body, fontWeight: "600", color: colors.label, fontVariant: ["tabular-nums"] }}
+            >
+              {String(average)}
+            </Text>
+          </Cell>
+        )}
+        {hasShape && <Cell label="Mock tests" value={String(summary.count)} />}
+      </Group>
+
+      <GroupHeader>Recent tests</GroupHeader>
+      <Group>
+        {drives.map((drive, i) => (
+          <Cell key={drive.id ?? `${drive.completed_at}-${i}`} chevron>
+            <View style={{ flex: 1 }}>
+              <Text style={{ ...body, color: colors.label }}>
+                {shortDate(Date.parse(drive.completed_at ?? "")) ?? "Not yet synced"}
+              </Text>
+              {drive.routes && (
+                <Text style={{ ...caption, color: colors.labelTertiary, marginTop: 2 }} numberOfLines={1}>
+                  {drive.routes.centres
+                    ? `${drive.routes.name} · ${drive.routes.centres.name}`
+                    : drive.routes.name}
                 </Text>
-                {drive.routes && (
-                  <Text className="mt-0.5 text-[14px] text-slate-500" numberOfLines={1}>
-                    {drive.routes.centres
-                      ? `${drive.routes.name} · ${drive.routes.centres.name}`
-                      : drive.routes.name}
-                  </Text>
-                )}
-              </View>
-              <Text
-                testID={`history-score-${i}`}
-                maxFontSizeMultiplier={DISPLAY_SCALE}
-                className="text-[22px] font-semibold tracking-tight text-primary"
-              >
-                {drive.mock_test_score}
-              </Text>
-              <Text className="w-16 text-right text-[14px] text-slate-500">
-                {durationWords(drive.duration_seconds)}
-              </Text>
+              )}
             </View>
-          ))}
-        </>
-      )}
-    </View>
+            <Text
+              testID={`history-score-${i}`}
+              maxFontSizeMultiplier={MAX_DISPLAY_SCALE}
+              style={{ ...body, fontWeight: "600", color: colors.label, marginLeft: 8 }}
+            >
+              {drive.mock_test_score}
+            </Text>
+            <Text style={{ ...caption, color: colors.labelTertiary, width: 56, textAlign: "right", marginLeft: 8 }}>
+              {durationWords(drive.duration_seconds)}
+            </Text>
+          </Cell>
+        ))}
+      </Group>
+    </>
   );
 }

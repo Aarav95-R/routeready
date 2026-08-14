@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react-native";
 import { scoreSummary } from "@/lib/homeView";
 import type { ProgressEntryWithRoute } from "@/types/db";
+import { colors } from "@/ui/theme";
 import { RecordCard } from "../RecordCard";
 
 const at = (
@@ -18,7 +19,7 @@ const show = (rows: ProgressEntryWithRoute[], failed = false) =>
 test("the latest score leads, against the scale it is out of", () => {
   show([at("2026-08-01T10:00:00Z", 80), at("2026-08-12T10:00:00Z", 88)]);
   expect(screen.getByTestId("latest-score")).toHaveTextContent("88");
-  expect(screen.getByText("/100")).toBeTruthy();
+  expect(screen.getByText("Latest, out of 100")).toBeTruthy();
 });
 
 test("the change on the last test is a mark, not a sentence", () => {
@@ -51,7 +52,8 @@ test("the stat row carries best and average, and not the count", () => {
   expect(screen.getByTestId("stat-best")).toHaveTextContent("88");
   expect(screen.getByTestId("stat-average")).toHaveTextContent("71");
   // The header already said it. Twice in one card is once too many.
-  expect(screen.getByText("3 mock tests")).toBeTruthy();
+  expect(screen.getByText("Mock tests")).toBeTruthy();
+  expect(screen.getByText("3")).toBeTruthy();
   expect(screen.queryByTestId("stat-tests")).toBeNull();
 });
 
@@ -115,9 +117,15 @@ test("a drive not yet synced says so instead of showing a broken date", () => {
 
 // Green means good everywhere else in this app; a dip is stated, not scolded.
 test("a score that fell is marked without being coloured as a win", () => {
-  show([at("2026-08-01T10:00:00Z", 88), at("2026-08-12T10:00:00Z", 80)]);
-  const delta = screen.getByTestId("delta");
-  expect(delta).toHaveTextContent("▼ 8");
-  expect(delta.props.className).not.toContain("text-accent-pressed");
-  expect(delta.props.className).toContain("bg-slate-100");
+  const fallen = show([at("2026-08-01T10:00:00Z", 88), at("2026-08-12T10:00:00Z", 80)]);
+  const fallDelta = fallen.getByTestId("delta");
+  expect(fallDelta).toHaveTextContent("▼ 8");
+  expect(fallDelta.props.style.color).toBe(colors.labelTertiary);
+  fallen.unmount();
+
+  // The positive case must land on the other colour, not merely avoid this one.
+  const risen = show([at("2026-08-01T10:00:00Z", 80), at("2026-08-12T10:00:00Z", 88)]);
+  const riseDelta = risen.getByTestId("delta");
+  expect(riseDelta).toHaveTextContent("▲ 8");
+  expect(riseDelta.props.style.color).toBe(colors.accent);
 });
