@@ -119,4 +119,5 @@ test("a score that fell is marked without being coloured as a win", () => {
   const delta = screen.getByTestId("delta");
   expect(delta).toHaveTextContent("▼ 8");
   expect(delta.props.className).not.toContain("text-accent-pressed");
+  expect(delta.props.className).toContain("bg-slate-100");
 });

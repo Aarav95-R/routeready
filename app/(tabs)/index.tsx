@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import Animated from "react-native-reanimated";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { faultCounts, finding, firstName, greeting, nextStep, scoreSummary } from "@/lib/homeView";
@@ -56,7 +56,10 @@ export default function Home() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // The screen tells you to go and do something, and Expo Router keeps this
+  // tab mounted while you do it — so it has to be correct when you come back,
+  // not just once when it first mounted.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const now = new Date();
   const name = firstName(fullName);

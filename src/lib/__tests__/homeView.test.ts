@@ -150,6 +150,16 @@ test("a clean sheet has nothing to list", () => {
   expect(faultCounts([at("2026-08-01T10:00:00Z", 100)])).toEqual([]);
 });
 
+// nextStep glues this count to summary.count, which counts scored rows only.
+// A practice drive carrying faults would otherwise produce "4 of your 3 tests".
+test("unscored drives are not counted as tests", () => {
+  const rows = [
+    at("2026-08-01T10:00:00Z", 60, ["Speeding"]),
+    at("2026-08-05T10:00:00Z", null, ["Speeding"]),
+  ];
+  expect(faultCounts(rows)).toEqual([{ tag: "Speeding", count: 1 }]);
+});
+
 describe("what to do next", () => {
   const summaryOf = (...rows: ProgressEntry[]) => scoreSummary(rows);
 

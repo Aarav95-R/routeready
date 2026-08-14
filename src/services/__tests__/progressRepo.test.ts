@@ -25,7 +25,7 @@ test("progress rows arrive with their route and centre attached", async () => {
 
   const r = await listMyProgress();
 
-  expect(mockSelect).toHaveBeenCalledWith("*, routes(name, centre_id, centres(name))");
+  expect(mockSelect).toHaveBeenCalledWith("*, routes(name, centre_id, centres:test_centres(name))");
   expect(r.data[0].routes?.name).toBe("Route 3");
   expect(r.data[0].routes?.centres?.name).toBe("Mill Hill (London)");
 });

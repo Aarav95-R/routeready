@@ -1,7 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 const mockPush = jest.fn();
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, back: jest.fn() }) }));
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ push: mockPush, back: jest.fn() }),
+  useFocusEffect: (cb: () => void) => require("react").useEffect(cb, [cb]),
+}));
 jest.mock("@/services/progressRepo", () => ({ listMyProgress: jest.fn() }));
 
 // eslint-disable-next-line import/first

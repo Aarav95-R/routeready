@@ -117,10 +117,16 @@ export type FaultCount = { tag: string; count: number };
  *
  * `mistakes` holds one entry per fault, tagged by kind — so this counts how
  * often a kind appears across tests, which is all the column can support.
+ *
+ * Rows with no score are skipped: a practice drive is not a test. `nextStep`
+ * glues this count to `summary.count`, which is scored rows only — count a
+ * practice drive's faults here and the two populations disagree, and the
+ * card reads "Marked in 4 of your 3 mock tests".
  */
 export function faultCounts(rows: ProgressEntry[], limit = 3): FaultCount[] {
   const tally = new Map<string, number>();
   for (const row of rows) {
+    if (typeof row.mock_test_score !== "number") continue;
     for (const tag of row.mistakes ?? []) tally.set(tag, (tally.get(tag) ?? 0) + 1);
   }
   return [...tally.entries()]

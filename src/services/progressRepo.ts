@@ -29,9 +29,13 @@ export function flushProgress(): Promise<number> {
  */
 export function listMyProgress(): Promise<Cached<ProgressEntryWithRoute[]>> {
   return cachedFetch("progress:mine", async () => {
+    // The table is `test_centres`, not `centres` — but the embed is aliased
+    // back to `centres` so the row shape reads as the domain word rather than
+    // the storage one, and `ProgressEntryWithRoute` never has to know the
+    // difference.
     const { data, error } = await supabase
       .from("user_progress")
-      .select("*, routes(name, centre_id, centres(name))")
+      .select("*, routes(name, centre_id, centres:test_centres(name))")
       .order("completed_at", { ascending: true });
     if (error) throw new Error(error.message);
     return (data ?? []) as ProgressEntryWithRoute[];

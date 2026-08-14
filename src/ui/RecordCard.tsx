@@ -51,7 +51,11 @@ export function RecordCard({
   const lastAt = shortDate(summary.lastAt);
   const average = averageScore(summary);
   // A lone point is centred by sparkPoints — correct behaviour, wrong picture.
-  const hasShape = summary.count > 1;
+  // `best` and `average` are only ever null when `count === 0`, so this is
+  // never false when `count > 1` alone would be true — but spelling it out
+  // lets TypeScript narrow both to `number` below, instead of trusting a
+  // guard it cannot see through.
+  const hasShape = summary.count > 1 && summary.best !== null && average !== null;
 
   return (
     <View
