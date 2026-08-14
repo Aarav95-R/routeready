@@ -30,7 +30,7 @@ The spec says history rows format duration with `formatElapsed` from `lib/result
 
 | File | Responsibility |
 |---|---|
-| `src/lib/homeView.ts` | All Home arithmetic and decisions. Gains `NextStep`, `nextStep`, `averageScore`, `durationWords`. |
+| `src/lib/homeView.ts` | All Home arithmetic and decisions. Gains `NextStep`, `nextStep`, `averageScore`, `durationWords`, `recentDrives`. |
 | `src/types/db.ts` | Gains `ProgressEntryWithRoute`. `ProgressEntry` untouched so inserts cannot be handed a joined row. |
 | `src/services/progressRepo.ts` | `listMyProgress` selects the nested route and centre. |
 | `src/ui/theme.ts` + `tailwind.config.js` | Gain the muted runner green. |
@@ -55,6 +55,7 @@ The spec says history rows format duration with `formatElapsed` from `lib/result
   - `nextStep(summary: ScoreSummary, faults: FaultCount[]): NextStep`
   - `averageScore(summary: ScoreSummary): number | null`
   - `durationWords(seconds: number): string`
+  - `recentDrives<T extends { mock_test_score: number | null; completed_at?: string }>(rows: T[], limit?: number): T[]` — generic on purpose, so it can be written here in Task 1 without waiting for the joined row type Task 2 introduces.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -141,6 +142,34 @@ test("a duration reads as minutes, and never as none", () => {
   expect(durationWords(20)).toBe("1 min");
   expect(durationWords(0)).toBe("1 min");
 });
+
+describe("the drives the history list shows", () => {
+  test("are scored, most recent first, and capped", () => {
+    const rows = [
+      at("2026-07-01T10:00:00Z", 40), at("2026-08-12T10:00:00Z", 88),
+      at("2026-07-14T10:00:00Z", 55), at("2026-08-01T10:00:00Z", 70),
+    ];
+    expect(recentDrives(rows).map((r) => r.mock_test_score)).toEqual([88, 70, 55]);
+    expect(recentDrives(rows, 2).map((r) => r.mock_test_score)).toEqual([88, 70]);
+  });
+
+  // A practice drive writes a row with no score. It is not a test and has no
+  // place in a list of them.
+  test("never include an unscored drive", () => {
+    const rows = [at("2026-08-12T10:00:00Z", null), at("2026-08-01T10:00:00Z", 70)];
+    expect(recentDrives(rows).map((r) => r.mock_test_score)).toEqual([70]);
+  });
+
+  // A test taken offline is queued with no server timestamp. It is the most
+  // recent thing that happened and must not sort to the bottom.
+  test("a drive with no timestamp yet leads the list", () => {
+    const rows = [
+      at("2026-08-12T10:00:00Z", 88),
+      { user_id: "u1", route_id: "r1", mock_test_score: 62, mistakes: [], duration_seconds: 900 },
+    ];
+    expect(recentDrives(rows).map((r) => r.mock_test_score)).toEqual([62, 88]);
+  });
+});
 ```
 
 Update the import at the top of the file to:
@@ -148,7 +177,7 @@ Update the import at the top of the file to:
 ```ts
 import {
   averageScore, durationWords, faultCounts, finding, firstName, greeting,
-  nextStep, scoreSummary,
+  nextStep, recentDrives, scoreSummary,
 } from "../homeView";
 ```
 
@@ -245,6 +274,31 @@ export function averageScore(summary: ScoreSummary): number | null {
  */
 export function durationWords(seconds: number): string {
   return `${Math.max(1, Math.round(seconds / 60))} min`;
+}
+
+/**
+ * The drives the history list shows: scored, most recent first, capped.
+ *
+ * Generic over the row rather than taking `ProgressEntryWithRoute`, because
+ * the only fields it reads are the two every progress row has — which keeps
+ * this list-shaping rule here, beside the others, instead of in the component
+ * that draws it.
+ *
+ * A row still queued offline has no `completed_at` and sorts to the front: it
+ * is the most recent thing that happened, and `scoreSummary` already treats it
+ * that way at the other end of its oldest-first ordering.
+ */
+export function recentDrives<
+  T extends { mock_test_score: number | null; completed_at?: string },
+>(rows: T[], limit = 3): T[] {
+  const when = (row: T) => {
+    const t = Date.parse(row.completed_at ?? "");
+    return Number.isFinite(t) ? t : Number.MAX_SAFE_INTEGER;
+  };
+  return rows
+    .filter((row) => typeof row.mock_test_score === "number")
+    .sort((a, b) => when(b) - when(a))
+    .slice(0, limit);
 }
 ```
 
@@ -794,7 +848,7 @@ git commit -m "feat: add the lead card that names one thing to work on"
 - Test: `src/ui/__tests__/recordCard.test.tsx`
 
 **Interfaces:**
-- Consumes: `ScoreSummary`, `averageScore`, `durationWords` from Task 1; `ProgressEntryWithRoute` from Task 2; the existing `ScoreSparkline`.
+- Consumes: `ScoreSummary`, `averageScore`, `durationWords`, `recentDrives` from Task 1; `ProgressEntryWithRoute` from Task 2; the existing `ScoreSparkline`.
 - Produces: `<RecordCard summary={ScoreSummary} rows={ProgressEntryWithRoute[]} width={number} failed={boolean} />`
 
 `rows` is the full unsorted set; the card takes the three most recent scored ones itself. `width` is the sparkline width the screen computes, as today.
@@ -908,26 +962,17 @@ Create `src/ui/RecordCard.tsx`:
 
 ```tsx
 import { Text, View } from "react-native";
-import { averageScore, durationWords } from "@/lib/homeView";
+import { averageScore, durationWords, recentDrives } from "@/lib/homeView";
 import type { ScoreSummary } from "@/lib/homeView";
 import type { ProgressEntryWithRoute } from "@/types/db";
 import { ScoreSparkline } from "@/ui/ScoreSparkline";
 
 const DISPLAY_SCALE = 1.1;
-const HISTORY_ROWS = 3;
 
 /** "2 Jul" — the ends of the sparkline, in words, since it draws no axis. */
 function shortDate(ms: number | null): string | null {
   if (ms === null) return null;
   return new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-}
-
-/** The drives this card lists: scored, most recent first, capped. */
-function history(rows: ProgressEntryWithRoute[]): ProgressEntryWithRoute[] {
-  return rows
-    .filter((r) => typeof r.mock_test_score === "number")
-    .sort((a, b) => Date.parse(b.completed_at ?? "") - Date.parse(a.completed_at ?? ""))
-    .slice(0, HISTORY_ROWS);
 }
 
 function Stat({ id, label, value }: { id: string; label: string; value: string }) {
@@ -964,7 +1009,7 @@ export function RecordCard({
   width: number;
   failed: boolean;
 }) {
-  const drives = history(rows);
+  const drives = recentDrives(rows);
   const firstAt = shortDate(summary.attempts[0]?.at ?? null);
   const lastAt = shortDate(summary.lastAt);
   const average = averageScore(summary);
