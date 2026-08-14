@@ -212,7 +212,7 @@ Two notes:
 
 - **`nextStep`** — table-driven over: zero tests; one test with one tag; one test with three tags; two tests, clear leader; two tests, exact tie; five tests with a leader; any number of tests with no tags at all. Both clauses of the rule get a case that fails on that clause alone.
 - **`averageScore`** — rounds half up; ignores practice rows with a null `mock_test_score`, exactly as `scoreSummary` does.
-- **`faultCounts`** — an existing behaviour worth pinning with a test now that copy depends on it: a tag repeated within one test's `mistakes` still counts once, because `aggregate` dedupes.
+- **`aggregate`** — an existing behaviour worth pinning with a test now that copy depends on it: `tags` comes back deduped, so a fault marked three times in one drive reaches `user_progress` once. The invariant lives there and not in `faultCounts`, which counts every entry in `mistakes` it is given — the copy `marked in 4 of your 5 mock tests` is only true because the rows arrive already deduped.
 - **`FaultBars`** — with `lead`, row 0 is `colors.accent` and rows 1+ are the muted green; without it, every row is `colors.accent`.
 - **`NextStepCard`** — one assertion per shape, asserting the headline and the button label. The `fault` case asserts the sentence names the same tag as the headline.
 - **`RecordCard`** — `spark` renders at two attempts and does not at one; `spark-empty` never appears; a row with `routes: null` renders its score and omits the route line.
