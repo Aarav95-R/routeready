@@ -74,3 +74,20 @@ test("credits default to zero so existing callers are unaffected", () => {
   expect(aggregate([mkMinor], 60).score).toBe(95);
   expect(aggregate([mkMinor], 60).credits).toBe(0);
 });
+
+// The home screen says "marked in 4 of your 5 mock tests". That is only true
+// because a fault marked three times in one drive reaches user_progress once
+// — faultCounts counts every entry in `mistakes` it is handed, so the dedupe
+// has to happen here, on the way in.
+test("a fault marked repeatedly in one drive is tagged once", () => {
+  const speeding = {
+    kind: "speeding" as const, severity: "minor" as const,
+    detail: "Over the 30 mph limit for 3 s", tag: "Speeding",
+  };
+  const result = aggregate([speeding, speeding, speeding], 2400);
+
+  expect(result.tags).toEqual(["Speeding"]);
+  // The faults themselves are not collapsed — three of them still cost 15.
+  expect(result.minors).toBe(3);
+  expect(result.score).toBe(85);
+});
