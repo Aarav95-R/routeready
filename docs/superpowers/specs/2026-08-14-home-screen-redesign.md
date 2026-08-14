@@ -33,8 +33,12 @@ This also settles what the bars actually measure. A tag appears at most once per
 **3. `Route 3 · Mill Hill` requires a join, and gets one.** `listMyProgress` becomes:
 
 ```ts
-.select("*, routes(name, centre_id, centres(name))")
+.select("*, routes(name, centre_id, centres:test_centres(name))")
 ```
+
+**The alias is not cosmetic.** An earlier draft of this section wrote `centres(name)`, and there is no `centres` table — it is `test_centres`, which is what `routes.centre_id` references and what `centresRepo` queries. PostgREST answers an unknown embed with `PGRST200`, `listMyProgress` throws, `Home` catches, and every user sees the failed-load empty state no matter how many tests they have taken. The whole redesign was invisible in production and the entire test suite stayed green, because the repo test asserted the wrong string and every component fixture hand-built a `centres` key. A mocked repo test cannot catch a schema mismatch; the fixed select is worth running once by hand against a real instance.
+
+Aliasing back to `centres` rather than renaming the field keeps `ProgressEntryWithRoute` and the card reading in the domain's word rather than the storage layer's.
 
 One query, one round trip, still cached under `progress:mine`. `types/db.ts` gains a separate type rather than widening the one that gets inserted:
 
@@ -227,6 +231,16 @@ Two notes:
 - **A Progress screen.** Until one exists, `All 5 tests` is not rendered and Home is where history stops.
 - **Your centre.** Every action on this screen routes to `/centres` because Home does not know where you drive. This is also the whole of what direction Launchpad needs, and it should be built once, for both.
 - **Practice drives are still not written to `user_progress`.** Open since the routes redesign. Until it is done, `Your record` is a record of mock tests only, which is why the card and every count in it says `mock tests` rather than `drives`.
+
+## Follow-ups left open after implementation
+
+Triaged by the whole-branch review as not worth blocking the merge. Roughly in the order worth doing.
+
+1. **Nothing tests that Home actually refetches on focus.** The screen moved from `useEffect` to `useFocusEffect` during the final fix wave, because a screen whose premise is "go and do this, then come back" was serving the same numbers until the app was killed. The production change is correct by inspection, but the test mock fires the callback once at mount, so the suite verifies what the old code did and cannot regress-guard the new behaviour. Capturing the focus callback and invoking it twice, asserting `listMyProgress` ran twice, closes it.
+2. **The `tied` shape names two faults and gives no magnitude.** This spec's own copy was `Junction observations and Use of mirrors are each marked in 3 of your 5 tests`; what shipped is `... are marked in the same number of tests`, because `NextStep`'s `tied` variant carries only `tags`. Adding `count` and `of` to that variant restores the sentence.
+3. **`faultCounts`' `limit = 3` can truncate a tie.** Counts of `[3,3,3,3]` slice to three, and the card claims three faults are level when a fourth is too. The tie copy is a completeness claim, so it should either count the tie before slicing or stop implying totality.
+4. **`duration_seconds` is `int` in the schema and `number` in `ProgressEntry`.** A null row reads `1 min` rather than crashing, so it is cosmetic — but the type is lying, and it predates this work.
+5. **`DISPLAY_SCALE = 1.1` is triplicated** across `NextStepCard`, `RecordCard` and the screen, tied together only by a comment. `motion.ts`' own header records that three copies of a curve is exactly how the old motion values drifted apart; this is the same shape of problem, one constant earlier.
 
 ## Risks
 
