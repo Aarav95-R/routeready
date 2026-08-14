@@ -19,6 +19,24 @@ export const colors = {
    * matters.
    */
   faultRunner: "#A7C4B6",
+  // ── The iOS-native roles. Additive: the values above still dress Centres,
+  // Result and the route screens, which are migrated separately.
+  //
+  // A cell separates from the field by being lighter than it. That is the
+  // whole mechanism, it is what iOS uses, and it survives a future dark mode
+  // where a drop shadow does not.
+  /** The grouped field behind every screen that has adopted the language. */
+  field: "#F2F0EC",
+  /** Every list group and panel sitting on the field. */
+  cell: "#FFFFFF",
+  label: "#1C1917",
+  labelSecondary: "#6B635B",
+  /** Values, captions and group headers. */
+  labelTertiary: "#8A827A",
+  /** Hairlines. Always inset from the leading edge, never full-bleed. */
+  separator: "#E4DFD8",
+  /** Bar tracks and other inactive ground. */
+  fill: "#EBE7E1",
   ink2: "#574F49",
   ink3: "#8B827A",
   line: "#E8E3DC",
