@@ -89,3 +89,34 @@ test("a failed load says why it is empty", () => {
   show([], true);
   expect(screen.getByText(/back online/)).toBeTruthy();
 });
+
+// A test taken on the train is queued locally with no server timestamp. It is
+// still the most recent thing that happened and must not render as a fault of
+// the date parser.
+test("a drive not yet synced says so instead of showing a broken date", () => {
+  render(
+    <RecordCard
+      summary={scoreSummary([
+        { user_id: "u1", route_id: "r1", mock_test_score: 88, mistakes: [], duration_seconds: 2460 },
+      ])}
+      rows={[
+        {
+          user_id: "u1", route_id: "r1", mock_test_score: 88, mistakes: [],
+          duration_seconds: 2460, routes: null,
+        },
+      ]}
+      width={310}
+      failed={false}
+    />
+  );
+  expect(screen.getByText("Not yet synced")).toBeTruthy();
+  expect(screen.queryByText(/Invalid Date/)).toBeNull();
+});
+
+// Green means good everywhere else in this app; a dip is stated, not scolded.
+test("a score that fell is marked without being coloured as a win", () => {
+  show([at("2026-08-01T10:00:00Z", 88), at("2026-08-12T10:00:00Z", 80)]);
+  const delta = screen.getByTestId("delta");
+  expect(delta).toHaveTextContent("▼ 8");
+  expect(delta.props.className).not.toContain("text-accent-pressed");
+});

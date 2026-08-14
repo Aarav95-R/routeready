@@ -8,7 +8,7 @@ const DISPLAY_SCALE = 1.1;
 
 /** "2 Jul" — the ends of the sparkline, in words, since it draws no axis. */
 function shortDate(ms: number | null): string | null {
-  if (ms === null) return null;
+  if (ms === null || !Number.isFinite(ms)) return null;
   return new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
@@ -91,7 +91,11 @@ export function RecordCard({
               <Text
                 testID="delta"
                 maxFontSizeMultiplier={DISPLAY_SCALE}
-                className="mb-3 rounded-lg bg-[#ECFDF5] px-2.5 py-1 text-[15px] font-bold text-accent-pressed"
+                className={`mb-3 rounded-lg px-2.5 py-1 text-[15px] font-bold ${
+                  summary.delta > 0
+                    ? "bg-[#ECFDF5] text-accent-pressed"
+                    : "bg-slate-100 text-slate-600"
+                }`}
               >
                 {summary.delta > 0 ? `▲ ${summary.delta}` : `▼ ${-summary.delta}`}
               </Text>
