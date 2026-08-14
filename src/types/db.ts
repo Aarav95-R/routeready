@@ -31,3 +31,17 @@ export type ProgressEntry = {
   id?: string; user_id: string; route_id: string; completed_at?: string;
   mock_test_score: number | null; mistakes: string[]; duration_seconds: number;
 };
+
+/**
+ * A progress row with its route and that route's centre joined on, which is
+ * what the home screen's history rows are built from.
+ *
+ * Deliberately a separate type rather than optional fields on `ProgressEntry`:
+ * `insertProgress` takes a `ProgressEntry` and must never be handed a row
+ * carrying joined columns that do not exist on the table.
+ *
+ * `routes` is null for a row whose route has since been deleted.
+ */
+export type ProgressEntryWithRoute = ProgressEntry & {
+  routes: { name: string; centre_id: string; centres: { name: string } | null } | null;
+};

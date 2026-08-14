@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { ProgressEntry } from "@/types/db";
+import type { ProgressEntry, ProgressEntryWithRoute } from "@/types/db";
 import { Cached, cachedFetch, drainQueue, enqueue } from "./cache";
 
 async function insertProgress(entry: ProgressEntry): Promise<void> {
@@ -16,6 +16,26 @@ export async function saveProgress(entry: Omit<ProgressEntry, "user_id">): Promi
 
 export function flushProgress(): Promise<number> {
   return drainQueue<ProgressEntry>("progress_outbox", insertProgress);
+}
+
+/**
+ * Everything this user has ever driven, oldest first — what the home screen
+ * plots. Row-level security scopes it to them, the same way
+ * `listFavouriteRouteIds` does, so there is no user_id filter here to forget.
+ *
+ * The cache key sits under `progress:` deliberately: `clearUserCache` wipes
+ * that prefix on sign-out, so these rows leave the device with the session.
+ * Rows arrive with their route and centre joined on, so the history list can name a drive without a query per row.
+ */
+export function listMyProgress(): Promise<Cached<ProgressEntryWithRoute[]>> {
+  return cachedFetch("progress:mine", async () => {
+    const { data, error } = await supabase
+      .from("user_progress")
+      .select("*, routes(name, centre_id, centres(name))")
+      .order("completed_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as ProgressEntryWithRoute[];
+  });
 }
 
 /**
