@@ -35,6 +35,19 @@ test("a tie names both faults and asks for the tiebreaker", () => {
   expect(screen.getByText(/Junction observations and Use of mirrors/)).toBeTruthy();
 });
 
+// faultCounts caps at three, so three tags level at the top is the widest tie
+// the card can be handed — and "Two faults are level" would be a lie.
+test("a three-way tie drops the count from the claim", () => {
+  show({
+    kind: "tied",
+    tags: ["Junction observations", "Speeding", "Use of mirrors"],
+  });
+  expect(screen.getByText("Nothing stands out yet")).toBeTruthy();
+  expect(
+    screen.getByText(/Junction observations, Speeding and Use of mirrors/)
+  ).toBeTruthy();
+});
+
 test("a clear leader is named, and the sentence beneath counts tests", () => {
   show({
     kind: "fault", tag: "Junction observations", count: 4, of: 5,
