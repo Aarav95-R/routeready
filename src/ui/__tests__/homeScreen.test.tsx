@@ -43,23 +43,10 @@ beforeEach(() => {
   rowsAre();
 });
 
-test("greets you by your first name alone", async () => {
+test("the tab names itself rather than greeting you", async () => {
   render(<Home />);
-  expect(await screen.findByText(/Good (morning|afternoon|evening), Sumeet$/)).toBeTruthy();
-});
-
-// Every account made before sign-up asked for a name has none, and a greeting
-// ending in a comma is worse than no name at all.
-test("an account with no name is greeted by the hour only", async () => {
-  signedInAs();
-  render(<Home />);
-  expect(await screen.findByText(/^Good (morning|afternoon|evening)$/)).toBeTruthy();
-});
-
-test("the finding under your name is computed from the same rows", async () => {
-  rowsAre(at(recent(9), 60), at(recent(1), 78));
-  render(<Home />);
-  expect(await screen.findByText("That's your best yet.")).toBeTruthy();
+  expect(await screen.findByText("Home")).toBeTruthy();
+  expect(screen.queryByText(/Good (morning|afternoon|evening)/)).toBeNull();
 });
 
 test("a new account is asked for a first test, and sent where one starts", async () => {
@@ -104,13 +91,11 @@ test("there is always somewhere to go", async () => {
   expect(mockPush).toHaveBeenCalledWith("/centres");
 });
 
-// No cache and no network. The greeting is the part of this screen that must
-// never depend on a fetch — and the button never needed one either.
-test("a failed load still greets you, and still offers the way in", async () => {
+// No cache and no network. The button never needed one either.
+test("a failed load still offers the way in", async () => {
   mockProgress.mockRejectedValue(new Error("offline"));
   render(<Home />);
 
-  expect(await screen.findByText(/Good (morning|afternoon|evening), Sumeet$/)).toBeTruthy();
   await waitFor(() => expect(screen.getByText(/back online/)).toBeTruthy());
   fireEvent.press(screen.getByText("Find a test centre near me"));
   expect(mockPush).toHaveBeenCalledWith("/centres");
