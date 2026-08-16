@@ -18,7 +18,7 @@
       "./jest.setup.js"
     ],
     "transformIgnorePatterns": [
-      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|expo-[^/]+|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|react-native-safe-area-context|nativewind|react-native-css-interop|zustand|@supabase/.*|@gorhom/.*|react-native-gifted-charts|gifted-charts-core|react-native-linear-gradient|react-native-url-polyfill|react-native-reanimated|react-native-worklets)/)"
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|expo-[^/]+|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|react-native-safe-area-context|nativewind|react-native-css-interop|zustand|@supabase/.*|@gorhom/.*|react-native-gifted-charts|gifted-charts-core|react-native-linear-gradient|react-native-url-polyfill|react-native-gesture-handler|react-native-reanimated|react-native-worklets)/)"
     ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1"
@@ -29,6 +29,7 @@
     "@expo/vector-icons": "^15.0.3",
     "@gorhom/bottom-sheet": "^5.2.14",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-community/netinfo": "11.4.1",
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@react-navigation/native": "^7.0.14",

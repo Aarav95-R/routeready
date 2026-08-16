@@ -46,6 +46,9 @@ module.exports = {
     "expo-font",
     "expo-asset",
     "expo-web-browser",
+    // Inert in Expo Go, which ships this module already. It is here for the
+    // dev build, where a config plugin is the only thing that links it.
+    "@react-native-community/datetimepicker",
     ["@rnmapbox/maps", { RNMapboxMapsDownloadToken: process.env.MAPBOX_DOWNLOAD_TOKEN || "" }],
   ],
   experiments: {
