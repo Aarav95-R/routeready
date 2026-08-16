@@ -1,0 +1,1228 @@
+<title>RouteReady Sign-Up</title>
+<style>
+  :root {
+    /* Document chrome — the house style these design docs already use. */
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --line-soft: #EFF2EC; --emerald: #047857;
+    --emerald-bright: #059669; --amber: #B45309; --danger: #B91C1C; --code-bg: #F0F2EC;
+    --frame: #D7D3CB; --shell: #EFEDE8;
+
+    /* The app's own roles, quoted verbatim from theme.ts. These never invert:
+       the phone shows the product, and the product has one appearance. */
+    --a-field: #F2F0EC; --a-cell: #FFFFFF; --a-label: #1C1917;
+    --a-label2: #6B635B; --a-label3: #8A827A; --a-sep: #E4DFD8;
+    --a-fill: #EBE7E1; --a-accent: #059669; --a-accent-deep: #047857;
+    --a-warning: #D97706; --a-danger: #DC2626;
+
+    --ease: cubic-bezier(0.33, 1, 0.68, 1); /* Easing.out(Easing.cubic) */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+      --line: #26302A; --line-soft: #1C241E; --emerald: #34D399;
+      --emerald-bright: #6EE7B7; --amber: #FBBF24; --danger: #F87171; --code-bg: #1A211C;
+      --frame: #2C352E; --shell: #1A211C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+    --line: #26302A; --line-soft: #1C241E; --emerald: #34D399;
+    --emerald-bright: #6EE7B7; --amber: #FBBF24; --danger: #F87171; --code-bg: #1A211C;
+    --frame: #2C352E; --shell: #1A211C;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-direction: column; gap: 34px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0;
+  }
+  h1 { font-size: clamp(28px, 5vw, 42px); line-height: 1.06; letter-spacing: -0.028em; font-weight: 680; margin: 10px 0 0; text-wrap: balance; }
+  .lede { margin: 14px 0 0; font-size: 17px; color: var(--muted); max-width: 62ch; }
+  h2 { font-size: 20px; letter-spacing: -0.015em; font-weight: 650; margin: 0; text-wrap: balance; }
+  h3 { font-size: 13.5px; font-weight: 640; margin: 0; }
+  p { margin: 0; max-width: 64ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14px; }
+  a { color: var(--emerald); }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 18px; }
+  .sec-head { display: flex; flex-direction: column; gap: 6px; }
+  code { font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace; font-size: 13px; background: var(--code-bg); padding: 1.5px 5px; border-radius: 4px; }
+  pre { margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 15px 16px; overflow-x: auto; }
+  pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.65; }
+
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 560px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  th {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); font-weight: 500; background: var(--code-bg);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.k { font-weight: 620; white-space: nowrap; }
+  td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .no { color: var(--danger); font-weight: 620; }
+  .yes { color: var(--emerald); font-weight: 620; }
+
+  .split { display: grid; grid-template-columns: 1fr auto; gap: 30px; align-items: start; }
+  @media (max-width: 760px) { .split { grid-template-columns: 1fr; justify-items: start; } }
+  .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  /* ── The phone ───────────────────────────────────────────────────────────
+     320pt wide, which is an iPhone SE. Every font size inside is therefore
+     the real point value at 1:1 — nothing here is drawn "about right". */
+  .phone {
+    width: 320px; flex: none; border: 8px solid var(--frame); border-radius: 34px;
+    background: var(--a-field); overflow: hidden; position: relative;
+    height: 604px; display: flex; flex-direction: column;
+    font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+    color: var(--a-label);
+  }
+  .ph-status {
+    height: 30px; flex: none; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px 0 22px; font-size: 12px; font-weight: 600; color: var(--a-label);
+    letter-spacing: 0; font-variant-numeric: tabular-nums;
+  }
+  .ph-status .bars { display: flex; gap: 2px; align-items: flex-end; }
+  .ph-status .bars i { width: 3px; background: var(--a-label); border-radius: 1px; display: block; }
+  .ph-body { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+  .cap {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted); text-align: center; margin-top: 9px;
+  }
+  .phone-col { display: flex; flex-direction: column; align-items: center; }
+
+  /* Type — the seven styles from src/ui/type.ts, verbatim. */
+  .t-large { font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.9px; }
+  .t-title2 { font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.46px; }
+  .t-head { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+  .t-body { font-size: 17px; line-height: 22px; font-weight: 400; letter-spacing: -0.41px; }
+  .t-sub { font-size: 15px; line-height: 20px; font-weight: 400; letter-spacing: -0.17px; }
+  .t-foot { font-size: 13px; line-height: 18px; font-weight: 600; }
+  .t-cap { font-size: 13px; line-height: 18px; font-weight: 400; }
+
+  /* Grouped-inset list — 16pt margin, 10pt radius, 44pt rows, inset hairline. */
+  .grp { margin: 0 16px; background: var(--a-cell); border-radius: 10px; overflow: hidden; }
+  .row { min-height: 44px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+  .row + .row { box-shadow: inset 0 1px 0 var(--a-sep); }
+  .row + .row.nosep { box-shadow: none; }
+  .grp-hdr {
+    font-size: 13px; line-height: 18px; font-weight: 600; color: var(--a-label3);
+    text-transform: uppercase; letter-spacing: 0.5px; padding: 18px 36px 7px;
+  }
+  .spacer { flex: 1; }
+  .val { color: var(--a-label3); }
+  .chev { color: var(--a-label3); opacity: 0.7; font-size: 17px; line-height: 1; }
+
+  .mark {
+    width: 52px; height: 52px; border-radius: 14px; background: var(--a-accent);
+    display: flex; align-items: center; justify-content: center; flex: none;
+  }
+  .mark svg { width: 30px; height: 30px; display: block; }
+
+  .cta {
+    margin: 0 16px; background: var(--a-accent); color: #fff; border-radius: 12px;
+    min-height: 50px; display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 600; letter-spacing: -0.41px; border: 0; width: calc(100% - 32px);
+    font-family: inherit; cursor: pointer;
+  }
+  .cta:disabled { opacity: 0.35; cursor: default; }
+  .cta.quiet { background: transparent; color: var(--a-accent-deep); min-height: 44px; font-weight: 500; }
+  .cta:focus-visible, .opt:focus-visible, .ph-back:focus-visible { outline: 2px solid var(--a-accent-deep); outline-offset: 2px; }
+
+  .field-txt { color: var(--a-label3); }
+
+  /* ── The flow chrome ─────────────────────────────────────────────────── */
+  .ph-nav { height: 44px; flex: none; display: flex; align-items: center; padding: 0 12px; gap: 12px; }
+  .ph-back {
+    border: 0; background: none; color: var(--a-accent-deep); font-size: 26px; line-height: 1;
+    padding: 0 6px; cursor: pointer; font-family: inherit;
+  }
+  .ph-back[disabled] { opacity: 0.25; cursor: default; }
+  .bar { flex: 1; height: 3px; border-radius: 2px; background: var(--a-fill); overflow: hidden; margin-right: 20px; }
+  .bar i { display: block; height: 100%; background: var(--a-accent); border-radius: 2px; width: 0; transition: width 280ms var(--ease); }
+  .stepno { font-size: 13px; font-weight: 600; color: var(--a-label3); font-variant-numeric: tabular-nums; }
+
+  .step { position: absolute; inset: 0; display: flex; flex-direction: column; overflow-y: auto; padding-bottom: 16px; }
+  .step::-webkit-scrollbar { width: 0; }
+  .q-head { padding: 6px 16px 4px; }
+  .q-sub { padding: 4px 16px 16px; color: var(--a-label2); }
+
+  /* Every animated child declares its stagger index. 45ms, from motion.ts. */
+  .anim { opacity: 0; transform: translateY(10px); }
+  .step.in .anim { animation: enter 280ms var(--ease) forwards; animation-delay: calc(var(--i, 0) * 45ms); }
+  @keyframes enter { to { opacity: 1; transform: none; } }
+  .step.out { animation: leave 180ms var(--ease) forwards; }
+  .step.out.back { animation-name: leaveBack; }
+  .step.in.back .anim { animation-name: enterBack; }
+  @keyframes leave { to { opacity: 0; transform: translateX(-14px); } }
+  @keyframes leaveBack { to { opacity: 0; transform: translateX(14px); } }
+  @keyframes enterBack { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+
+  .opt {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    background: var(--a-cell); border: 0; padding: 13px 16px; min-height: 44px;
+    font-family: inherit; color: var(--a-label); cursor: pointer;
+  }
+  .opt + .opt { box-shadow: inset 0 1px 0 var(--a-sep); }
+  .opt .tick { width: 20px; flex: none; color: var(--a-accent); opacity: 0; font-size: 17px; text-align: center; }
+  .opt[aria-checked="true"] .tick { opacity: 1; }
+  .opt[aria-checked="true"] .ol { font-weight: 600; }
+  .opt.pulsing { animation: pulse 280ms var(--ease); }
+  @keyframes pulse { 0% { transform: scale(1); } 43% { transform: scale(1.03); } 100% { transform: scale(1); } }
+  .ol { font-size: 17px; line-height: 22px; letter-spacing: -0.41px; }
+  .osub { font-size: 13px; line-height: 18px; color: var(--a-label2); margin-top: 1px; }
+
+  .reveal { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 280ms var(--ease); }
+  .reveal.open { grid-template-rows: 1fr; }
+  .reveal > div { overflow: hidden; }
+
+  .tick-big {
+    width: 64px; height: 64px; border-radius: 32px; background: var(--a-accent);
+    display: flex; align-items: center; justify-content: center; margin: 0 auto;
+    animation: pop 320ms var(--ease);
+  }
+  @keyframes pop { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  .search {
+    margin: 0 16px 10px; background: var(--a-fill); border-radius: 10px; height: 36px;
+    display: flex; align-items: center; gap: 7px; padding: 0 10px; color: var(--a-label3); font-size: 15px;
+  }
+
+  /* ── Real inputs, so the strength meter can actually be typed at ───────── */
+  .inp {
+    flex: 1; min-width: 0; border: 0; background: none; outline: none; padding: 0;
+    font-family: inherit; font-size: 17px; line-height: 22px; letter-spacing: -0.41px; color: var(--a-label);
+  }
+  .inp::placeholder { color: var(--a-label3); opacity: 1; }
+  .inp:focus-visible { outline: none; }
+  .eye {
+    border: 0; background: none; padding: 0 2px; cursor: pointer; color: var(--a-label3);
+    font-size: 15px; font-family: inherit; flex: none;
+  }
+  .eye[aria-pressed="true"] { color: var(--a-accent-deep); }
+
+  /* ── Strength ─────────────────────────────────────────────────────────
+     Four segments because there are four things worth having. The colour is
+     the app's existing danger / warning / accent vocabulary, so the meter
+     introduces no new meaning to the palette. */
+  .meter { padding: 10px 20px 0; }
+  .segs { display: flex; gap: 4px; }
+  .segs i { flex: 1; height: 3px; border-radius: 2px; background: var(--a-fill); overflow: hidden; display: block; }
+  .segs i b {
+    display: block; height: 100%; width: 100%; border-radius: 2px;
+    background: var(--lvl, var(--a-accent)); transform: scaleX(0); transform-origin: left center;
+    transition: transform 280ms var(--ease), background-color 280ms var(--ease);
+  }
+  .segs i.on b { transform: scaleX(1); }
+  /* Sequential, on the same 45ms the lists stagger by. */
+  .segs i:nth-child(1) b { transition-delay: 0ms; }
+  .segs i:nth-child(2) b { transition-delay: 45ms; }
+  .segs i:nth-child(3) b { transition-delay: 90ms; }
+  .segs i:nth-child(4) b { transition-delay: 135ms; }
+  .mlabel {
+    margin-top: 7px; color: var(--a-label3); transition: opacity 140ms var(--ease);
+    min-height: 18px;
+  }
+  .mlabel.fading { opacity: 0; }
+  .ok {
+    flex: none; color: var(--a-accent); font-size: 17px; opacity: 0; transform: scale(0.6);
+    transition: opacity 200ms var(--ease), transform 320ms var(--ease);
+  }
+  .ok.show { opacity: 1; transform: scale(1); }
+
+  /* ── Failure ──────────────────────────────────────────────────────────
+     Nothing oscillates. The outline turns, the reason arrives, the phone
+     taps you once. */
+  .grp.bad { box-shadow: 0 0 0 1.5px var(--a-danger); }
+  .grp { transition: box-shadow 200ms var(--ease); }
+  .errline {
+    padding: 10px 20px 0; color: var(--a-danger); font-weight: 600;
+    animation: errIn 200ms var(--ease) both;
+  }
+  @keyframes errIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+  /* A spinner is linear and endless on purpose — it reports progress rather
+     than arriving somewhere, so it sits outside the decelerating language. */
+  .spin {
+    width: 17px; height: 17px; border-radius: 9px; flex: none;
+    border: 2px solid rgba(255, 255, 255, 0.35); border-top-color: #fff;
+    animation: spin 700ms linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .cta .lbl { transition: opacity 140ms var(--ease); }
+  .cta.busy { pointer-events: none; }
+  .cta .inner { display: flex; align-items: center; gap: 9px; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .btn {
+    font-family: inherit; font-size: 13px; font-weight: 600; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); border-radius: 8px; padding: 7px 13px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--emerald-bright); }
+  .btn:focus-visible { outline: 2px solid var(--emerald-bright); outline-offset: 2px; }
+  .hint { font-size: 12.5px; color: var(--muted); }
+
+  .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+  .optcard { border: 1px solid var(--line); border-radius: 11px; padding: 17px; display: flex; flex-direction: column; gap: 8px; }
+  .optcard.rec { border-color: var(--emerald-bright); }
+  .optcard .tag {
+    font-family: ui-monospace, "SF Mono", monospace; font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .optcard.rec .tag { color: var(--emerald); }
+
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+  .flow .node {
+    border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; flex: 1 1 150px;
+    display: flex; flex-direction: column; gap: 3px; background: var(--code-bg);
+  }
+  .flow .node .n { font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: 0.1em; color: var(--muted); }
+  .flow .node .l { font-size: 13.5px; font-weight: 620; }
+  .flow .node.final { background: transparent; border-color: var(--emerald-bright); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .step.in .anim, .step.out, .opt.pulsing, .tick-big, .errline { animation: none !important; opacity: 1; transform: none; }
+    .spin { animation-duration: 1400ms; }
+    .bar i, .reveal, .segs i b, .mlabel, .ok { transition: none; }
+    .segs i.on b { transform: scaleX(1); }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">RouteReady · design · 16 Aug 2026</p>
+    <h1>Five cards, then an account.</h1>
+    <p class="lede">
+      Sign-in is re-dressed onto the grouped-inset language Home now uses. Sign-up
+      becomes a short interview: four questions that each change something a learner
+      will see on their first screen, and credentials last.
+    </p>
+    <p class="lede">
+      <strong>Both phones below are running prototypes, not pictures.</strong> Sign in
+      with a wrong password and watch it fail. Type into the password field on card 05
+      and watch the strength meter fill. Every duration is the real constant from
+      <code>src/ui/motion.ts</code> — there is a slow-motion toggle if you want to see
+      the choreography rather than feel it.
+    </p>
+  </header>
+
+  <!-- ── THE SHAPE ──────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">The shape</p>
+      <h2>Questions first, account last</h2>
+    </div>
+    <p class="small dim">
+      Supabase has email confirmation on, so <code>signUp()</code> returns
+      <em>no session</em> — there is no signed-in user to write a profile to until the
+      learner opens their inbox and comes back. Anything asked "after the account"
+      would have to survive that round trip in local storage. Asking first avoids the
+      problem outright: one call carries the answers with it.
+    </p>
+    <div class="flow">
+      <div class="node"><span class="n">01</span><span class="l">Test centre</span><span class="small dim">Which one</span></div>
+      <div class="node"><span class="n">02</span><span class="l">Test date</span><span class="small dim">Booked, or not yet</span></div>
+      <div class="node"><span class="n">03</span><span class="l">Experience</span><span class="small dim">How far along</span></div>
+      <div class="node"><span class="n">04</span><span class="l">Weak spots</span><span class="small dim">Up to two</span></div>
+      <div class="node final"><span class="n">05</span><span class="l">Account</span><span class="small dim">One signUp() call</span></div>
+    </div>
+    <p class="small dim">
+      The numbering is real: this is a sequence, each card is gated on the one before
+      it, and the progress bar counts fifths.
+    </p>
+  </section>
+
+  <!-- ── SIGN IN ────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Screen 1 · live</p>
+      <h2>Sign in</h2>
+    </div>
+    <div class="split">
+      <div class="stack">
+        <p class="small">
+          One <code>Group</code> holds both fields with a hairline inset 16pt from the
+          leading edge — the same primitive as Home, so the first screen of the app
+          already teaches its list language. No shadows: the cell separates from the
+          field by being lighter than it.
+        </p>
+        <p class="small">
+          The mark and wordmark are the whole brand moment. Everything under them is
+          Settings.app quiet, and emerald appears exactly twice — the action, and the
+          two links.
+        </p>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Element</th><th>Style</th><th>Role</th></tr></thead>
+            <tbody>
+              <tr><td class="k">Welcome back.</td><td class="n">largeTitle 34/41</td><td>label</td></tr>
+              <tr><td class="k">Fields</td><td class="n">body 17/22</td><td>label / label&#8209;tertiary placeholder</td></tr>
+              <tr><td class="k">Sign in</td><td class="n">headline 17/22</td><td>accent ground, white</td></tr>
+              <tr><td class="k">Email me a link</td><td class="n">body 17/22</td><td>accent, no ground</td></tr>
+              <tr><td class="k">Forgot / Create</td><td class="n">subheadline 15/20</td><td>label&#8209;secondary + accent</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small dim">
+          <strong>Forgot password is new.</strong> <code>resetPasswordForEmail</code> was
+          never wired, which means today an account with a mistyped password is simply
+          lost. A sign-in screen without it isn't finished.
+        </p>
+
+        <div class="toolbar">
+          <button class="btn" id="sReplay" type="button">Replay entrance</button>
+          <button class="btn" id="sFail" type="button">Sign in with a wrong password</button>
+        </div>
+        <p class="hint">
+          Watch the busy state, then the failure. The two links under the button both
+          lead somewhere — try them.
+        </p>
+
+        <p class="small">
+          <strong>Failure is quiet, and the app's motion rule survives intact.</strong>
+          A shake was the obvious alternative and it is out: <code>motion.ts</code> says
+          "nothing overshoots, so nothing settles, so nothing jiggles", and a shake is
+          pure oscillation. Making one exception to a one-rule motion language is how a
+          one-rule motion language stops being one. So the group's outline turns danger
+          over 200ms and the reason slides down 6pt beneath it — no part of the screen
+          moves back and forth.
+        </p>
+        <p class="small">
+          <strong>What the shake was really for, the phone does better.</strong> A shake
+          exists to make a failure register in the body rather than only in the eye. iOS
+          has a dedicated channel for exactly that, and the app already uses it —
+          <code>Haptics.notificationAsync(Error)</code>, one asymmetric double tap that
+          is unmistakably a "no". The failure is <em>felt</em>, and nothing on screen has
+          to jiggle to say so. (The prototype can't fire it; a phone will.)
+        </p>
+      </div>
+
+      <div class="phone-col">
+        <div class="phone" id="signin">
+          <div class="ph-status"><span>9:41</span><span class="bars"><i style="height:5px"></i><i style="height:7px"></i><i style="height:9px"></i><i style="height:11px"></i></span></div>
+          <div class="ph-body" id="sbody"></div>
+        </div>
+        <p class="cap">Sign in · live · 320pt, sizes 1:1</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── THE FLOW ───────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Screens 2–6 · live</p>
+      <h2>The sign-up interview</h2>
+    </div>
+    <div class="split">
+      <div class="stack">
+        <p class="small">
+          Tap the phone. Every transition below runs the real constants:
+          <code>280ms</code> entrances on <code>Easing.out(Easing.cubic)</code>,
+          <code>45ms</code> between staggered children, <code>10pt</code> of travel,
+          and nothing that overshoots. Single-choice cards advance themselves once the
+          selection has settled; the multi-select and the account card wait for the
+          button.
+        </p>
+        <div class="toolbar">
+          <button class="btn" id="replay" type="button">Replay from step 1</button>
+          <button class="btn" id="slowmo" type="button" aria-pressed="false">Slow motion: off</button>
+        </div>
+        <p class="hint">Slow motion runs everything at a quarter speed so the choreography is legible.</p>
+        <div class="tablewrap">
+          <table>
+            <thead><tr><th>Card</th><th>Asks</th><th>Control</th></tr></thead>
+            <tbody>
+              <tr><td class="k">01</td><td>Where are you testing?</td><td>Searchable list of real centres</td></tr>
+              <tr><td class="k">02</td><td>Have you booked it?</td><td>Two choices; "yes" reveals a date</td></tr>
+              <tr><td class="k">03</td><td>How much have you driven?</td><td>Three choices, one answer</td></tr>
+              <tr><td class="k">04</td><td>What trips you up?</td><td>Four choices, up to two</td></tr>
+              <tr><td class="k">05</td><td>Your account</td><td>Name, email, password twice, live strength</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="small dim">
+          Nothing here is skippable except the name, and that stays optional for the
+          same reason it is today. Four questions is the ceiling — the sixth card is
+          where people leave.
+        </p>
+      </div>
+
+      <div class="phone-col">
+        <div class="phone" id="proto">
+          <div class="ph-status"><span>9:41</span><span class="bars"><i style="height:5px"></i><i style="height:7px"></i><i style="height:9px"></i><i style="height:11px"></i></span></div>
+          <div class="ph-nav">
+            <button class="ph-back" id="back" type="button" aria-label="Back">‹</button>
+            <div class="bar"><i id="barfill"></i></div>
+            <span class="stepno" id="stepno">1 of 5</span>
+          </div>
+          <div class="ph-body" id="body"></div>
+        </div>
+        <p class="cap">Sign-up · tap to advance</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── MOTION ─────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Motion</p>
+      <h2>Everything comes from motion.ts</h2>
+    </div>
+    <p class="small">
+      That module exists so a screen can't reach for its own curve — three copies of a
+      curve is how the old ones drifted apart. The flow needs two additions to it and
+      no new numbers.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Moment</th><th>What moves</th><th>Timing</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td class="k">Card advance</td><td>Outgoing fades out and slides 14pt leading; incoming enters from 14pt trailing</td><td class="n">180 out / 280 in</td><td><code>stepForward()</code> — new</td></tr>
+          <tr><td class="k">Card back</td><td>The same, mirrored, so back reads as back</td><td class="n">180 / 280</td><td><code>stepBack()</code> — new</td></tr>
+          <tr><td class="k">Heading, then options</td><td>Each child 10pt up, in source order</td><td class="n">280, +45 each</td><td><code>enterFrom(i)</code></td></tr>
+          <tr><td class="k">Progress bar</td><td>Width to the next fifth</td><td class="n">280</td><td><code>timing(280)</code></td></tr>
+          <tr><td class="k">Choice tap</td><td>Scale to 1.03 and straight back, plus <code>selectionAsync()</code></td><td class="n">120 up / 160 down</td><td><code>pulse(1.03)</code></td></tr>
+          <tr><td class="k">Auto-advance</td><td>Single-choice cards only, after the pulse lands</td><td class="n">280 delay</td><td>—</td></tr>
+          <tr><td class="k">Date reveal</td><td>Height and opacity together</td><td class="n">280</td><td><code>timing(280)</code></td></tr>
+          <tr><td class="k">Strength segment</td><td>Fill scales from the leading edge; colour crossfades with it</td><td class="n">280, +45 each</td><td><code>timing(280)</code> + <code>interpolateColor</code></td></tr>
+          <tr><td class="k">Strength label</td><td>Out then in, because it changes on nearly every keystroke</td><td class="n">140 / 140</td><td><code>timing(140)</code></td></tr>
+          <tr><td class="k">Confirm reveal</td><td>Row expands once the password clears 8 characters</td><td class="n">280</td><td><code>timing(280)</code></td></tr>
+          <tr><td class="k">Passwords match</td><td>Tick scales up at the trailing edge</td><td class="n">320</td><td><code>popIn()</code></td></tr>
+          <tr><td class="k">Account created</td><td>Tick scales up from 0.6</td><td class="n">320</td><td><code>popIn()</code></td></tr>
+          <tr><td class="k">Screen entrance</td><td>Mark, title, group, then each action — the same stagger the lists use</td><td class="n">280, +45 each</td><td><code>enterFrom(i)</code></td></tr>
+          <tr><td class="k">Button busy</td><td>Spinner fades in, label crossfades to "Signing in…"</td><td class="n">140 + endless</td><td><code>ActivityIndicator</code></td></tr>
+          <tr><td class="k">Failure</td><td>Group outline turns danger; the reason slides down 6pt beneath it</td><td class="n">200 / 200</td><td><code>timing(200)</code></td></tr>
+          <tr><td class="k">Failure, felt</td><td>One asymmetric double tap. Nothing on screen moves</td><td class="n">—</td><td><code>notificationAsync(Error)</code></td></tr>
+          <tr><td class="k">Retry</td><td>Typing again clears the outline and the reason</td><td class="n">200</td><td><code>timing(200)</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small">
+      <strong>Exactly one entry is off the decelerating curve, and it earns it.</strong>
+      The spinner is linear and endless because it reports progress rather than arriving
+      anywhere — a decelerating spinner reads as a stall. Everything else in the table is
+      the same cubic, and nothing in the flow oscillates. The one animation that would
+      have — a shake on a failed sign-in — was cut, and its job handed to the haptic
+      channel instead.
+    </p>
+    <p class="small dim">
+      <strong>Reduce Motion.</strong> Reanimated's builders default to
+      <code>ReduceMotion.System</code>, so the entrances are already handled. The
+      progress bar, the pulse and every strength animation are imperative
+      <code>withTiming</code> calls and are <em>not</em> — they need an explicit
+      <code>useReducedMotion()</code> check, or the one setting meant to calm the
+      screen leaves the busiest thing on it moving. The meter still shows its state
+      with the setting on; it simply arrives there without travelling.
+    </p>
+  </section>
+
+  <!-- ── STRENGTH ───────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Card 05</p>
+      <h2>Password strength, and typing it twice</h2>
+    </div>
+    <p class="small">
+      Type into the password field on the phone above — the meter is live. Four
+      segments fill from the leading edge, 45ms apart, on the same decelerating
+      cubic as everything else. The colour crossfades with the fill rather than
+      snapping, so a password improving mid-word reads as one continuous move.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Level</th><th>Reached by</th><th>Segments</th><th>Role</th><th>Says</th></tr></thead>
+        <tbody>
+          <tr><td class="k">Empty</td><td>Nothing typed</td><td class="n">0</td><td>label&#8209;tertiary</td><td>At least 8 characters</td></tr>
+          <tr><td class="k">Short</td><td>Under 8</td><td class="n">0</td><td class="no">danger</td><td>3 more characters</td></tr>
+          <tr><td class="k">Weak</td><td>8+, and nothing else</td><td class="n">1</td><td>warning</td><td>Weak — add a capital or a number</td></tr>
+          <tr><td class="k">Fair</td><td>Two of the four</td><td class="n">2</td><td>warning</td><td>Fair</td></tr>
+          <tr><td class="k">Good</td><td>Three of the four</td><td class="n">3</td><td class="yes">accent</td><td>Good</td></tr>
+          <tr><td class="k">Strong</td><td>All four</td><td class="n">4</td><td class="yes">accent</td><td>Strong</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small dim">
+      The four points are: twelve characters or more, mixed case, a digit, a symbol.
+      No new colours enter the palette — danger, warning and accent are the app's
+      existing three, used the way <code>DriveModeRow</code> already uses them.
+    </p>
+<pre><code>// src/lib/passwordStrength.ts — a function of the string, nothing else.
+export type Strength = { level: Level; segments: 0|1|2|3|4; message: string };
+export function passwordStrength(password: string): Strength;</code></pre>
+    <p class="small">
+      <strong>Only the 8-character floor gates the button.</strong> Everything above it
+      is advice. A meter that refuses to let you continue is a meter people defeat, and
+      what they defeat it with is <code>Password1!</code> — which scores four segments
+      and is on every breach list there is. The bar informs; it does not police.
+    </p>
+    <p class="small">
+      <strong>The confirm field is back, and it is revealed rather than always there.</strong>
+      It expands once the password clears 8 characters, on the same 280ms as the date
+      row — before that there is nothing to confirm, and an empty second password box
+      just makes the card look longer than it is. A tick fades in at the trailing edge
+      when the two match. Mismatch says nothing until the field is left, because
+      telling someone they are wrong halfway through typing a word is noise, not help.
+    </p>
+  </section>
+
+  <!-- ── PAYOFF ─────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Payoff</p>
+      <h2>What each answer buys</h2>
+    </div>
+    <p class="small">
+      A question that changes nothing is a toll. Each of the four earns its card:
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Answer</th><th>Key</th><th>What it changes</th></tr></thead>
+        <tbody>
+          <tr><td class="k">Test centre</td><td><code>home_centre_id</code></td><td>Centres opens on it instead of an unsorted national list. Its routes are the first thing in the app.</td></tr>
+          <tr><td class="k">Test date</td><td><code>test_date</code></td><td>A countdown on Home, and it paces the "work on this next" card — six weeks out is a different suggestion from six days.</td></tr>
+          <tr><td class="k">Experience</td><td><code>experience</code></td><td>Whether the first suggestion is a practice drive or a mock test.</td></tr>
+          <tr><td class="k">Weak spots</td><td><code>focus[]</code></td><td>Routes carrying those hazards sort first, before any drive has been recorded.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small dim">
+      The last three are the answer to the cold-start problem: Home's next-step card
+      is computed from recorded drives, and a brand-new account has none. Today it has
+      nothing to say. With these it does.
+    </p>
+    <p class="small">
+      <strong>The weak-spots card offers four options, not six.</strong>
+      <code>hazards.type</code> holds exactly <code>roundabout</code>,
+      <code>zebra</code>, <code>narrow</code> and <code>junction</code>, and
+      <code>manoeuvres</code> is a global reference table with no route link. So
+      "parallel parking" would be a question the app has no way to act on. The card
+      offers what the data can sort by and nothing else; adding parking means adding a
+      route ↔ manoeuvre relation first, which is its own change.
+    </p>
+  </section>
+
+  <!-- ── DATA ───────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Data</p>
+      <h2>It rides in user_metadata</h2>
+    </div>
+    <p class="small">
+      The same call <code>sessionStore</code> already made for the name, for the same
+      reason: a table would need a row, a policy and a migration to hold four scalars
+      that belong to the account. <code>test_centres</code> already grants
+      <code>select</code> to <code>anon</code>, so the centre picker works before an
+      account exists.
+    </p>
+<pre><code>// src/lib/onboarding.ts — pure, no React, no Supabase.
+export type Answers = {
+  centreId: string | null;
+  testDate: string | null;          // ISO date, or null for "not booked"
+  experience: "starting" | "progressing" | "ready" | null;
+  focus: HazardKey[];               // 0–2
+};
+
+export const QUESTIONS: Question[] = [ /* the four, as data */ ];
+export function canAdvance(step: number, a: Answers): boolean;
+export function toMetadata(a: Answers, name: string): Record&lt;string, unknown&gt;;
+
+// src/stores/sessionStore.ts — one changed signature.
+signUp: (email, password, profile: SignUpProfile) => Promise&lt;string | null&gt;</code></pre>
+    <p class="small dim">
+      The questions are <em>data</em>, not JSX. That is what makes the copy, the order
+      and the gating testable without rendering anything, and it's why adding a fifth
+      question later costs one array entry rather than one screen.
+    </p>
+  </section>
+
+  <!-- ── WIRING ─────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">"Wire it so it works"</p>
+      <h2>What's actually broken today</h2>
+    </div>
+    <p class="small">
+      Auth is wired to Supabase and does sign in. These are the things between that
+      and a screen that behaves like a shipped app.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>#</th><th>Today</th><th>Fix</th></tr></thead>
+        <tbody>
+          <tr><td class="n">1</td><td><code>KeyboardAvoidingView behavior="padding"</code> is hardcoded. On Android that's the wrong behaviour and the keyboard covers the button.</td><td><code>Platform.select</code></td></tr>
+          <tr><td class="n">2</td><td>No <code>textContentType</code> or <code>autoComplete</code>, so iOS offers neither Keychain autofill nor a strong password.</td><td><code>password</code> / <code>newPassword</code></td></tr>
+          <tr><td class="n">3</td><td>Raw Supabase strings reach the user — "Invalid login credentials", "User already registered".</td><td>A pure <code>authError.ts</code> map</td></tr>
+          <tr><td class="n">4</td><td>Validation fires <em>after</em> the tap. You learn the passwords don't match by being told off.</td><td>Live meter, disabled until valid, errors on blur</td></tr>
+          <tr><td class="n">5</td><td>No way to see the password you're typing.</td><td>Show / Hide toggle, driving both fields</td></tr>
+          <tr><td class="n">6</td><td>After sign-up the notice appears under a still-filled form, so it reads as an error.</td><td>A dedicated "check your email" state</td></tr>
+          <tr><td class="n">7</td><td><code>notice</code> is never cleared on the sign-in path, so a stale magic-link message sits under a failed sign-in.</td><td>Clear both on every submit</td></tr>
+          <tr><td class="n">8</td><td>No <code>returnKeyType</code> chaining — return dismisses the keyboard instead of moving on.</td><td><code>next</code> / <code>done</code> + refs</td></tr>
+          <tr><td class="n">9</td><td><code>resetPasswordForEmail</code> is not wired at all. A forgotten password means a lost account.</td><td>Forgot-password link and screen</td></tr>
+          <tr><td class="n">10</td><td>Android hardware back inside the flow exits to sign-in and loses every answer.</td><td><code>BackHandler</code> → previous step</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── SCOPE ──────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">Scope</p>
+      <h2>In, and deliberately out</h2>
+    </div>
+    <div class="opts">
+      <div class="optcard rec">
+        <span class="tag">In</span>
+        <p class="small">Sign-in re-dressed. Forgot-password wired. The five-card flow with its motion. <code>onboarding.ts</code> and <code>passwordStrength.ts</code> with their tests. The animated meter and the revealed confirm field. <code>signUp</code> carrying the profile. The ten fixes above.</p>
+      </div>
+      <div class="optcard">
+        <span class="tag">Out — separate work</span>
+        <p class="small">Actually <em>consuming</em> the four answers on Home and Centres. The metadata gets written and tested here; the screens that read it are their own change, on their own screens.</p>
+      </div>
+      <div class="optcard">
+        <span class="tag">Out — later</span>
+        <p class="small">Sign in with Apple. Not required while email is the only method, and adding one third-party provider triggers App Store rule 4.8 — that's a decision, not a detail.</p>
+      </div>
+    </div>
+  </section>
+
+  <p class="small dim" style="text-align:center">
+    Two live phones, seventeen animations, one curve. Nothing on this screen jiggles.
+  </p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var CENTRES = [
+    { id: "mill-hill", name: "Mill Hill", town: "London NW7" },
+    { id: "barnet", name: "Barnet", town: "London EN5" },
+    { id: "borehamwood", name: "Borehamwood", town: "Hertfordshire" },
+    { id: "hendon", name: "Hendon", town: "London NW9" },
+    { id: "wood-green", name: "Wood Green", town: "London N22" },
+    { id: "pinner", name: "Pinner", town: "London HA5" }
+  ];
+
+  var EXPERIENCE = [
+    { id: "starting", label: "Just starting out", sub: "A handful of lessons so far" },
+    { id: "progressing", label: "Getting there", sub: "I can drive most roads on my own" },
+    { id: "ready", label: "Nearly test-ready", sub: "Polishing the details" }
+  ];
+
+  // Exactly the four values hazards.type can hold. An option the data cannot
+  // sort by is a question that does nothing.
+  var FOCUS = [
+    { id: "roundabout", label: "Roundabouts", sub: "Mini, multi-lane and spiral" },
+    { id: "junction", label: "Junctions and priority", sub: "Emerging, and who goes first" },
+    { id: "narrow", label: "Narrow roads", sub: "Meeting traffic, parked cars" },
+    { id: "zebra", label: "Pedestrian crossings", sub: "Zebras and schools" }
+  ];
+
+  /**
+   * The pure half — this is `src/lib/passwordStrength.ts` in the app, and it is
+   * a function of the string alone so it can be tested without a screen.
+   *
+   * Eight characters is the floor Supabase enforces and the only thing that
+   * gates the button. Everything above it is advice: a meter that blocks is a
+   * meter people fight, and the result is `Password1!` every time.
+   */
+  var LEVELS = {
+    empty:  { score: 0, colour: "var(--a-label3)", label: "At least 8 characters" },
+    short:  { score: 0, colour: "var(--a-danger)", label: "" },
+    weak:   { score: 1, colour: "var(--a-warning)", label: "Weak — add a capital or a number" },
+    fair:   { score: 2, colour: "var(--a-warning)", label: "Fair" },
+    good:   { score: 3, colour: "var(--a-accent)", label: "Good" },
+    strong: { score: 4, colour: "var(--a-accent)", label: "Strong" }
+  };
+
+  function strengthOf(pw) {
+    if (!pw.length) return { key: "empty", label: LEVELS.empty.label };
+    if (pw.length < 8) {
+      var left = 8 - pw.length;
+      return { key: "short", label: left + " more character" + (left === 1 ? "" : "s") };
+    }
+    var pts = 0;
+    if (pw.length >= 12) pts += 1;
+    if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) pts += 1;
+    if (/\d/.test(pw)) pts += 1;
+    if (/[^A-Za-z0-9]/.test(pw)) pts += 1;
+    var key = pts <= 1 ? "weak" : pts === 2 ? "fair" : pts === 3 ? "good" : "strong";
+    return { key: key, label: LEVELS[key].label };
+  }
+
+  var answers = { centreId: null, booked: null, testDate: null, experience: null, focus: [] };
+  var step = 0;
+  var TOTAL = 5;
+  var slow = 1;
+
+  var body = document.getElementById("body");
+  var barfill = document.getElementById("barfill");
+  var backBtn = document.getElementById("back");
+  var stepno = document.getElementById("stepno");
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  function head(title, sub, i) {
+    return '<div class="anim q-head t-large" style="--i:' + i + '">' + esc(title) + "</div>" +
+           '<div class="anim q-sub t-sub" style="--i:' + (i + 1) + '">' + esc(sub) + "</div>";
+  }
+
+  function optRow(id, label, sub, checked, group) {
+    return '<button class="opt" type="button" role="' + (group === "multi" ? "checkbox" : "radio") +
+      '" aria-checked="' + (checked ? "true" : "false") + '" data-pick="' + esc(id) + '">' +
+      '<span style="flex:1"><span class="ol">' + esc(label) + "</span>" +
+      (sub ? '<span class="osub" style="display:block">' + esc(sub) + "</span>" : "") +
+      "</span><span class=\"tick\">✓</span></button>";
+  }
+
+  function ctaRow(label, enabled, i) {
+    return '<div class="anim" style="--i:' + i + ';padding:18px 0 0">' +
+      '<button class="cta" type="button" id="next"' + (enabled ? "" : " disabled") + ">" + esc(label) + "</button></div>";
+  }
+
+  function renderStep() {
+    if (step === 0) {
+      var rows = CENTRES.map(function (c) {
+        return optRow(c.id, c.name, c.town, answers.centreId === c.id, "single");
+      }).join("");
+      return head("Where are you testing?", "We'll open the app on that centre's real routes.", 0) +
+        '<div class="anim search" style="--i:2">⌕ Search centres</div>' +
+        '<div class="anim" style="--i:3"><div class="grp">' + rows + "</div></div>";
+    }
+
+    if (step === 1) {
+      var revealOpen = answers.booked === "yes";
+      return head("Have you booked it?", "A date turns Home into a countdown. You can add one later.", 0) +
+        '<div class="anim" style="--i:2"><div class="grp">' +
+          optRow("yes", "Yes, it's booked", null, answers.booked === "yes", "single") +
+          optRow("no", "Not yet", null, answers.booked === "no", "single") +
+        "</div></div>" +
+        '<div class="reveal' + (revealOpen ? " open" : "") + '" id="dateReveal"><div>' +
+          '<div class="grp-hdr">Test date</div><div class="grp"><div class="row">' +
+            '<span class="t-body">Thursday 24 September</span><span class="spacer"></span><span class="chev">›</span>' +
+          "</div></div></div></div>" +
+        (answers.booked ? ctaRow("Continue", true, 4) : "");
+    }
+
+    if (step === 2) {
+      var ex = EXPERIENCE.map(function (e) {
+        return optRow(e.id, e.label, e.sub, answers.experience === e.id, "single");
+      }).join("");
+      return head("How much have you driven?", "This sets whether we start you on a practice drive or a mock test.", 0) +
+        '<div class="anim" style="--i:2"><div class="grp">' + ex + "</div></div>";
+    }
+
+    if (step === 3) {
+      var f = FOCUS.map(function (h) {
+        return optRow(h.id, h.label, h.sub, answers.focus.indexOf(h.id) !== -1, "multi");
+      }).join("");
+      var n = answers.focus.length;
+      return head("What trips you up?", "Pick up to two. Routes with those come first.", 0) +
+        '<div class="anim" style="--i:2"><div class="grp">' + f + "</div></div>" +
+        '<div class="anim t-cap" style="--i:3;text-align:center;padding:10px 16px 0;color:var(--a-label3)">' +
+          (n === 0 ? "Choose one or two" : n === 1 ? "One more, or continue" : "That's two — tap one to swap it") +
+        "</div>" + ctaRow("Continue", n > 0, 4);
+    }
+
+    if (step === 4) {
+      return head("Last thing.", "So your progress is here next time you open the app.", 0) +
+        '<div class="anim" style="--i:2"><div class="grp">' +
+          '<div class="row"><input class="inp" id="fname" placeholder="First name (optional)" autocomplete="given-name"></div>' +
+          '<div class="row"><input class="inp" id="email" type="email" placeholder="Email address" autocomplete="email"></div>' +
+          '<div class="row"><input class="inp" id="pw" type="password" placeholder="Password" autocomplete="new-password">' +
+            '<button class="eye" id="eye" type="button" aria-pressed="false" aria-label="Show password">Show</button></div>' +
+        "</div></div>" +
+        '<div class="anim" style="--i:3"><div class="meter" id="meter">' +
+          '<div class="segs"><i><b></b></i><i><b></b></i><i><b></b></i><i><b></b></i></div>' +
+          '<div class="mlabel t-cap" id="mlabel">At least 8 characters</div>' +
+        "</div></div>" +
+        '<div class="reveal" id="confirmReveal"><div><div class="grp" style="margin-top:12px"><div class="row">' +
+          '<input class="inp" id="pw2" type="password" placeholder="Confirm password" autocomplete="new-password">' +
+          '<span class="ok" id="ok">✓</span>' +
+        "</div></div></div></div>" +
+        ctaRow("Create account", false, 4);
+    }
+
+    // Confirmation.
+    return '<div style="padding:60px 0 0">' +
+      '<div class="tick-big"><svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"/></svg></div>' +
+      '<div class="anim t-title2" style="--i:1;text-align:center;padding:22px 24px 0">Check your email</div>' +
+      '<div class="anim t-sub" style="--i:2;text-align:center;padding:8px 30px 0;color:var(--a-label2)">' +
+        "We've sent a confirmation link to your address. Open it, then sign in — Mill Hill will be waiting." +
+      "</div>" +
+      '<div class="anim" style="--i:3;padding:26px 0 0"><button class="cta quiet" type="button" id="next">Back to sign in</button></div>' +
+      "</div>";
+  }
+
+  function paint(direction) {
+    var old = body.querySelector(".step");
+    var outMs = 180 * slow;
+
+    function mount() {
+      var el = document.createElement("div");
+      el.className = "step in" + (direction === "back" ? " back" : "");
+      el.innerHTML = renderStep();
+      body.appendChild(el);
+      wire(el);
+    }
+
+    if (old && direction) {
+      old.classList.remove("in");
+      old.classList.add("out");
+      if (direction === "back") old.classList.add("back");
+      setTimeout(function () { if (old.parentNode) old.parentNode.removeChild(old); mount(); }, outMs);
+    } else {
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      mount();
+    }
+
+    barfill.style.width = Math.min(step + 1, TOTAL) / TOTAL * 100 + "%";
+    backBtn.disabled = step === 0 || step > 4;
+    stepno.textContent = step > 4 ? "Done" : (step + 1) + " of " + TOTAL;
+  }
+
+  function advance() { step += 1; paint("fwd"); }
+
+  function wire(el) {
+    el.querySelectorAll("[data-pick]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-pick");
+        var auto = false;
+
+        if (step === 0) { answers.centreId = id; auto = true; }
+        else if (step === 1) {
+          answers.booked = id;
+          answers.testDate = id === "yes" ? "2026-09-24" : null;
+          auto = id === "no";
+        }
+        else if (step === 2) { answers.experience = id; auto = true; }
+        else if (step === 3) {
+          var at = answers.focus.indexOf(id);
+          if (at !== -1) answers.focus.splice(at, 1);
+          else if (answers.focus.length < 2) answers.focus.push(id);
+          else { answers.focus.shift(); answers.focus.push(id); }
+        }
+
+        btn.classList.add("pulsing");
+        setTimeout(function () { btn.classList.remove("pulsing"); }, 280 * slow);
+
+        // Radio groups repaint in place so the tick and the CTA stay truthful;
+        // only the step change gets a transition.
+        if (step === 1 || step === 3) {
+          var scroll = el.scrollTop;
+          el.innerHTML = renderStep();
+          el.querySelectorAll(".anim").forEach(function (a) { a.style.animation = "none"; a.style.opacity = 1; a.style.transform = "none"; });
+          el.scrollTop = scroll;
+          wire(el);
+          if (step === 1 && answers.booked === "yes") {
+            var r = el.querySelector("#dateReveal");
+            if (r) { r.classList.remove("open"); requestAnimationFrame(function () { r.classList.add("open"); }); }
+          }
+        } else {
+          el.querySelectorAll("[data-pick]").forEach(function (b) {
+            b.setAttribute("aria-checked", b === btn ? "true" : "false");
+          });
+        }
+
+        if (auto) setTimeout(advance, 280 * slow);
+      });
+    });
+
+    wireAccount(el);
+
+    var next = el.querySelector("#next");
+    if (next) {
+      next.addEventListener("click", function () {
+        if (step > 4) { step = 0; answers = { centreId: null, booked: null, testDate: null, experience: null, focus: [] }; paint("back"); }
+        else advance();
+      });
+    }
+  }
+
+  function wireAccount(el) {
+    var pw = el.querySelector("#pw");
+    if (!pw) return;
+
+    var pw2 = el.querySelector("#pw2");
+    var email = el.querySelector("#email");
+    var meter = el.querySelector("#meter");
+    var mlabel = el.querySelector("#mlabel");
+    var segs = el.querySelectorAll(".segs i");
+    var reveal = el.querySelector("#confirmReveal");
+    var ok = el.querySelector("#ok");
+    var cta = el.querySelector("#next");
+    var eye = el.querySelector("#eye");
+    var shown = "";
+
+    function update() {
+      var s = strengthOf(pw.value);
+      var lv = LEVELS[s.key];
+
+      meter.style.setProperty("--lvl", lv.colour);
+      segs.forEach(function (seg, i) { seg.classList.toggle("on", i < lv.score); });
+
+      // The label crossfades rather than swapping: at typing speed a hard swap
+      // reads as flicker, and this line changes on almost every keystroke.
+      if (mlabel.textContent !== s.label) {
+        mlabel.classList.add("fading");
+        setTimeout(function () {
+          mlabel.textContent = s.label;
+          mlabel.classList.remove("fading");
+        }, 140 * slow);
+      }
+
+      // Confirm only exists once there is something worth confirming.
+      var long = pw.value.length >= 8;
+      reveal.classList.toggle("open", long);
+
+      var match = long && pw2 && pw2.value === pw.value;
+      if (ok) ok.classList.toggle("show", !!match);
+      if (cta) cta.disabled = !(match && email.value.indexOf("@") > 0);
+    }
+
+    pw.addEventListener("input", update);
+    if (pw2) pw2.addEventListener("input", update);
+    if (email) email.addEventListener("input", update);
+
+    if (eye) {
+      eye.addEventListener("click", function () {
+        shown = shown === "text" ? "" : "text";
+        pw.type = shown === "text" ? "text" : "password";
+        if (pw2) pw2.type = pw.type;
+        eye.setAttribute("aria-pressed", shown === "text" ? "true" : "false");
+        eye.textContent = shown === "text" ? "Hide" : "Show";
+        eye.setAttribute("aria-label", shown === "text" ? "Hide password" : "Show password");
+      });
+    }
+
+    update();
+  }
+
+  backBtn.addEventListener("click", function () {
+    if (step === 0) return;
+    step -= 1;
+    paint("back");
+  });
+
+  document.getElementById("replay").addEventListener("click", function () {
+    step = 0;
+    answers = { centreId: null, booked: null, testDate: null, experience: null, focus: [] };
+    paint("back");
+  });
+
+  var slowBtn = document.getElementById("slowmo");
+  slowBtn.addEventListener("click", function () {
+    slow = slow === 1 ? 4 : 1;
+    var on = slow === 4;
+    slowBtn.textContent = "Slow motion: " + (on ? "on" : "off");
+    slowBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    document.getElementById("proto").style.setProperty("--ease", "cubic-bezier(0.33, 1, 0.68, 1)");
+    document.getElementById("proto").querySelectorAll("*").forEach(function () {});
+    document.documentElement.style.setProperty("--speed", slow);
+    // Scale every animation and transition inside the phone.
+    var st = document.getElementById("protoSpeed");
+    if (!st) { st = document.createElement("style"); st.id = "protoSpeed"; document.head.appendChild(st); }
+    st.textContent = on
+      ? "#proto .step.in .anim, #proto .step.out, #proto .opt.pulsing, #proto .tick-big { animation-duration: 1120ms !important; }" +
+        "#proto .step.in .anim { animation-delay: calc(var(--i,0) * 180ms) !important; }" +
+        "#proto .bar i, #proto .reveal, #proto .segs i b, #proto .ok { transition-duration: 1120ms !important; }" +
+        "#proto .mlabel { transition-duration: 560ms !important; }" +
+        "#proto .segs i:nth-child(2) b { transition-delay: 180ms !important; }" +
+        "#proto .segs i:nth-child(3) b { transition-delay: 360ms !important; }" +
+        "#proto .segs i:nth-child(4) b { transition-delay: 540ms !important; }"
+      : "";
+  });
+
+  paint(null);
+})();
+
+/* ── The sign-in phone ─────────────────────────────────────────────────── */
+(function () {
+  "use strict";
+
+  var sbody = document.getElementById("sbody");
+  var state = "signin";
+  var err = null;
+
+  var MARK =
+    '<div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V8.5L7 4h10l3 4.5V19"/>' +
+    '<path d="M4 12h16"/><circle cx="8" cy="15.5" r="1.4" fill="#fff" stroke="none"/>' +
+    '<circle cx="16" cy="15.5" r="1.4" fill="#fff" stroke="none"/></svg></div>';
+
+  var TICK =
+    '<div class="tick-big"><svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="#fff" ' +
+    'stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"/></svg></div>';
+
+  function cta(id, label, quiet, i) {
+    return '<div class="anim" style="--i:' + i + ';padding:' + (quiet ? "2px" : "14px") + ' 0 0">' +
+      '<button class="cta' + (quiet ? " quiet" : "") + '" type="button" data-go="' + id + '">' +
+      '<span class="inner"><span class="lbl">' + label + "</span></span></button></div>";
+  }
+
+  function confirmScreen(title, blurb) {
+    return '<div style="padding:64px 0 0">' + TICK +
+      '<div class="anim t-title2" style="--i:1;text-align:center;padding:22px 24px 0">' + title + "</div>" +
+      '<div class="anim t-sub" style="--i:2;text-align:center;padding:8px 30px 0;color:var(--a-label2)">' + blurb + "</div>" +
+      cta("signin", "Back to sign in", true, 3) + "</div>";
+  }
+
+  function render() {
+    if (state === "linksent") {
+      return confirmScreen("Check your email",
+        "We've sent a sign-in link to your address. It works for an hour, on this phone.");
+    }
+    if (state === "resetsent") {
+      return confirmScreen("Reset link sent",
+        "Open it on this phone and you'll come straight back here to set a new password.");
+    }
+    if (state === "forgot") {
+      return '<div style="padding-top:8px">' +
+        '<button class="ph-back anim" style="--i:0" type="button" data-go="signin" aria-label="Back">‹</button>' +
+        '<div class="anim t-large" style="--i:1;padding:10px 16px 0">Reset your</div>' +
+        '<div class="anim t-large" style="--i:1;padding:0 16px 8px">password.</div>' +
+        '<div class="anim t-sub" style="--i:2;padding:0 16px 20px;color:var(--a-label2)">' +
+          "We'll email you a link to set a new one. The old one keeps working until you do." +
+        "</div>" +
+        '<div class="anim" style="--i:3"><div class="grp"><div class="row">' +
+          '<input class="inp" type="email" placeholder="Email address" autocomplete="email"></div></div></div>' +
+        cta("resetsent", "Send reset link", false, 4) +
+        cta("signin", "Back to sign in", true, 5) + "</div>";
+    }
+
+    return '<div style="padding-top:26px">' +
+      '<div class="anim" style="--i:0;display:flex;align-items:center;gap:12px;padding:0 16px 26px">' +
+        MARK + '<span class="t-title2">RouteReady</span></div>' +
+      '<div class="anim t-large" style="--i:1;padding:0 16px 6px">Welcome</div>' +
+      '<div class="anim t-large" style="--i:1;padding:0 16px 22px">back.</div>' +
+      '<div class="anim" style="--i:2"><div class="grp" id="sgrp">' +
+        '<div class="row"><input class="inp" id="semail" type="email" placeholder="Email address" ' +
+          'autocomplete="email" value="you@example.com"></div>' +
+        '<div class="row"><input class="inp" id="spw" type="password" placeholder="Password" ' +
+          'autocomplete="current-password" value="hunter2">' +
+          '<button class="eye" id="seye" type="button" aria-pressed="false" aria-label="Show password">Show</button>' +
+        "</div>" +
+      "</div></div>" +
+      '<div id="serr"></div>' +
+      cta("attempt", "Sign in", false, 3) +
+      cta("linksent", "Email me a sign-in link", true, 4) +
+      '<div class="anim t-sub" style="--i:5;text-align:center;padding:6px 16px 0">' +
+        '<button class="eye" type="button" data-go="forgot" style="font-size:15px;color:var(--a-label2)">' +
+          "Forgot your password?</button></div>" +
+      '<div class="anim t-sub" style="--i:6;text-align:center;padding:28px 16px 8px;color:var(--a-label2)">' +
+        'New here? <span style="color:var(--a-accent-deep);font-weight:600">Create an account</span></div>' +
+      "</div>";
+  }
+
+  function clearError(el) {
+    err = null;
+    var grp = el.querySelector("#sgrp");
+    var slot = el.querySelector("#serr");
+    if (grp) grp.classList.remove("bad");
+    if (slot) slot.innerHTML = "";
+  }
+
+  function fail(el) {
+    var btn = el.querySelector('[data-go="attempt"]');
+    if (!btn || btn.classList.contains("busy")) return;
+
+    clearError(el);
+    btn.classList.add("busy");
+    btn.querySelector(".inner").innerHTML = '<span class="spin"></span><span class="lbl">Signing in…</span>';
+
+    setTimeout(function () {
+      btn.classList.remove("busy");
+      btn.querySelector(".inner").innerHTML = '<span class="lbl">Sign in</span>';
+
+      var grp = el.querySelector("#sgrp");
+      var slot = el.querySelector("#serr");
+      err = "That email and password don't match. Check the password, or reset it below.";
+
+      // The mapped sentence, not Supabase's "Invalid login credentials".
+      slot.innerHTML = '<div class="errline t-foot">' + err + "</div>";
+      grp.classList.add("bad");
+      // On device this is also where Haptics.notificationAsync(Error) fires —
+      // the half of the failure a prototype in a browser cannot show.
+    }, 900);
+  }
+
+  function paint(animate) {
+    var old = sbody.querySelector(".step");
+
+    function mount() {
+      var el = document.createElement("div");
+      el.className = "step in";
+      el.innerHTML = render();
+      sbody.appendChild(el);
+      wire(el);
+    }
+
+    if (old && animate) {
+      old.classList.remove("in");
+      old.classList.add("out");
+      setTimeout(function () { if (old.parentNode) old.parentNode.removeChild(old); mount(); }, 180);
+    } else {
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      mount();
+    }
+  }
+
+  function wire(el) {
+    el.querySelectorAll("[data-go]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var to = b.getAttribute("data-go");
+        if (to === "attempt") { fail(el); return; }
+        state = to;
+        err = null;
+        paint(true);
+      });
+    });
+
+    // Typing again is a retry, so the failure gets out of the way.
+    el.querySelectorAll(".inp").forEach(function (i) {
+      i.addEventListener("input", function () { if (err) clearError(el); });
+    });
+
+    var eye = el.querySelector("#seye");
+    if (eye) {
+      eye.addEventListener("click", function () {
+        var pw = el.querySelector("#spw");
+        var on = pw.type === "password";
+        pw.type = on ? "text" : "password";
+        eye.textContent = on ? "Hide" : "Show";
+        eye.setAttribute("aria-pressed", on ? "true" : "false");
+        eye.setAttribute("aria-label", on ? "Hide password" : "Show password");
+      });
+    }
+  }
+
+  document.getElementById("sReplay").addEventListener("click", function () {
+    state = "signin"; err = null; paint(false);
+  });
+
+  document.getElementById("sFail").addEventListener("click", function () {
+    if (state !== "signin") { state = "signin"; err = null; paint(true); setTimeout(function () {
+      fail(sbody.querySelector(".step"));
+    }, 260); return; }
+    fail(sbody.querySelector(".step"));
+  });
+
+  paint(false);
+})();
+</script>
