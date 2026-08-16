@@ -15,7 +15,9 @@ jest.mock("@/lib/supabase", () => ({
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import { GENERIC_AUTH_ERROR } from "@/lib/authError";
-import { useSession } from "../sessionStore";
+import {
+  selectExperience, selectFocus, selectHomeCentreId, selectTestDate, useSession,
+} from "../sessionStore";
 /* eslint-enable import/first */
 
 const signedIn = { user: { id: "u1", email: "a@b.com" } } as never;
@@ -105,4 +107,58 @@ test("sendMagicLink passes redirect", async () => {
     email: "a@b.com",
     options: { emailRedirectTo: "routeready://auth-callback" },
   });
+});
+
+test("signUp carries the interview's answers with it", async () => {
+  (supabase.auth.signUp as jest.Mock).mockResolvedValueOnce({ data: {}, error: null });
+  const metadata = {
+    full_name: "Sumeet", home_centre_id: "c-1",
+    test_date: "2026-09-24", experience: "ready", focus: ["zebra"],
+  };
+  expect(await useSession.getState().signUp(" A@B.com ", "hunter2hunter2", metadata)).toBeNull();
+  expect(supabase.auth.signUp).toHaveBeenCalledWith({
+    email: "a@b.com",
+    password: "hunter2hunter2",
+    options: { data: metadata },
+  });
+});
+
+test("a failed signUp reports a sentence", async () => {
+  (supabase.auth.signUp as jest.Mock)
+    .mockResolvedValueOnce({ data: {}, error: { message: "User already registered" } });
+  expect(await useSession.getState().signUp("a@b.com", "pw", {}))
+    .toBe("There's already an account with that email. Sign in instead, or reset the password.");
+});
+
+// user_metadata is free-form and every account created before this shipped has
+// none of these keys. Every reader narrows, exactly as selectFullName does.
+test("the selectors narrow whatever user_metadata actually holds", () => {
+  useSession.setState({
+    session: { user: { user_metadata: { home_centre_id: "c-1", test_date: "2026-09-24", experience: "ready", focus: ["zebra", "narrow"] } } },
+  } as never);
+  const s = useSession.getState();
+  expect(selectHomeCentreId(s)).toBe("c-1");
+  expect(selectTestDate(s)).toBe("2026-09-24");
+  expect(selectExperience(s)).toBe("ready");
+  expect(selectFocus(s)).toEqual(["zebra", "narrow"]);
+});
+
+test("an account that predates the interview reads as empty, not as broken", () => {
+  useSession.setState({ session: { user: { user_metadata: {} } } } as never);
+  const s = useSession.getState();
+  expect(selectHomeCentreId(s)).toBeNull();
+  expect(selectTestDate(s)).toBeNull();
+  expect(selectExperience(s)).toBeNull();
+  expect(selectFocus(s)).toEqual([]);
+});
+
+// Metadata is a free-form bag; a wrong type in it must not reach a screen.
+test("a value of the wrong shape is discarded rather than passed on", () => {
+  useSession.setState({
+    session: { user: { user_metadata: { home_centre_id: 42, experience: "astronaut", focus: "zebra" } } },
+  } as never);
+  const s = useSession.getState();
+  expect(selectHomeCentreId(s)).toBeNull();
+  expect(selectExperience(s)).toBeNull();
+  expect(selectFocus(s)).toEqual([]);
 });

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { authErrorMessage } from "@/lib/authError";
+import type { Experience, Focus } from "@/lib/onboarding";
 import { clearUserCache } from "@/services/cache";
 
 type SessionState = {
@@ -9,7 +10,7 @@ type SessionState = {
   initialized: boolean;
   init: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<string | null>;
-  signUp: (email: string, password: string, name?: string) => Promise<string | null>;
+  signUp: (email: string, password: string, metadata: Record<string, unknown>) => Promise<string | null>;
   sendMagicLink: (email: string) => Promise<string | null>;
   sendPasswordReset: (email: string) => Promise<string | null>;
   setName: (name: string) => Promise<string | null>;
@@ -24,8 +25,45 @@ type SessionState = {
  * sign-up form asked — so this narrows to a string rather than trusting it.
  */
 export function selectFullName(s: SessionState): string {
-  const value = (s.session?.user?.user_metadata as Record<string, unknown> | undefined)?.full_name;
+  const value = meta(s).full_name;
   return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * The interview's answers, narrowed.
+ *
+ * `user_metadata` is a free-form bag: Supabase hands back whatever was written
+ * to it, including nothing at all for every account created before the
+ * interview shipped, and including a value of the wrong shape if anything ever
+ * writes one. Each of these returns the empty answer rather than trusting it —
+ * the same discipline `selectFullName` above already applies.
+ */
+const FOCUS_VALUES: readonly string[] = ["roundabout", "junction", "narrow", "zebra"];
+const EXPERIENCE_VALUES: readonly string[] = ["starting", "progressing", "ready"];
+
+function meta(s: SessionState): Record<string, unknown> {
+  return (s.session?.user?.user_metadata as Record<string, unknown> | undefined) ?? {};
+}
+
+export function selectHomeCentreId(s: SessionState): string | null {
+  const v = meta(s).home_centre_id;
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+export function selectTestDate(s: SessionState): string | null {
+  const v = meta(s).test_date;
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+export function selectExperience(s: SessionState): Experience | null {
+  const v = meta(s).experience;
+  return typeof v === "string" && EXPERIENCE_VALUES.includes(v) ? (v as Experience) : null;
+}
+
+export function selectFocus(s: SessionState): Focus[] {
+  const v = meta(s).focus;
+  if (!Array.isArray(v)) return [];
+  return v.filter((f): f is Focus => typeof f === "string" && FOCUS_VALUES.includes(f));
 }
 
 export const useSession = create<SessionState>((set) => ({
@@ -43,17 +81,20 @@ export const useSession = create<SessionState>((set) => ({
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
     return error ? authErrorMessage(error.message) : null;
   },
-  // The name rides along in user_metadata rather than a profiles table: it is
-  // one string, it belongs to the account, and a table would need a row, a
-  // policy and a migration to hold it.
-  signUp: async (email, password, name = "") => {
-    const trimmed = name.trim();
+  // Everything the interview collected rides in user_metadata beside the name,
+  // rather than in a profiles table: they belong to the account, and a table
+  // would need a row, a policy and a migration to hold five scalars.
+  //
+  // The answers come with the call rather than after it because email
+  // confirmation means this returns no session — there would be nobody to
+  // write a profile to until the learner confirms and returns.
+  signUp: async (email, password, metadata) => {
     const { error } = await supabase.auth.signUp({
-      email,
+      email: email.trim().toLowerCase(),
       password,
-      ...(trimmed ? { options: { data: { full_name: trimmed } } } : {}),
+      options: { data: metadata },
     });
-    return error ? error.message : null;
+    return error ? authErrorMessage(error.message) : null;
   },
   sendMagicLink: async (email) => {
     const { error } = await supabase.auth.signInWithOtp({
