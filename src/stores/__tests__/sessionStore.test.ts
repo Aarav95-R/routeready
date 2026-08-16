@@ -11,10 +11,12 @@ jest.mock("@/lib/supabase", () => ({
     },
   },
 }));
+/* eslint-disable import/first -- the mock above must be hoisted before these */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
 import { GENERIC_AUTH_ERROR } from "@/lib/authError";
 import { useSession } from "../sessionStore";
+/* eslint-enable import/first */
 
 const signedIn = { user: { id: "u1", email: "a@b.com" } } as never;
 
