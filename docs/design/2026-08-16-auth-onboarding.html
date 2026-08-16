@@ -546,9 +546,9 @@
           <tr><td class="k">Empty</td><td>Nothing typed</td><td class="n">0</td><td>label&#8209;tertiary</td><td>At least 8 characters</td></tr>
           <tr><td class="k">Short</td><td>Under 8</td><td class="n">0</td><td class="no">danger</td><td>3 more characters</td></tr>
           <tr><td class="k">Weak</td><td>8+, and nothing else</td><td class="n">1</td><td>warning</td><td>Weak — add a capital or a number</td></tr>
-          <tr><td class="k">Fair</td><td>Two of the four</td><td class="n">2</td><td>warning</td><td>Fair</td></tr>
-          <tr><td class="k">Good</td><td>Three of the four</td><td class="n">3</td><td class="yes">accent</td><td>Good</td></tr>
-          <tr><td class="k">Strong</td><td>All four</td><td class="n">4</td><td class="yes">accent</td><td>Strong</td></tr>
+          <tr><td class="k">Fair</td><td>One of the four</td><td class="n">2</td><td>warning</td><td>Fair</td></tr>
+          <tr><td class="k">Good</td><td>Two of the four</td><td class="n">3</td><td class="yes">accent</td><td>Good</td></tr>
+          <tr><td class="k">Strong</td><td>Three or four</td><td class="n">4</td><td class="yes">accent</td><td>Strong</td></tr>
         </tbody>
       </table>
     </div>
@@ -556,6 +556,13 @@
       The four points are: twelve characters or more, mixed case, a digit, a symbol.
       No new colours enter the palette — danger, warning and accent are the app's
       existing three, used the way <code>DriveModeRow</code> already uses them.
+    </p>
+    <p class="small">
+      <strong>Clearing eight characters is itself the first segment.</strong> The
+      obvious alternative — score the four points and floor the bar at one segment —
+      makes the first point invisible: the meter says "add a capital", you add one,
+      and nothing moves. A meter that does not respond to the thing it just asked for
+      is worse than no meter. So the bar shows <code>1 + points</code>, capped at four.
     </p>
 <pre><code>// src/lib/passwordStrength.ts — a function of the string, nothing else.
 export type Strength = { level: Level; segments: 0|1|2|3|4; message: string };
@@ -758,7 +765,9 @@ signUp: (email, password, profile: SignUpProfile) => Promise&lt;string | null&gt
     if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) pts += 1;
     if (/\d/.test(pw)) pts += 1;
     if (/[^A-Za-z0-9]/.test(pw)) pts += 1;
-    var key = pts <= 1 ? "weak" : pts === 2 ? "fair" : pts === 3 ? "good" : "strong";
+    // Clearing the floor is the first segment, so the first earned point is
+    // visible rather than absorbed into it.
+    var key = ["", "weak", "fair", "good", "strong"][Math.min(4, 1 + pts)];
     return { key: key, label: LEVELS[key].label };
   }
 

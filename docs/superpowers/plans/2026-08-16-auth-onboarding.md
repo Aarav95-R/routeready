@@ -1230,9 +1230,13 @@ export function passwordStrength(password: string): Strength {
   if (/\d/.test(password)) points += 1;
   if (/[^A-Za-z0-9]/.test(password)) points += 1;
 
-  const level: Level = points <= 1 ? "weak" : points === 2 ? "fair" : points === 3 ? "good" : "strong";
-  const segments = Math.max(1, points) as 1 | 2 | 3 | 4;
-  return { level, segments, message: MESSAGE[level as Exclude<Level, "empty" | "short">] };
+  // CORRECTED DURING EXECUTION. This was `Math.max(1, points)` with the level
+  // derived from `points`, which made the first earned point invisible: the
+  // meter says "add a capital", you add one, and nothing moves. Clearing the
+  // floor is itself the first segment, so the bar shows `1 + points`.
+  const segments = Math.min(4, 1 + points) as 1 | 2 | 3 | 4;
+  const level = ({ 1: "weak", 2: "fair", 3: "good", 4: "strong" } as const)[segments];
+  return { level, segments, message: MESSAGE[level] };
 }
 ```
 
