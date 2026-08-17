@@ -42,7 +42,7 @@ export function ManeuverBanner({
   step, next, arriveLabel, distanceM,
 }: ManeuverBannerProps) {
   return (
-    <View className="overflow-hidden rounded-2xl bg-primary" style={{ shadowColor: "#0F172A", shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } }}>
+    <View className="overflow-hidden rounded-2xl bg-primary" style={{ shadowColor: "#221F1C", shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } }}>
       {eyebrow && (
         <View className="flex-row items-center gap-1.5 px-4 py-1.5" style={{ backgroundColor: "#064E3B" }}>
           <Ionicons name="flag-outline" size={12} color="#6EE7B7" />

@@ -1,4 +1,5 @@
-import { lineWidthExpression, mapColors, ROAD_OUTLINE_PX, roadWidths } from "../mapStyle";
+import { lineWidthExpression, mapColors, ROAD_OUTLINE_PX, roadLayers, roadWidths, roadWidths as widths, trafficLayerIds } from "../mapStyle";
+import { colors } from "../theme";
 
 // Stock navigation-day-v1 fill widths, read from the published style JSON, at
 // the top of the band this screen navigates in. The whole point of the width
@@ -6,15 +7,28 @@ import { lineWidthExpression, mapColors, ROAD_OUTLINE_PX, roadWidths } from "../
 // re-read rather than trusted.
 const STOCK_AT_Z18 = { motorway: 32, primary: 32, residential: 20 } as const;
 
+// The same style's widths at the wide end, where the centres map lives. Read
+// off the same published expressions, evaluated at z10:
+//   motorway  ["exponential",1.5] (5,1.25)->(18,32)  = 2.30
+//   primary   ["exponential",1.5] (10,1.125)->(18,32) = 1.125 (a stop)
+//   street    lowest stop is (12,0.5), so it clamps  = 0.5
+const STOCK_AT_Z10 = { motorway: 2.3, primary: 1.125, residential: 0.5 } as const;
+
 test("palette entries are all six-digit uppercase hex", () => {
   for (const value of Object.values(mapColors)) {
     expect(value).toMatch(/^#[0-9A-F]{6}$/);
   }
 });
 
+// Not a literal: the route line IS the app's accent, and writing the hex here
+// a second time is exactly how mapStyle, CentresMap and the tab bar each ended
+// up holding their own copy of the emerald.
+test("the route line is the app's accent, not a copy of it", () => {
+  expect(mapColors.routeCore).toBe(colors.accent);
+});
+
 test("the route stays the brightest green — park is well desaturated", () => {
-  expect(mapColors.routeCore).toBe("#059669");
-  expect(mapColors.routeCasing).toBe("#04684C");
+  expect(mapColors.routeCasing).toBe("#115B41");
   expect(mapColors.park).toBe("#DCE7CE");
 });
 
@@ -56,6 +70,24 @@ test("the tables are wider than stock navigation-day-v1 at navigation zoom", () 
   }
 });
 
+// The other end of the same requirement. A Mapbox interpolation clamps to its
+// end value outside its stops, so a table that stopped at z12 drew its z12
+// width at every zoom below — 4px motorways across the whole country on the
+// centres map, where stock is 1.25px.
+test("the tables come back to stock at the zooms the centres map opens at", () => {
+  const at = (s: readonly (readonly [number, number])[], zoom: number) =>
+    s.find(([z]) => z === zoom)![1];
+  for (const [cls, stock] of Object.entries(STOCK_AT_Z10)) {
+    const ours = at(roadWidths[cls as keyof typeof roadWidths], 10);
+    expect(ours).toBeLessThanOrEqual(stock * 1.15);
+  }
+  // And the table reaches down far enough that nothing is clamping: the
+  // motorway layer's own minzoom is 5.
+  for (const stops of Object.values(roadWidths)) {
+    expect(stops[0][0]).toBeLessThanOrEqual(5);
+  }
+});
+
 // A "-case" layer outlines a gap rather than sitting under the fill, so the
 // only thing the outline has to be is a positive number small against the road.
 test("the casing outline is a slim positive constant, not a road width", () => {
@@ -82,8 +114,8 @@ test("all eleven palette colors have exact correct values", () => {
     park: "#DCE7CE",
     water: "#A9D3EA",
     building: "#E4E2DB",
-    routeCore: "#059669",
-    routeCasing: "#04684C",
+    routeCore: "#1A875E",
+    routeCasing: "#115B41",
     routeDrivenCore: "#A7AEA5",
     routeDrivenCasing: "#7F8880",
   });
@@ -91,13 +123,11 @@ test("all eleven palette colors have exact correct values", () => {
 
 test("road width stops have exact correct values", () => {
   expect(roadWidths).toEqual({
-    motorway: [[12, 4], [14, 10], [16, 20], [18, 40], [19, 44]],
-    primary: [[12, 3.5], [14, 9], [16, 19], [18, 38], [19, 42]],
-    residential: [[12, 0.6], [14, 2.5], [16, 10], [18, 25], [19, 28]],
+    motorway: [[5, 1.25], [10, 2.3], [12, 4], [14, 10], [16, 20], [18, 40], [19, 44]],
+    primary: [[5, 1], [10, 1.2], [12, 3.5], [14, 9], [16, 19], [18, 38], [19, 42]],
+    residential: [[5, 0.4], [10, 0.5], [12, 0.6], [14, 2.5], [16, 10], [18, 25], [19, 28]],
   });
 });
-
-import { roadLayers, roadWidths as widths, trafficLayerIds } from "../mapStyle";
 
 // The 13 road classes navigation-day-v1 draws identically at grade, on a
 // bridge and in a tunnel. Enumerated from the style JSON, not from the table

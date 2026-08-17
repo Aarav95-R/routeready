@@ -2,6 +2,7 @@ import { Text, View } from "react-native";
 import { averageScore, durationWords, recentDrives } from "@/lib/homeView";
 import type { ScoreSummary } from "@/lib/homeView";
 import type { ProgressEntryWithRoute } from "@/types/db";
+import { MarkingSheet } from "@/ui/FirstRun";
 import { Cell, Group, GroupHeader } from "@/ui/List";
 import { colors } from "@/ui/theme";
 import { body, caption, footnote, largeTitle, MAX_DISPLAY_SCALE, subheadline } from "@/ui/type";
@@ -44,16 +45,41 @@ export function RecordCard({
   // guard it cannot see through.
   const hasShape = summary.count > 1 && summary.best !== null && average !== null;
 
-  if (summary.count === 0) {
+  // A failed load knows nothing about whether you have driven anything, so it
+  // stays a sentence: an empty sheet here would state something untrue.
+  if (summary.count === 0 && failed) {
     return (
       <>
         <GroupHeader>Record</GroupHeader>
         <Group>
           <Cell>
             <Text style={{ ...subheadline, color: colors.labelSecondary, flex: 1 }}>
-              {failed
-                ? "Your scores will appear here once you're back online."
-                : "Nothing recorded yet. Your first score lands here, and the faults you pick up become the thing this screen tells you to work on."}
+              Your scores will appear here once you&apos;re back online.
+            </Text>
+          </Cell>
+        </Group>
+      </>
+    );
+  }
+
+  /**
+   * Nothing driven yet. The sheet the record is kept on is shown empty rather
+   * than described in a sentence — it is the same form the examiner marks, it
+   * is what every score on this screen is computed from, and a learner
+   * otherwise meets it for the first time on test day.
+   */
+  if (summary.count === 0) {
+    return (
+      <>
+        <GroupHeader>What the examiner marks</GroupHeader>
+        <Group>
+          <Cell>
+            <MarkingSheet />
+          </Cell>
+          <Cell>
+            <Text style={{ ...subheadline, color: colors.labelSecondary, flex: 1 }}>
+              Nobody is marking you yet. This is the DL25, the sheet a real examiner
+              fills in — you get to know it long before test day, which is rather the point.
             </Text>
           </Cell>
         </Group>

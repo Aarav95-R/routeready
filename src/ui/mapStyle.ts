@@ -1,6 +1,8 @@
+import { colors } from "@/ui/theme";
+
 // Waze-style light palette for the navigation map. The layout copies Waze —
-// wide white roads on warm off-white land — but the route and puck stay
-// emerald, so the map still reads as this app.
+// wide white roads on warm off-white land — but the route and puck stay the
+// app's own green, so the map still reads as this app.
 //
 // Park green is deliberately low-saturation: a vivid park sitting next to the
 // emerald route line would compete with it. The route must always be the
@@ -13,8 +15,10 @@ export const mapColors = {
   park: "#DCE7CE",
   water: "#A9D3EA",
   building: "#E4E2DB",
-  routeCore: "#059669",
-  routeCasing: "#04684C",
+  // The accent itself, not a copy of it. A second hex here is how the route
+  // line and the app's green drifted apart the first time.
+  routeCore: colors.accent,
+  routeCasing: "#115B41",
   // The part already driven. Green means road still to drive, grey means done,
   // so progress reads at a glance and the only bright thing on the map is what
   // is still ahead. The greys carry a slight green bias to belong to the same
@@ -32,18 +36,27 @@ type Stops = readonly (readonly [number, number])[];
 // earlier "double the stock width" table written against light-v11 came out
 // *narrower* than doing nothing at all.
 //
-// These land roughly 1.25-1.4x stock across z16-z19, which is the band this
-// screen actually navigates in (NAV_ZOOM_FAR 17.5 to NAV_ZOOM_NEAR 18.6), and
-// fall back towards stock by z12 so the preview overview does not turn into a
-// slab of white.
+// These land roughly 1.25-1.4x stock across z16-z19, which is the band the
+// navigation screen actually drives in (NAV_ZOOM_FAR 17.5 to NAV_ZOOM_NEAR
+// 18.6), and fall back towards stock by z12 so the preview overview does not
+// turn into a slab of white.
+//
+// The z5 and z10 stops carry that fallback the rest of the way down, and they
+// exist for the centres map rather than for navigation. That screen fits a
+// 30-mile near set, or the whole country when there is no fix, so it sits at
+// roughly z5-z11 — entirely below what used to be the lowest stop. An
+// interpolation clamps to its end value outside its stops, so without these it
+// drew 4px motorways and 3.5px A-roads across the whole of England, where
+// stock is 1.25px and 1.1px. They match stock rather than beating it: at that
+// zoom the roads are context for the pins, not the thing being read.
 //
 // All three tables use identical stop zooms on purpose: with matching stops,
 // linear interpolation preserves motorway > primary > residential at every
 // zoom, not just at the stops.
 export const roadWidths = {
-  motorway: [[12, 4], [14, 10], [16, 20], [18, 40], [19, 44]],
-  primary: [[12, 3.5], [14, 9], [16, 19], [18, 38], [19, 42]],
-  residential: [[12, 0.6], [14, 2.5], [16, 10], [18, 25], [19, 28]],
+  motorway: [[5, 1.25], [10, 2.3], [12, 4], [14, 10], [16, 20], [18, 40], [19, 44]],
+  primary: [[5, 1], [10, 1.2], [12, 3.5], [14, 9], [16, 19], [18, 38], [19, 42]],
+  residential: [[5, 0.4], [10, 0.5], [12, 0.6], [14, 2.5], [16, 10], [18, 25], [19, 28]],
 } as const satisfies Record<string, Stops>;
 
 // navigation-day-v1's "-case" layers are not wider lines drawn under the fill.

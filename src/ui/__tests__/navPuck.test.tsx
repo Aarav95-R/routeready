@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react-native";
 import { processColor } from "react-native";
 import { NavPuck, PUCK_SIZE } from "../NavPuck";
+import { colors } from "../theme";
 
 test("NavPuck renders the three layers", () => {
   render(<NavPuck />);
@@ -24,7 +25,7 @@ test("the arrow is emerald, not Waze blue", () => {
   // react-native-svg normalises colour props, so compare against the same
   // normalisation of the literal we expect rather than the raw hex string.
   const fill = screen.getByTestId("puck-arrow").props.fill;
-  expect(fill).toEqual(expect.objectContaining({ payload: processColor("#059669") }));
+  expect(fill).toEqual(expect.objectContaining({ payload: processColor(colors.accent) }));
   expect(fill).not.toEqual(expect.objectContaining({ payload: processColor("#4AA8E0") }));
 });
 

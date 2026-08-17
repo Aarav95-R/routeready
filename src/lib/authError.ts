@@ -1,0 +1,48 @@
+/**
+ * Supabase's message, rewritten as something worth reading.
+ *
+ * `signIn` and `signUp` return `error.message` verbatim and both screens
+ * render it, so today a mistyped password produces "Invalid login
+ * credentials" — accurate, and written for whoever is reading the logs.
+ *
+ * Two rules make this safe to put in front of a user:
+ *
+ * It is **total**. Supabase adds and rewords messages without announcement,
+ * and an unrecognised one falls back to a written sentence rather than
+ * passing the original through. Leaking it would put us back where we
+ * started, only less predictably.
+ *
+ * It matches on a **substring of the lowercased message**, not on equality.
+ * Supabase prefixes these (`AuthApiError: …`) and rewords them, and an exact
+ * match that quietly stops matching degrades to the fallback with nothing to
+ * say so.
+ */
+
+export const AUTH_FALLBACK = "Something went wrong. Try again in a moment.";
+
+/**
+ * First match wins, so the order is the specificity order. `email not
+ * confirmed` has to sit above the generic email entries, and the rate-limit
+ * pair has to sit above anything matching on `email`.
+ */
+const SENTENCES: readonly (readonly [needle: string, sentence: string])[] = [
+  ["invalid login credentials", "That email and password don't match. Try again, or reset your password."],
+  // Confirmation is on, so this is the state every new account is in until the
+  // link is opened. Saying "wrong password" here would be a lie that sends
+  // people to the reset screen for a password that is fine.
+  ["email not confirmed", "Confirm your email first — open the link we sent you, then sign in."],
+  ["user already registered", "There's already an account on that email. Sign in instead?"],
+  ["already been registered", "There's already an account on that email. Sign in instead?"],
+  ["rate limit", "Too many tries just now. Give it a minute and go again."],
+  ["for security purposes", "Too many tries just now. Give it a minute and go again."],
+  ["network request failed", "No connection. We'll be here when you're back."],
+  ["invalid format", "That doesn't look like an email address."],
+  ["unable to validate email", "That doesn't look like an email address."],
+  ["password should be", "That password is too short. Use at least eight characters."],
+];
+
+export function authError(message: string | null | undefined): string {
+  if (!message) return AUTH_FALLBACK;
+  const haystack = message.toLowerCase();
+  return SENTENCES.find(([needle]) => haystack.includes(needle))?.[1] ?? AUTH_FALLBACK;
+}

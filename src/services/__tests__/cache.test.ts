@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { cachedFetch, drainQueue, enqueue } from "../cache";
+import { cachedFetch, clearUserCache, drainQueue, enqueue } from "../cache";
 
 beforeEach(() => AsyncStorage.clear());
 
@@ -17,6 +17,30 @@ test("failure path serves cached copy as stale", async () => {
 
 test("failure with empty cache rethrows", async () => {
   await expect(cachedFetch("nope", async () => { throw new Error("net down"); })).rejects.toThrow("net down");
+});
+
+// Progress rows are the one cached thing that belongs to a person rather than
+// to the country: centres and routes are the same for everyone, so signing out
+// on a shared phone must take the scores with it and leave the rest warm.
+test("signing out drops cached progress and keeps the public reference data", async () => {
+  await cachedFetch("progress:c1", async () => ({ r1: [{ score: 82 }] }));
+  await cachedFetch("progress:c2", async () => ({ r2: [{ score: 51 }] }));
+  await cachedFetch("centres", async () => [{ id: "c1" }]);
+
+  await clearUserCache();
+
+  expect(await AsyncStorage.getItem("cache:progress:c1")).toBeNull();
+  expect(await AsyncStorage.getItem("cache:progress:c2")).toBeNull();
+  expect(await AsyncStorage.getItem("cache:centres")).not.toBeNull();
+});
+
+// A mock test taken on the train has not reached Supabase yet. It carries its
+// own user_id, so it is still that user's to send — dropping it here would
+// throw away the only copy.
+test("work waiting to be sent survives a sign-out", async () => {
+  await enqueue("progress_outbox", { route_id: "r1", user_id: "u1" });
+  await clearUserCache();
+  expect(await drainQueue("progress_outbox", async () => {})).toBe(1);
 });
 
 test("outbox enqueues and drains FIFO, keeping failures", async () => {

@@ -1,10 +1,11 @@
 import { useEffect } from "react";
 import { Pressable, Text, View } from "react-native";
-import Animated, { FadeInDown, useAnimatedProps, useReducedMotion, useSharedValue, withDelay, withTiming } from "react-native-reanimated";
+import Animated, { useAnimatedProps, useReducedMotion, useSharedValue, withDelay, withTiming } from "react-native-reanimated";
 import Svg, { Circle } from "react-native-svg";
 import type { CentreIdentity } from "@/lib/centreIdentity";
 import type { ViewCentre } from "@/lib/centresView";
 import { CentreEmblem } from "@/ui/CentreEmblem";
+import { enterFrom } from "@/ui/motion";
 
 /** Fixed, and exported, because the scroll-to-camera binding divides by it. */
 export const CENTRE_ROW_H = 88;
@@ -49,7 +50,7 @@ export function CentreRow({
   }));
 
   return (
-    <Animated.View entering={FadeInDown.delay(index * 60).springify().damping(16)}>
+    <Animated.View entering={enterFrom(index)}>
       <Pressable
         testID="centre-row"
         accessibilityRole="button"
@@ -79,14 +80,14 @@ export function CentreRow({
           <Text
             testID="centre-row-name"
             numberOfLines={1}
-            style={{ fontSize: 16.5, fontWeight: "700", letterSpacing: -0.5, color: "#0F172A" }}
+            style={{ fontSize: 16.5, fontWeight: "700", letterSpacing: -0.5, color: "#221F1C" }}
           >
             {centre.name}
           </Text>
           <Text
             testID="centre-row-meta"
             numberOfLines={1}
-            style={{ marginTop: 2, fontSize: 12, fontWeight: "500", color: "#64748B" }}
+            style={{ marginTop: 2, fontSize: 12, fontWeight: "500", color: "#8B827A" }}
           >
             {distanceM !== null ? miles(distanceM) : centre.region ?? ""}
           </Text>
@@ -104,7 +105,7 @@ export function CentreRow({
           </Svg>
           <Text
             testID="centre-row-rate"
-            style={{ fontSize: 12.5, fontWeight: "700", letterSpacing: -0.5, color: "#0F172A" }}
+            style={{ fontSize: 12.5, fontWeight: "700", letterSpacing: -0.5, color: "#221F1C" }}
           >
             {rate === null ? "—" : `${rate.toFixed(0)}%`}
           </Text>

@@ -1,15 +1,16 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { BackgroundLayer, Camera, CircleLayer, LineLayer, MapView, MarkerView, ShapeSource, SymbolLayer } from "@rnmapbox/maps";
+import { Camera, CircleLayer, LineLayer, MapView, MarkerView, ShapeSource, SymbolLayer } from "@rnmapbox/maps";
 import { useReducedMotion } from "react-native-reanimated";
 import { haversineM, ringPolygon, type LatLng } from "@/lib/geo";
 import type { CentreIdentity } from "@/lib/centreIdentity";
 import type { Centre } from "@/types/db";
 import { ActiveCentreMarker } from "@/ui/ActiveCentreMarker";
-import { mapColors } from "@/ui/mapStyle";
+import { MapBase } from "@/ui/MapBase";
+import { colors } from "@/ui/theme";
 
 const OVERVIEW_STYLE = "mapbox://styles/mapbox/navigation-day-v1";
 const RING_MILES = [3, 8, 15];
-const ACCENT = "#059669";
+const ACCENT = colors.accent;
 const PIN_STAGGER_MS = 70;
 const RING_STAGGER_MS = 130;
 
@@ -182,10 +183,18 @@ export const CentresMap = forwardRef<CentresMapHandle, CentresMapProps>(
         logoEnabled={false}
         attributionEnabled={false}
       >
-        {/* What shows when tiles have not loaded, which is what offline looks
-            like. A flat warm ground reads as deliberate; a grey void reads as
-            broken. */}
-        <BackgroundLayer id="ground" style={{ backgroundColor: mapColors.land }} />
+        {/* The same map the driver gets once a route starts: warm ground, wide
+            white roads, desaturated parks and water. It also covers what this
+            layer's predecessor was for — a warm ground rather than a grey void
+            when tiles have not loaded, which is what offline looks like —
+            because the style's own background paints as soon as the style JSON
+            is in, tiles or no tiles.
+
+            That predecessor was an *added* background rather than an override
+            of the style's own, and an added layer goes on top of the stack, so
+            it painted over every road, park and label on this screen. See
+            MapBase. */}
+        <MapBase />
 
         <Camera ref={camera} />
 

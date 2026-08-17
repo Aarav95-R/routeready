@@ -19,22 +19,31 @@ const stone = {
   900: "#221F1C",
 };
 
+// One ground and one ink, each under two names — `surface`/`field` and
+// `primary`/`label`. The second name of each pair was added when the old one
+// could not be retuned without repainting unmigrated screens; repainting them
+// is now the point. Twinned with src/ui/theme.ts.
+const GROUND = "#F5F0E8";
+const INK = "#1C1917";
+
 module.exports = {
   content: ["./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
   presets: [require("nativewind/preset")],
   theme: {
     extend: {
       colors: {
-        primary: "#221F1C",
-        accent: { DEFAULT: "#059669", pressed: "#047857" },
+        primary: INK,
+        // Twinned with src/ui/theme.ts — the two must change together.
+        accent: { DEFAULT: "#1A875E", pressed: "#146B4A" },
+        clay: { DEFAULT: "#B8624A", tint: "#F7E6DB" },
         warning: "#D97706",
-        surface: "#F7F5F1",
+        surface: GROUND,
         card: "#FFFFFF",
         danger: "#DC2626",
         "fault-runner": "#A7C4B6",
-        field: "#F2F0EC",
+        field: GROUND,
         cell: "#FFFFFF",
-        label: "#1C1917",
+        label: INK,
         "label-secondary": "#6B635B",
         "label-tertiary": "#8A827A",
         separator: "#E4DFD8",

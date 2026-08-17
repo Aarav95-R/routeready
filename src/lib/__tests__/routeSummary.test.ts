@@ -1,5 +1,6 @@
 import type { ObservationZone, ProgressEntry, Route, SpeedProfileSegment } from "@/types/db";
 import {
+  attemptLine,
   difficultyWord,
   plainSummary,
   progressBadge,
@@ -95,6 +96,30 @@ describe("progressLine and progressBadge", () => {
     const rows = [entry(null), entry(null)];
     expect(progressLine(rows)).toBe("2 mock tests");
     expect(progressBadge(rows)).toBe("Attempted");
+  });
+});
+
+// The same two numbers progressLine reports, said the way an instructor would.
+describe("attemptLine", () => {
+  test("a route never tested has nothing to say", () => {
+    expect(attemptLine([])).toBeNull();
+  });
+
+  test("one attempt has a score, not a best", () => {
+    expect(attemptLine([entry(74)])).toBe("You've taken this once — you scored 74");
+  });
+
+  test("two attempts are counted in words", () => {
+    expect(attemptLine([entry(64), entry(82)])).toBe("You've taken this twice — your best is 82");
+  });
+
+  test("past two, the numeral reads better than the word", () => {
+    expect(attemptLine([entry(50), entry(64), entry(82)])).toBe("You've taken this 3 times — your best is 82");
+  });
+
+  test("attempts without scores report the count alone", () => {
+    expect(attemptLine([entry(null), entry(null)])).toBe("You've taken this twice");
+    expect(attemptLine([entry(null)])).toBe("You've taken this once");
   });
 });
 

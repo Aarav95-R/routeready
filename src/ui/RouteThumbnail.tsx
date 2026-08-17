@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { View } from "react-native";
 import Animated, { Easing, useAnimatedProps, useSharedValue, withDelay, withTiming } from "react-native-reanimated";
-import Svg, { Circle, Line, Path } from "react-native-svg";
+import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
 import { projectZones, thumbPath } from "@/lib/routeThumb";
 import type { GeoLineString, ObservationZone } from "@/types/db";
 import { colors } from "@/ui/theme";
@@ -28,13 +28,27 @@ function polylineLength(points: { x: number; y: number }[]): number {
  * would cost far more than the faint street hints below buy.
  */
 export function RouteThumbnail({
-  geometry, zones = [], width, height = 88, drawDelayMs = 0,
+  geometry, zones = [], numbered = [], width, height = 88, drawDelayMs = 0, youAreHere = false,
 }: {
   geometry: GeoLineString;
   zones?: ObservationZone[];
+  /**
+   * Points that get a numeral rather than a dot, drawn in the order given.
+   * The number is the whole point: it is what lets a row in a list below say
+   * which mark on the line it is talking about.
+   */
+  numbered?: { lat: number; lng: number }[];
   width: number;
   height?: number;
   drawDelayMs?: number;
+  /**
+   * Draw the start marker as the person rather than as the road: a clay dot in
+   * a clay halo, per the split theme.ts sets out. Used on the one screen where
+   * the route is an example rather than a route you chose — the first-run home
+   * card, where nobody has driven anything yet and the point of the drawing is
+   * that you are already standing on it.
+   */
+  youAreHere?: boolean;
 }) {
   const thumb = useMemo(
     () => thumbPath(geometry?.coordinates ?? [], width, height, 12),
@@ -42,6 +56,9 @@ export function RouteThumbnail({
   );
   const length = useMemo(() => polylineLength(thumb.points), [thumb]);
   const pins = useMemo(() => projectZones(thumb, zones), [thumb, zones]);
+  // Same transform as the line, so a hazard recorded slightly off the polyline
+  // is drawn slightly off it too rather than being snapped onto it.
+  const marks = useMemo(() => numbered.map((n) => thumb.project(n.lng, n.lat)), [thumb, numbered]);
 
   // 1 holds the whole line off the canvas; 0 has it fully drawn.
   const hidden = useSharedValue(1);
@@ -79,9 +96,34 @@ export function RouteThumbnail({
           <Circle key={i} cx={p.x} cy={p.y} r={4} fill={colors.warning} />
         ))}
 
-        {thumb.start && (
-          <Circle cx={thumb.start.x} cy={thumb.start.y} r={5} fill="#fff" stroke={colors.accent} strokeWidth={3} />
+        {thumb.start && youAreHere && (
+          <Circle cx={thumb.start.x} cy={thumb.start.y} r={9} fill={colors.clayTint} />
         )}
+        {thumb.start && (
+          <Circle
+            testID="thumb-start"
+            cx={thumb.start.x}
+            cy={thumb.start.y}
+            r={5}
+            fill={youAreHere ? colors.clay : "#fff"}
+            stroke={youAreHere ? colors.clayTint : colors.accent}
+            strokeWidth={3}
+          />
+        )}
+
+        {/* Drawn last so a numbered mark is never buried under the start dot
+            or a zone pin it happens to share a corner with. */}
+        {marks.map((p, i) => (
+          <Circle key={`m${i}`} testID={`thumb-mark-${i + 1}`} cx={p.x} cy={p.y} r={9.5} fill={colors.warning} stroke="#fff" strokeWidth={2} />
+        ))}
+        {marks.map((p, i) => (
+          <SvgText
+            key={`t${i}`} x={p.x} y={p.y + 3.4} fontSize={9.5} fontWeight="bold"
+            fill="#fff" textAnchor="middle"
+          >
+            {i + 1}
+          </SvgText>
+        ))}
       </Svg>
     </View>
   );

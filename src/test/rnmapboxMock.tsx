@@ -5,11 +5,14 @@
 import { forwardRef, createElement, useImperativeHandle, useRef } from "react";
 import { View } from "react-native";
 
-// `shape` is forwarded so the tests can read what each source was handed, and
-// `filter` so they can read which features a layer excludes.
+// `shape` is forwarded so the tests can read what each source was handed,
+// `filter` so they can read which features a layer excludes, and `existing` so
+// they can tell an override of one of the style's own layers from a layer of
+// ours added on top of it — a distinction with no visible difference here but
+// a large one on the device, since an added layer goes to the top of the stack.
 const stub = (kind: string) => {
-  const Stub = forwardRef<unknown, any>(({ children, id, shape, filter }, ref) =>
-    createElement(View as any, { ref, testID: `${kind}:${id ?? ""}`, shape, filter }, children)
+  const Stub = forwardRef<unknown, any>(({ children, id, shape, filter, existing }, ref) =>
+    createElement(View as any, { ref, testID: `${kind}:${id ?? ""}`, shape, filter, existing }, children)
   );
   Stub.displayName = kind;
   return Stub;

@@ -1,12 +1,13 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import { View } from "react-native";
-import { BackgroundLayer, Camera, CircleLayer, FillLayer, LineLayer, MapView, MarkerView, ShapeSource } from "@rnmapbox/maps";
+import { Camera, CircleLayer, LineLayer, MapView, MarkerView, ShapeSource } from "@rnmapbox/maps";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { NAV_ZOOM_MID } from "@/lib/navigation";
 import type { LatLng } from "@/lib/geo";
 import type { ObservationZone } from "@/types/db";
-import { lineWidthExpression, mapColors, ROAD_OUTLINE_PX, roadLayers, roadWidths, trafficLayerIds } from "@/ui/mapStyle";
+import { MapBase } from "@/ui/MapBase";
+import { mapColors } from "@/ui/mapStyle";
 import { NavPuck, PUCK_SIZE } from "@/ui/NavPuck";
 
 const NAV_STYLE = "mapbox://styles/mapbox/navigation-day-v1";
@@ -53,10 +54,6 @@ const lineShape = (coords: LatLng[]) =>
         }],
       }
     : EMPTY_SHAPE;
-
-// lineWidthExpression returns unknown[] (see src/ui/mapStyle.ts); LineLayer's
-// style prop wants a narrower Mapbox Expression tuple — narrow it once here.
-const lineWidth = (stops: Parameters<typeof lineWidthExpression>[0]) => lineWidthExpression(stops) as any;
 
 // Observation zones: a soft amber disc sized in metres, so it grows with the
 // zoom the way the road does rather than staying a fixed blob of pixels. Amber
@@ -201,48 +198,6 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
 
   useImperativeHandle(ref, () => ({ recenter, fitBounds, pushCamera }), [recenter, fitBounds, pushCamera]);
 
-  // Waze-style base: wide white roads on warm off-white land, with parks and
-  // water carrying the only other colour. Applied as overrides on the loaded
-  // style's own layers rather than a fork of the whole style.
-  //
-  // Every road class is drawn three times by this style — at grade, on a
-  // bridge, and in a tunnel — so the table in mapStyle.ts covers all three.
-  // Styling only the "road-" set left a carriageway changing colour and width
-  // halfway across a flyover. `npm run check:map-style` verifies every id
-  // against the live style, because a wrong `existing` id is a silent no-op.
-  //
-  // Memoised: this is ~60 static elements and the compass re-renders this
-  // screen about fifteen times a second.
-  const baseLayers = useMemo(() => (
-    <>
-      <BackgroundLayer id="land" existing style={{ backgroundColor: mapColors.land }} />
-      <FillLayer id="landuse" existing style={{ fillColor: mapColors.park }} />
-      <FillLayer id="water" existing style={{ fillColor: mapColors.water }} />
-      <FillLayer id="building" existing style={{ fillColor: mapColors.building }} />
-
-      {/* On a "-case" layer lineWidth is the outline thickness per side and
-          lineGapWidth is the hole the fill sits in, so the gap carries the
-          fill's width table. It must track that fill exactly or the outline
-          stops sitting flush. */}
-      {roadLayers.map((l) =>
-        l.kind === "case" ? (
-          <LineLayer key={l.id} id={l.id} existing style={{ lineColor: mapColors.roadCasing, lineGapWidth: lineWidth(roadWidths[l.width]), lineWidth: ROAD_OUTLINE_PX }} />
-        ) : l.kind === "fill" ? (
-          <LineLayer key={l.id} id={l.id} existing style={{ lineColor: l.color, lineWidth: lineWidth(roadWidths[l.width]) }} />
-        ) : (
-          <LineLayer key={l.id} id={l.id} existing style={{ lineColor: l.color }} />
-        )
-      )}
-
-      {/* Congestion ribbons, hidden: traffic is out of scope, their "low"
-          green would outshine the emerald route, and their line-offset is
-          interpolated against stock widths so they no longer sit on the road. */}
-      {trafficLayerIds.map((id) => (
-        <LineLayer key={id} id={id} existing style={{ lineOpacity: 0 }} />
-      ))}
-    </>
-  ), []);
-
   const zoneShape = useMemo(() => ({
     type: "FeatureCollection" as const,
     features: (observationZones ?? []).map((z, i) => ({
@@ -317,7 +272,7 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
     >
       <Camera ref={cameraRef} />
 
-      {baseLayers}
+      <MapBase />
 
       <ShapeSource id="zones" shape={zoneShape}>
         {/* A CircleLayer cannot dash its stroke — that would want a polygon

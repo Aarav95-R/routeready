@@ -9,9 +9,31 @@ const show = (step: NextStep, onAction = jest.fn()) => {
 
 test("a new account is asked for a first test, and sent where one starts", () => {
   const onAction = show({ kind: "first" });
-  expect(screen.getByText("Your first mock test")).toBeTruthy();
+  expect(screen.getByText("Your first drive")).toBeTruthy();
   fireEvent.press(screen.getByText("Find a test centre near me"));
   expect(onAction).toHaveBeenCalled();
+});
+
+// A drawing of the thing beats a description of it, and this is the only card
+// where the reader has never seen one of these routes.
+test("the first card opens on a route rather than on prose", () => {
+  show({ kind: "first" });
+  expect(screen.getByTestId("route-thumb")).toBeTruthy();
+  expect(screen.getByText(/About 40 minutes/)).toBeTruthy();
+});
+
+// Nerves are the constraint on this screen. The first thing the app says about
+// a mock test cannot be that it marks you.
+test("the first card offers a way out before it mentions marking", () => {
+  show({ kind: "first" });
+  expect(screen.getByText(/stop whenever you like/)).toBeTruthy();
+});
+
+// Every other shape is a card about your record, not an introduction to the
+// product — the drawing would be decoration on all four.
+test("only the first card carries the drawing", () => {
+  show({ kind: "clean" });
+  expect(screen.queryByTestId("route-thumb")).toBeNull();
 });
 
 test("one test is asked for a second, and names what that test cost", () => {

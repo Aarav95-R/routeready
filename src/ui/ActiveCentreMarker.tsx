@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Text, View } from "react-native";
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSequence, withTiming } from "react-native-reanimated";
+import { timing } from "@/ui/motion";
 import Svg, { Path } from "react-native-svg";
 import type { CentreIdentity } from "@/lib/centreIdentity";
 import type { Centre } from "@/types/db";
@@ -40,13 +41,13 @@ export function ActiveCentreMarker({
   useEffect(() => {
     if (reducedMotion) { pop.value = 1; return; }
     pop.value = 0;
-    pop.value = withSequence(
-      withTiming(1.42, { duration: 190 }),
-      withSpring(1, { damping: 11, stiffness: 190 })
-    );
+    // Out and back on the same decelerating curve as everything else. The
+    // spring this replaced returned with a visible ring, which on a map pin
+    // reads as the map itself wobbling.
+    pop.value = withSequence(withTiming(1.28, timing(160)), withTiming(1, timing(200)));
   }, [centre.id, pop, reducedMotion]);
 
-  // The pin overshoots to 1.42 and settles at 1.24 — it never leaves the
+  // The pin overshoots to 1.28 and settles at 1.24 — it never leaves the
   // ground, which keeps it from covering the neighbours it sits between.
   const pinStyle = useAnimatedStyle(() => ({
     transform: [{ scale: 1 + pop.value * 0.24 }],
@@ -73,18 +74,18 @@ export function ActiveCentreMarker({
           {
             width: CALLOUT_W, borderRadius: 13, backgroundColor: "#FFFFFF",
             paddingVertical: 9, paddingHorizontal: 12, alignItems: "center",
-            shadowColor: "#0F172A", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
+            shadowColor: "#221F1C", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
           },
         ]}
       >
-        <Text testID="active-marker-name" numberOfLines={1} style={{ fontSize: 14, fontWeight: "700", letterSpacing: -0.4, color: "#0F172A" }}>
+        <Text testID="active-marker-name" numberOfLines={1} style={{ fontSize: 14, fontWeight: "700", letterSpacing: -0.4, color: "#221F1C" }}>
           {centre.name}
         </Text>
         <Text testID="active-marker-rate" style={{ marginTop: 2, fontSize: 11.5, fontWeight: "700", color: identity.hue }}>
           {rate === null ? "Pass rate unknown" : `${rate.toFixed(0)}% pass rate`}
         </Text>
         {distanceM !== null && (
-          <Text testID="active-marker-distance" style={{ marginTop: 1, fontSize: 11, fontWeight: "500", color: "#64748B" }}>
+          <Text testID="active-marker-distance" style={{ marginTop: 1, fontSize: 11, fontWeight: "500", color: "#8B827A" }}>
             {miles(distanceM)}
           </Text>
         )}

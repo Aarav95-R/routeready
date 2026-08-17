@@ -77,6 +77,25 @@ export function progressLine(rows: ProgressEntry[]): string | null {
   return best.length ? `${tests} · best score ${Math.max(...best)}` : tests;
 }
 
+// "2 mock tests · best score 82" is a row from a table read aloud. The same
+// two numbers, said the way an instructor would, on the screen a learner is
+// deciding whether to take the test again. progressLine stays as it is: the
+// route card is a dense list where the terse form still earns its place.
+const TIMES = ["", "once", "twice"];
+
+/** The history line on a mock test block, or null when there is none. */
+export function attemptLine(rows: ProgressEntry[]): string | null {
+  if (rows.length === 0) return null;
+  const times = TIMES[rows.length] ?? `${rows.length} times`;
+  const best = scores(rows);
+  if (!best.length) return `You've taken this ${times}`;
+  const top = Math.max(...best);
+  // One attempt has no "best" to speak of — it has a score.
+  return rows.length === 1
+    ? `You've taken this once — you scored ${top}`
+    : `You've taken this ${times} — your best is ${top}`;
+}
+
 /** The badge over the route's map. */
 export function progressBadge(rows: ProgressEntry[]): string {
   if (rows.length === 0) return "New";

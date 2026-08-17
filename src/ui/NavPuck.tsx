@@ -22,8 +22,8 @@ export function NavPuck({ rotation = 0 }: Props) {
   return (
     <View testID="nav-puck" style={{ width: PUCK_SIZE, height: PUCK_SIZE, transform: [{ rotate: `${rotation}deg` }] }}>
       <Svg width={PUCK_SIZE} height={PUCK_SIZE} viewBox="0 0 88 88">
-        <Ellipse testID="puck-pad" cx={44} cy={46} rx={34} ry={27} fill="#0F172A" opacity={0.1} />
-        <Ellipse cx={44} cy={46} rx={25} ry={20} fill="#0F172A" opacity={0.08} />
+        <Ellipse testID="puck-pad" cx={44} cy={46} rx={34} ry={27} fill="#221F1C" opacity={0.1} />
+        <Ellipse cx={44} cy={46} rx={25} ry={20} fill="#221F1C" opacity={0.08} />
         <Circle testID="puck-disc" cx={44} cy={44} r={20} fill="#FFFFFF" />
         <Path
           testID="puck-arrow"

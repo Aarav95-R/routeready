@@ -80,16 +80,21 @@ test("only the three most recent drives are listed", () => {
   expect(screen.queryByTestId("history-score-3")).toBeNull();
 });
 
-test("no tests at all says what the card will become", () => {
+// The empty state is the sheet the record fills in, not a sentence apologising
+// for the sheet's absence.
+test("no tests at all shows what the record will be kept on", () => {
   show([]);
-  expect(screen.getByText(/Your first score lands here/)).toBeTruthy();
+  expect(screen.getByText("What the examiner marks")).toBeTruthy();
+  expect(screen.getByTestId("marking-sheet")).toBeTruthy();
   expect(screen.queryByTestId("latest-score")).toBeNull();
 });
 
-// No cache and no network — a different sentence from a genuinely new account.
-test("a failed load says why it is empty", () => {
+// Showing the sheet here would say "you have driven nothing", which is not
+// what a failed load knows.
+test("a failed load says why it is empty, and shows no sheet", () => {
   show([], true);
   expect(screen.getByText(/back online/)).toBeTruthy();
+  expect(screen.queryByTestId("marking-sheet")).toBeNull();
 });
 
 // A test taken on the train is queued locally with no server timestamp. It is

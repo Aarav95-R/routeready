@@ -1,7 +1,66 @@
 # Sign-in Redesign and the Sign-up Interview — Design Spec
 
 **Date:** 2026-08-16
-**Status:** Draft, awaiting review.
+**Status:** Built. Revised 2026-08-16 after the first build was reverted; see *Revision* below.
+
+## Revision — what the built version does differently
+
+The first build of this spec was reverted the same day: card 4 crashed the app
+and the cause was not found. It was rebuilt against a warm visual direction
+([artifact](https://claude.ai/code/artifact/e6a68686-930a-4000-b87e-83f6349f61ca)),
+with five changes to what is written below.
+
+**1. Figtree replaces Inter, and the face travels with the type scale.**
+React Native picks a static font file by family name and ignores `fontWeight`
+alongside it, so `FACES` in `src/ui/type.ts` names the file per weight and each
+of the seven styles carries its own `fontFamily`. Every screen already
+spreading those styles got the face without a call-site change. `@expo-google-fonts/inter`
+is gone.
+
+**2. The accent moved, and its four copies were deleted.** `#059669` → `#1A875E`
+in `theme.ts` and `tailwind.config.js`. `mapStyle.ts`, `CentresMap.tsx`,
+`DriveModeRow.tsx` and `app/(tabs)/_layout.tsx` each held their own literal;
+all four now read the token, and `mapStyle.test.ts` asserts
+`mapColors.routeCore === colors.accent` so a fifth copy cannot appear quietly.
+`routeCasing` follows to `#115B41`.
+
+**3. Clay is a new role, and it means the person.** `clay` / `clayTint` dress
+the interview's progress bar, its chosen answers and its confirmation tick.
+Green keeps every meaning it had — go, route, correct, primary action — so a
+warm accent never appears on a live drive.
+
+**4. `test_window` replaces `test_date`, and card 2 loses its calendar.** Four
+windows (`two_weeks` / `this_month` / `later` / `not_booked`), so
+`@react-native-community/datetimepicker` is not needed: no new dependency, no
+Expo Go risk, and none of the ~6,000 lines of lockfile churn its install caused
+last time. Home gets a coarser countdown. This resolves correction 2 below by
+taking its documented fallback.
+
+**5. Two motions in the table below were not built, and one was.** See
+*Motion, as built*.
+
+## Motion, as built
+
+Three entries were dropped, each for a stated reason rather than for time.
+
+| Entry below | As built | Why |
+|---|---|---|
+| Card exit (`stepExit`) | **Not built.** The incoming card carries the whole transition. | An exiting layout animation on a re-keyed child, wrapping children that are themselves entering, is the structure the crashed build used on card 4. Nothing here nests layout animations or exits. |
+| Per-row stagger inside a card | **Not built.** `QuestionCard` has no `Animated` in it at all. | The card is already travelling; staggering its rows is two motions describing one event — and it is the other half of the nesting above. |
+| Strength segment fill and colour crossfade | **Not built.** The meter is static. | It changes on nearly every keystroke. The explicit `useReducedMotion()` carve-out the spec had to write for it was the tell that it was the busiest thing on the screen. |
+
+`stepForward()` and `stepBack()` are built as specified, and the progress bar
+still animates with an explicit `useReducedMotion()` check.
+
+**The crash is still undiagnosed.** It was native-only — the reverted build's
+own tests drove card 4 and passed — so it cannot be reproduced in Jest, and no
+device was available. The rebuild removes the whole class of structure it
+occurred in rather than claiming to have fixed a specific line. Card 4 is the
+first thing to exercise on a device.
+
+---
+
+**Original spec follows.**
 **Design artifact:** [live prototype](https://claude.ai/code/artifact/19e08a16-f60f-4560-8fa0-fd860979b9a1) (both phones run the real timing constants; local copy at `docs/design/2026-08-16-auth-onboarding.html`)
 **Feature:** Re-dress `app/(auth)/sign-in.tsx` onto the grouped-inset language, wire the auth paths that were never finished, and turn `app/(auth)/sign-up.tsx` into a five-card interview whose answers reach `user_metadata` in a single `signUp()` call.
 

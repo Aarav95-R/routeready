@@ -4,11 +4,8 @@ import { act, render, screen } from "@testing-library/react-native";
 // Kept outside __tests__ so jest does not collect it as a suite of its own.
 jest.mock("@rnmapbox/maps", () => require("../../test/rnmapboxMock"));
 
-// eslint-disable-next-line import/first
 import type { CentreIdentity } from "@/lib/centreIdentity";
-// eslint-disable-next-line import/first
 import type { Centre } from "@/types/db";
-// eslint-disable-next-line import/first
 import { CentresMap, CentresMapHandle } from "../CentresMap";
 
 const centre = (id: string, lat: number, lng: number): Centre => ({
@@ -42,6 +39,17 @@ const fitCalls = () => screen.getByTestId("camera:").props.fitBounds.mock.calls;
 // to run the reveal to completion first. 10s comfortably clears the longest
 // stagger for any fixture in this file.
 const settleReveal = () => act(() => jest.advanceTimersByTime(10_000));
+
+// The centres map and the navigation map are one map at two zooms. This screen
+// used to add a background layer of its own instead of overriding the style's,
+// and an added layer goes to the top of the stack — so the whole map was a
+// flat tan rectangle with pins on it, roads and all.
+test("the map is drawn on the same styled base as the route map", () => {
+  setup();
+  expect(screen.getByTestId("layer:land").props.existing).toBe(true);
+  expect(screen.getByTestId("layer:road-motorway-trunk-navigation")).toBeTruthy();
+  expect(screen.queryByTestId("layer:ground")).toBeNull();
+});
 
 test("rings, pins and the driver each get a source that is always mounted", () => {
   setup();

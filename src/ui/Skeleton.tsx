@@ -7,5 +7,5 @@ export function Skeleton({ h, w = "100%" }: { h: number; w?: number | `${number}
     opacity.value = withRepeat(withTiming(1, { duration: 700 }), -1, true);
   }, [opacity]);
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
-  return <Animated.View style={[{ height: h, width: w, borderRadius: 12, backgroundColor: "#E2E8F0" }, style]} />;
+  return <Animated.View style={[{ height: h, width: w, borderRadius: 12, backgroundColor: "#E8E3DC" }, style]} />;
 }
