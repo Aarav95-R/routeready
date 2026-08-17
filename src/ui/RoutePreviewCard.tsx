@@ -5,6 +5,7 @@ import { formatDistance } from "@/lib/navigation";
 import type { Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
 import { colors } from "@/ui/theme";
+import { FACES } from "@/ui/type";
 
 export type RoutePreviewCardProps = {
   route: Route;
@@ -38,9 +39,9 @@ export function RoutePreviewCard({
   return (
     <View
       className="absolute bottom-0 left-0 right-0 gap-2.5 rounded-t-3xl bg-card px-4 pt-4"
-      style={{ paddingBottom: insets.bottom + 14, shadowColor: "#0F172A", shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } }}
+      style={{ paddingBottom: insets.bottom + 14, shadowColor: "#221F1C", shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } }}
     >
-      <Text className="text-[18px] font-semibold tracking-tight text-primary" style={{ fontFamily: "Inter_600SemiBold" }}>{route.name}</Text>
+      <Text className="text-[18px] font-semibold tracking-tight text-primary" style={{ fontFamily: FACES["600"] }}>{route.name}</Text>
       <View className="flex-row items-center gap-5">
         <View><Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Distance</Text><Text className="text-[15px] font-semibold text-primary">{route.distance_km?.toFixed(1)} km</Text></View>
         <View><Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Time</Text><Text className="text-[15px] font-semibold text-primary">{route.estimated_minutes} min</Text></View>

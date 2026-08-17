@@ -3,18 +3,25 @@ import { useEffect } from "react";
 import * as Linking from "expo-linking";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from "@expo-google-fonts/inter";
+import {
+  useFonts, PlusJakartaSans_400Regular, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold,
+} from "@expo-google-fonts/plus-jakarta-sans";
 import { View } from "react-native";
 import Mapbox from "@rnmapbox/maps";
 import { supabase } from "@/lib/supabase";
 import { useSession } from "@/stores/sessionStore";
 import { useNetwork } from "@/stores/networkStore";
+import { colors } from "@/ui/theme";
 
 // Runtime token for displaying the Mapbox map.
 Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? null);
 
 export default function RootLayout() {
-  const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
+  // Exactly the three weights FACES names in src/ui/type.ts. A style whose
+  // file is not loaded here falls back to the system face silently.
+  const [fontsLoaded] = useFonts({
+    PlusJakartaSans_400Regular, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold,
+  });
   const { session, initialized, init } = useSession();
   const segments = useSegments();
   const router = useRouter();
@@ -46,7 +53,9 @@ export default function RootLayout() {
   if (!fontsLoaded || !initialized) return <View className="flex-1 bg-surface" />;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#F8FAFC" } }} />
+      {/* The ground behind every route, including mid-transition. A literal
+          here is what would flash the old colour on each push. */}
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.field } }} />
     </GestureHandlerRootView>
   );
 }

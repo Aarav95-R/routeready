@@ -2,13 +2,15 @@ import { useEffect } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import Animated, { FadeInDown, ZoomIn } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { saveProgress } from "@/services/progressRepo";
 import { creditsByCategory, faultElapsedMs, formatElapsed } from "@/lib/resultView";
 import { useMockTest } from "@/stores/mockTestStore";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
+import { enterAfter, popIn } from "@/ui/motion";
+import { FACES } from "@/ui/type";
 
 export default function Result() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -36,7 +38,7 @@ export default function Result() {
     <SafeAreaView className="flex-1 bg-primary">
       <ScrollView contentContainerClassName="items-center gap-3 px-4 pb-8 pt-6">
         <Animated.View
-          entering={ZoomIn.springify().delay(150)}
+          entering={popIn(150)}
           className={`h-28 w-28 items-center justify-center rounded-full border-[5px] ${result.passed ? "border-accent" : "border-danger"}`}
         >
           <Text className={`text-[13px] font-bold tracking-[0.18em] ${result.passed ? "text-emerald-400" : "text-red-400"}`}>
@@ -44,8 +46,8 @@ export default function Result() {
           </Text>
           <Text className="text-[11px] text-slate-400">{result.minors} minors</Text>
         </Animated.View>
-        <Animated.View entering={FadeInDown.delay(350)} className="items-center">
-          <Text className="text-[21px] font-semibold tracking-tight text-surface" style={{ fontFamily: "Inter_600SemiBold" }}>
+        <Animated.View entering={enterAfter(350)} className="items-center">
+          <Text className="text-[21px] font-semibold tracking-tight text-surface" style={{ fontFamily: FACES["600"] }}>
             {result.passed ? "You'd have passed" : "Not this time"}
           </Text>
           <Text className="text-[12px] text-slate-400">
@@ -53,7 +55,7 @@ export default function Result() {
           </Text>
         </Animated.View>
         {wentWell.length > 0 && (
-          <Animated.View entering={FadeInDown.delay(400)} className="w-full">
+          <Animated.View entering={enterAfter(400)} className="w-full">
             <Card className="gap-2">
               <Text className="text-[13px] font-semibold text-accent">What went well</Text>
               {wentWell.map((c) => (
@@ -68,7 +70,7 @@ export default function Result() {
         {result.faults.map((f, i) => {
           const elapsed = faultTimes[i];
           return (
-            <Animated.View key={i} entering={FadeInDown.delay(450 + i * 90)} className="w-full">
+            <Animated.View key={i} entering={enterAfter(450 + i * 90)} className="w-full">
               <Card className="flex-row items-center justify-between">
                 <View className="flex-1 pr-3">
                   <Text className="text-[14px] font-semibold text-primary">{f.tag}</Text>
@@ -84,12 +86,14 @@ export default function Result() {
           );
         })}
         {result.faults.length === 0 && (
-          <Animated.View entering={FadeInDown.delay(450)} className="w-full">
+          <Animated.View entering={enterAfter(450)} className="w-full">
             <Card><Text className="text-center text-[13px] font-semibold text-accent">A clean drive — no faults recorded</Text></Card>
           </Animated.View>
         )}
         <View className="mt-2 w-full">
-          <Button title="Done" onPress={() => { reset(); router.dismissTo(`/route/${id}`); }} />
+          {/* Back to where the test was chosen, ready to go again — the route
+              detail page this used to dismiss to no longer exists. */}
+          <Button title="Done" onPress={() => { reset(); router.dismissTo(`/route/${id}/start`); }} />
         </View>
       </ScrollView>
     </SafeAreaView>

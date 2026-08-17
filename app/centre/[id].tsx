@@ -3,7 +3,7 @@ import { FlatList, Pressable, Text, useWindowDimensions, View } from "react-nati
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated from "react-native-reanimated";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { listCentres } from "@/services/centresRepo";
@@ -11,9 +11,11 @@ import { listRoutesByCentre } from "@/services/routesRepo";
 import { listProgressByCentre } from "@/services/progressRepo";
 import { listFavouriteRouteIds, toggleFavourite } from "@/services/favouritesRepo";
 import type { Centre, ProgressEntry, Route } from "@/types/db";
+import { enterAfter } from "@/ui/motion";
 import { RouteCard } from "@/ui/RouteCard";
 import { Skeleton } from "@/ui/Skeleton";
 import { colors } from "@/ui/theme";
+import { FACES } from "@/ui/type";
 
 const H_PADDING = 16;
 
@@ -68,12 +70,12 @@ export default function CentreDetail() {
         contentContainerStyle={{ paddingHorizontal: H_PADDING, paddingBottom: 24, gap: 14 }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
-          <Animated.View entering={FadeInDown.duration(320)} className="pb-3">
+          <Animated.View entering={enterAfter(0)} className="pb-3">
             <Pressable onPress={() => router.back()} className="min-h-[44px] flex-row items-center gap-1">
               <Ionicons name="chevron-back" size={18} color={colors.accent} />
               <Text className="text-[13px] font-semibold text-accent">Centres</Text>
             </Pressable>
-            <Text className="text-[26px] font-semibold tracking-tight text-primary" style={{ fontFamily: "Inter_600SemiBold" }}>
+            <Text className="text-[26px] font-semibold tracking-tight text-primary" style={{ fontFamily: FACES["600"] }}>
               {centre.name}
               {routes ? <Text className="text-[26px] font-semibold text-slate-400"> · {routes.length} routes</Text> : null}
             </Text>
@@ -118,7 +120,7 @@ export default function CentreDetail() {
               </View>
             )}
             onSwipeableOpen={(direction) => {
-              if (direction === "left") router.push(`/route/${item.id}/practice`);
+              if (direction === "left") router.push(`/route/${item.id}/start`);
               else onFavourite(item.id);
             }}
           >
@@ -128,8 +130,11 @@ export default function CentreDetail() {
               favourite={favs.includes(item.id)}
               width={width - H_PADDING * 2}
               index={index}
-              onOpen={() => router.push(`/route/${item.id}`)}
-              onStart={() => router.push(`/route/${item.id}/practice`)}
+              // One card, one destination. Tapping the card and tapping Start
+              // used to land on two different screens — the detail page and
+              // the drive — which made the card's own tap a coin toss.
+              onOpen={() => router.push(`/route/${item.id}/start`)}
+              onStart={() => router.push(`/route/${item.id}/start`)}
               onFavourite={() => onFavourite(item.id)}
             />
           </ReanimatedSwipeable>

@@ -17,6 +17,7 @@ import type { Hazard, NavStep, Route } from "@/types/db";
 import { ManeuverBanner } from "@/ui/ManeuverBanner";
 import { RoutePreviewCard } from "@/ui/RoutePreviewCard";
 import { colors } from "@/ui/theme";
+import { FACES } from "@/ui/type";
 import { NavMap, NavMapHandle } from "@/ui/NavMap";
 
 // Two rotations, two sources. The MAP turns only when the vehicle travels in a
@@ -415,17 +416,17 @@ export default function Practice() {
           </View>
 
           {phase === "route" && (
-            <View className="absolute left-4 items-center rounded-2xl bg-card px-3 py-2" style={{ bottom: 100, shadowColor: "#0F172A", shadowOpacity: 0.15, shadowRadius: 8 }}>
+            <View className="absolute left-4 items-center rounded-2xl bg-card px-3 py-2" style={{ bottom: 100, shadowColor: "#221F1C", shadowOpacity: 0.15, shadowRadius: 8 }}>
               <Text className="text-[20px] font-bold leading-5 text-primary" style={{ fontVariant: ["tabular-nums"] }}>{speedMph}</Text>
               <Text className="text-[8px] font-bold tracking-wider text-slate-500">MPH</Text>
             </View>
           )}
 
-          <Pressable onPress={recenter} className="absolute right-4 h-12 w-12 items-center justify-center rounded-full bg-card" style={{ bottom: 100, shadowColor: "#0F172A", shadowOpacity: 0.18, shadowRadius: 8 }}>
+          <Pressable onPress={recenter} className="absolute right-4 h-12 w-12 items-center justify-center rounded-full bg-card" style={{ bottom: 100, shadowColor: "#221F1C", shadowOpacity: 0.18, shadowRadius: 8 }}>
             <Ionicons name="navigate" size={20} color={colors.accent} />
           </Pressable>
 
-          <View className="absolute bottom-0 left-0 right-0 flex-row items-center gap-3 bg-card px-4 pt-3" style={{ paddingBottom: insets.bottom + 12, shadowColor: "#0F172A", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -3 } }}>
+          <View className="absolute bottom-0 left-0 right-0 flex-row items-center gap-3 bg-card px-4 pt-3" style={{ paddingBottom: insets.bottom + 12, shadowColor: "#221F1C", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -3 } }}>
             <View className="flex-1">
               <Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{isApproach ? "To the start" : "Remaining"}</Text>
               <Text className="text-[18px] font-semibold text-primary">
@@ -444,7 +445,7 @@ export default function Practice() {
         <View className="absolute inset-0 items-center justify-center bg-primary/70 px-8">
           <View className="w-full items-center gap-2 rounded-3xl bg-card px-6 py-8">
             <View className="h-16 w-16 items-center justify-center rounded-full bg-accent"><Ionicons name="checkmark" size={34} color="#fff" /></View>
-            <Text className="text-[20px] font-semibold tracking-tight text-primary" style={{ fontFamily: "Inter_600SemiBold" }}>Route complete</Text>
+            <Text className="text-[20px] font-semibold tracking-tight text-primary" style={{ fontFamily: FACES["600"] }}>Route complete</Text>
             <Text className="text-[13px] text-slate-500">You navigated {route?.distance_km?.toFixed(1)} km of {route?.name}.</Text>
             <Pressable onPress={() => router.back()} className="mt-3 min-h-[48px] w-full items-center justify-center rounded-full bg-accent active:bg-accent-pressed">
               <Text className="text-[15px] font-semibold text-white">Done</Text>
@@ -453,7 +454,7 @@ export default function Practice() {
         </View>
       )}
 
-      <BottomSheet ref={sheetRef} index={-1} snapPoints={["25%", "50%", "90%"]} enablePanDownToClose handleIndicatorStyle={{ backgroundColor: "#CBD5E1" }}>
+      <BottomSheet ref={sheetRef} index={-1} snapPoints={["25%", "50%", "90%"]} enablePanDownToClose handleIndicatorStyle={{ backgroundColor: "#D8D1C8" }}>
         <BottomSheetView style={{ paddingHorizontal: 16, paddingBottom: 24 }}>
           {selectedHazard && (
             <>

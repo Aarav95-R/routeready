@@ -1,13 +1,15 @@
 import { useEffect, useRef } from "react";
 import { Pressable, Text, View } from "react-native";
-import Animated, { FadeInDown, useAnimatedStyle, useSharedValue, withSequence, withSpring } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue } from "react-native-reanimated";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { difficultyWord, plainSummary, progressBadge, progressLine, shortRouteName } from "@/lib/routeSummary";
 import type { ProgressEntry, Route } from "@/types/db";
 import { DifficultyPips } from "@/ui/DifficultyPips";
+import { enterFrom, pulse } from "@/ui/motion";
 import { RouteThumbnail } from "@/ui/RouteThumbnail";
 import { colors } from "@/ui/theme";
+import { FACES } from "@/ui/type";
 
 /**
  * One route, as a postcard: its own map, what the drive is like in the words an
@@ -32,24 +34,29 @@ export function RouteCard({
   const badge = progressBadge(progress);
   const driven = progress.length > 0;
 
+  // Grow and straight back, no overshoot on the return. The old spring pair
+  // (damping 6) threw the star to 1.25 and rang it down through four bounces,
+  // twice — nearly a second of wobble to acknowledge a toggle.
+  const reducedMotion = useReducedMotion();
   const starScale = useSharedValue(1);
   const firstRender = useRef(true);
   useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return; }
-    starScale.value = withSequence(withSpring(1.25, { damping: 6 }), withSpring(1));
-  }, [favourite, starScale]);
+    if (reducedMotion) return;
+    starScale.value = pulse();
+  }, [favourite, starScale, reducedMotion]);
   const starStyle = useAnimatedStyle(() => ({ transform: [{ scale: starScale.value }] }));
 
   return (
-    <Animated.View entering={FadeInDown.delay(index * 60).springify().damping(16)}>
+    <Animated.View entering={enterFrom(index)}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${shortRouteName(route.name)}, ${difficultyWord(route.difficulty)}`}
         onPress={onOpen}
         className="overflow-hidden rounded-[20px] bg-card active:scale-[0.98]"
-        style={{ shadowColor: "#0F172A", shadowOpacity: 0.1, shadowRadius: 14, shadowOffset: { width: 0, height: 5 } }}
+        style={{ shadowColor: "#221F1C", shadowOpacity: 0.1, shadowRadius: 14, shadowOffset: { width: 0, height: 5 } }}
       >
-        <View className="border-b border-slate-100 bg-[#EEF3F0]">
+        <View className="border-b border-slate-100 bg-[#EDEBE4]">
           <RouteThumbnail
             geometry={route.geometry}
             zones={route.observation_zones}
@@ -76,7 +83,7 @@ export function RouteCard({
         </View>
 
         <View className="px-3.5 pb-3.5 pt-3">
-          <Text className="text-[16px] font-semibold tracking-tight text-primary" style={{ fontFamily: "Inter_600SemiBold" }}>
+          <Text className="text-[16px] font-semibold tracking-tight text-primary" style={{ fontFamily: FACES["600"] }}>
             {shortRouteName(route.name)}
           </Text>
           <Text className="mt-0.5 text-[12.5px] text-slate-600">{plainSummary(route)}</Text>

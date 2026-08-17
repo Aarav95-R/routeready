@@ -15,15 +15,51 @@ import type { TextStyle } from "react-native";
  * direction iOS tightens in. Reversing it is what makes large type look loose
  * and small type look cramped.
  */
-type Style = Required<Pick<TextStyle, "fontSize" | "lineHeight" | "fontWeight" | "letterSpacing">>;
+type Weight = "400" | "600" | "700";
+type Style = Required<Pick<TextStyle, "fontSize" | "lineHeight" | "letterSpacing" | "fontFamily">> & {
+  fontWeight: Weight;
+};
 
-export const largeTitle: Style = { fontSize: 34, lineHeight: 41, fontWeight: "700", letterSpacing: -0.9 };
-export const title2: Style = { fontSize: 22, lineHeight: 28, fontWeight: "700", letterSpacing: -0.46 };
-export const headline: Style = { fontSize: 17, lineHeight: 22, fontWeight: "600", letterSpacing: -0.41 };
-export const body: Style = { fontSize: 17, lineHeight: 22, fontWeight: "400", letterSpacing: -0.41 };
-export const subheadline: Style = { fontSize: 15, lineHeight: 20, fontWeight: "400", letterSpacing: -0.17 };
-export const footnote: Style = { fontSize: 13, lineHeight: 18, fontWeight: "600", letterSpacing: 0 };
-export const caption: Style = { fontSize: 13, lineHeight: 18, fontWeight: "400", letterSpacing: 0 };
+/**
+ * The face, per weight.
+ *
+ * Inter went first because it is not a warm typeface — drawn for screens and
+ * control panels, its even, flat rhythm was most of what made the sign-in
+ * screen read as a form rather than as a welcome. Figtree replaced it and
+ * fixed exactly that, but a face chosen for being inoffensive at every size
+ * never becomes the app's own: at 34pt the large title had nothing to say.
+ *
+ * Plus Jakarta Sans is the one candidate that reads as drawn rather than
+ * generated — squared curves and cut joins give it tension at display sizes —
+ * while staying open and even at 13pt, which is where two thirds of this app's
+ * words live. Its figures matter as much as its letters here: a pass rate, a
+ * distance and a fault count are most of what a row says.
+ *
+ * React Native selects a static font file by family name and ignores
+ * `fontWeight` when one is set, so the family has to be named per weight and
+ * has to travel with the style. Every screen spreading these styles gets the
+ * face for free; that is why it lives here rather than at call sites. The
+ * screens not yet on the scale import FACES rather than spelling a file name,
+ * for the same reason — a family name that no longer exists does not throw,
+ * it silently renders in the system face.
+ */
+export const FACES: Record<Weight, string> = {
+  "400": "PlusJakartaSans_400Regular",
+  "600": "PlusJakartaSans_600SemiBold",
+  "700": "PlusJakartaSans_700Bold",
+};
+
+const style = (
+  fontSize: number, lineHeight: number, fontWeight: Weight, letterSpacing: number,
+): Style => ({ fontSize, lineHeight, fontWeight, letterSpacing, fontFamily: FACES[fontWeight] });
+
+export const largeTitle = style(34, 41, "700", -0.9);
+export const title2 = style(22, 28, "700", -0.46);
+export const headline = style(17, 22, "600", -0.41);
+export const body = style(17, 22, "400", -0.41);
+export const subheadline = style(15, 20, "400", -0.17);
+export const footnote = style(13, 18, "600", 0);
+export const caption = style(13, 18, "400", 0);
 
 export const TEXT_STYLES: readonly Style[] = [
   largeTitle, title2, headline, body, subheadline, footnote, caption,
