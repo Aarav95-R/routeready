@@ -18,7 +18,7 @@
       "./jest.setup.js"
     ],
     "transformIgnorePatterns": [
-      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|expo-[^/]+|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|react-native-safe-area-context|nativewind|react-native-css-interop|zustand|@supabase/.*|@gorhom/.*|react-native-gifted-charts|gifted-charts-core|react-native-linear-gradient|react-native-url-polyfill|react-native-reanimated|react-native-worklets)/)"
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|expo-[^/]+|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|react-native-safe-area-context|react-native-gesture-handler|nativewind|react-native-css-interop|zustand|@supabase/.*|@gorhom/.*|react-native-gifted-charts|gifted-charts-core|react-native-linear-gradient|react-native-url-polyfill|react-native-reanimated|react-native-worklets)/)"
     ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1"
@@ -77,6 +77,8 @@
     "@types/react": "~19.1.10",
     "@types/react-test-renderer": "^18.3.0",
     "babel-preset-expo": "~54.0.0",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "^57.0.1",
     "jest": "^29.7.0",
     "jest-expo": "~54.0.17",
     "pg": "^8.22.0",

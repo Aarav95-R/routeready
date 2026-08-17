@@ -264,7 +264,13 @@ export default function Practice() {
     } catch { return null; }
   };
 
-  const startWatch = async () => {
+  // Memoised on `onPosition` alone, which is everything reactive it closes over
+  // — the rest is refs and setters. That is deliberately the same dependency
+  // the two callers below already had: they used to list `onPosition` directly
+  // and call this as a plain function, which read as a missing dependency
+  // because it was one. Naming it here means the callers depend on the thing
+  // they actually call, and nothing about when they are rebuilt changes.
+  const startWatch = useCallback(async () => {
     // The compass drives the icon, and only the icon. It fires as the phone
     // turns, including standing still, which is the whole point: the map is
     // pinned to the direction of travel and cannot answer a phone being
@@ -288,7 +294,7 @@ export default function Practice() {
       { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 1, timeInterval: 500 },
       (loc) => onPosition(loc.coords)
     );
-  };
+  }, [onPosition]);
 
   const ensurePermission = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -303,7 +309,7 @@ export default function Practice() {
     resetLeg(1);
     await zoomToMe();
     await startWatch();
-  }, [onPosition]);
+  }, [startWatch]);
 
   const guideToStart = useCallback(async () => {
     if (!(await ensurePermission())) return;
@@ -324,7 +330,7 @@ export default function Practice() {
     resetLeg(1);
     setBusy(false);
     await startWatch();
-  }, [onPosition]);
+  }, [startWatch]);
 
   if (permissionDenied) {
     return (

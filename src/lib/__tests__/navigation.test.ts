@@ -1,4 +1,4 @@
-import { advance, ADVANCE_RADIUS_M, destinationPoint, formatDistance, navZoom, NAV_ZOOM_NEAR, NAV_ZOOM_MID, NAV_ZOOM_FAR, remainingM, trailIndex } from "../navigation";
+import { advance, ADVANCE_RADIUS_M, destinationPoint, formatDistance, navZoom, NAV_ZOOM_NEAR, NAV_ZOOM_MID, NAV_ZOOM_FAR, remainingM, ROAD_BEARING_MIN_MPH, trailIndex, travelBearing } from "../navigation";
 import { haversineM } from "../geo";
 import type { NavStep } from "@/types/db";
 
@@ -118,8 +118,6 @@ test("destinationPoint lands the right distance ahead on the given bearing", () 
   expect(east.lng).toBeGreaterThan(from.lng);
   expect(haversineM(from, east)).toBeCloseTo(500, -1);
 });
-
-import { ROAD_BEARING_MIN_MPH, travelBearing } from "../navigation";
 
 test("travelBearing is null when stopped, so the map holds its bearing", () => {
   // The whole point: twisting the phone at a red light must not turn the map.

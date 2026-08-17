@@ -5,7 +5,6 @@ import { render, screen } from "@testing-library/react-native";
 // jest.mock factory is not allowed to reference.
 jest.mock("@rnmapbox/maps", () => require("../../test/rnmapboxMock"));
 
-// eslint-disable-next-line import/first
 import { NavMap } from "../NavMap";
 
 const routeLL = [

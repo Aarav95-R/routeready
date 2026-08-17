@@ -89,3 +89,35 @@ export function buildSections(input: {
   if (rest.length) sections.push({ title: "Further afield", data: rest });
   return sections;
 }
+
+/**
+ * What the user last pointed the sheet at.
+ *
+ * Three states, and the third is why this is not just `string | null`:
+ * `undefined` means nothing has been chosen yet, `null` means nothing is
+ * deliberately chosen — which is what scrolling onto "Further afield" means,
+ * since those rows have no pin to fly to. Collapsing the two would make the
+ * screen re-seize the camera back to the first pin the instant somebody
+ * scrolled past the near set.
+ */
+export type ChosenCentre = string | null | undefined;
+
+/**
+ * Which centre the map points at: the choice, reconciled against what is
+ * actually on screen.
+ *
+ * Derived rather than corrected after the fact. The screen used to hold this
+ * as state and patch it from two effects — one seeding the first pin on open,
+ * one repairing it when a filter or a search took the chosen centre away — and
+ * both were writing state during a render they had just finished, so the map
+ * drew one frame pointed at a centre that was no longer on it.
+ *
+ * Filtering a chosen centre away falls back to the first remaining pin rather
+ * than to nothing, because the map wants somewhere to be; an empty list is the
+ * only thing that genuinely has no answer.
+ */
+export function activeCentreId(chosen: ChosenCentre, pins: Centre[]): string | null {
+  if (chosen === null) return null;
+  if (chosen !== undefined && pins.some((p) => p.id === chosen)) return chosen;
+  return pins[0]?.id ?? null;
+}

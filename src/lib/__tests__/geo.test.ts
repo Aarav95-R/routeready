@@ -1,4 +1,4 @@
-import { bandSpeedMph, bearingDeg, cumulativeM, haversineM, isInZone, mpsToMph, nearestVertex, ringPolygon, turnAngleDeg, projectOnSegment, snapToPath, smoothHeading } from "../geo";
+import { bandSpeedMph, bearingDeg, cumulativeM, haversineM, iconRotationDeg, isInZone, mpsToMph, nearestVertex, ringPolygon, turnAngleDeg, projectOnSegment, snapToPath, smoothHeading } from "../geo";
 
 const london = { lat: 51.5074, lng: -0.1278 };
 const birmingham = { lat: 52.4862, lng: -1.8904 };
@@ -115,8 +115,6 @@ test("smoothHeading takes the short way across north", () => {
   expect(smoothHeading(5, 355, 0.5)).toBeCloseTo(0, 3);
   expect(smoothHeading(350, 10, 0.25)).toBeCloseTo(355, 3);
 });
-
-import { iconRotationDeg } from "../geo";
 
 test("iconRotationDeg is zero when the phone points down the road", () => {
   expect(iconRotationDeg(0, 0)).toBe(0);

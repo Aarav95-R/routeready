@@ -1,4 +1,4 @@
-import { bearingDeg, cumulativeM, bandSpeedMph, LatLng } from "../../src/lib/geo";
+import { bearingDeg, bandSpeedMph, LatLng } from "../../src/lib/geo";
 import type { ObservationZone, SpeedProfileSegment } from "../../src/types/db";
 
 export function detectTurnPoints(coords: LatLng[], minAngle = 45): { idx: number; angle: number }[] {

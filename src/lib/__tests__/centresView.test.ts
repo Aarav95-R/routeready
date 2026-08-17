@@ -1,5 +1,5 @@
 import type { Centre } from "@/types/db";
-import { buildSections, byDistance, nearSet, NEAR_MAX, NEAR_MIN } from "../centresView";
+import { activeCentreId, buildSections, byDistance, nearSet, NEAR_MAX, NEAR_MIN } from "../centresView";
 
 const MILL_HILL = { lat: 51.6087, lng: -0.2412 };
 
@@ -85,4 +85,45 @@ test("search matches name and region, and an empty result is still a valid view"
     centres, me: MILL_HILL, sort: "nearest", filter: "all", query: "brixton",
   });
   expect(none.flatMap((s) => s.data)).toEqual([]);
+});
+
+// ── activeCentreId ─────────────────────────────────────────────────────────
+
+const PINS = [at("ash", 1), at("birch", 2), at("cedar", 3)];
+
+// The map has to open pointed at something rather than at the middle of
+// nowhere, so the nearest pin is active before anything has been chosen.
+test("nothing chosen yet opens on the first pin", () => {
+  expect(activeCentreId(undefined, PINS)).toBe("ash");
+});
+
+test("a chosen centre that is on screen is the answer", () => {
+  expect(activeCentreId("birch", PINS)).toBe("birch");
+});
+
+// Filtering or searching takes the chosen centre's pin and its row away
+// together. Left as it was, the map would keep a label for a pin it no longer
+// draws and the sheet would tint no row at all.
+test("a chosen centre filtered off the screen falls back to the first pin", () => {
+  expect(activeCentreId("birch", [PINS[0], PINS[2]])).toBe("ash");
+});
+
+// Rows under "Further afield" have no pin to fly to, so scrolling onto one
+// deliberately points at nothing — and must not be read as "nothing chosen
+// yet", which would snap the camera straight back to the first pin.
+test("choosing nothing is respected rather than re-seeded", () => {
+  expect(activeCentreId(null, PINS)).toBeNull();
+});
+
+test("an empty list has no answer, whatever was chosen", () => {
+  expect(activeCentreId("birch", [])).toBeNull();
+  expect(activeCentreId(undefined, [])).toBeNull();
+});
+
+// The choice outlives a filter that hid it: searching a centre away and then
+// clearing the search puts the map back where the user left it, rather than
+// stranding it on whichever pin happened to be first while they typed.
+test("a choice hidden and then restored comes back", () => {
+  expect(activeCentreId("cedar", [PINS[0]])).toBe("ash");
+  expect(activeCentreId("cedar", PINS)).toBe("cedar");
 });
