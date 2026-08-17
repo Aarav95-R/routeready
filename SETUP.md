@@ -7,10 +7,10 @@ Phase 1 is code-complete on the `phase-1` branch: auth, test-centre directory, r
 1. Create a new project at https://supabase.com.
 2. Open the **SQL Editor** and run, in order:
    - `supabase/schema.sql` — creates the 6 tables, RLS policies, and Phase-1 columns/`favourites` table.
-   - `supabase/seed.sql` — inserts 40 real DVSA centres, 120 road-snapped routes, 480 hazards, 18 show-me/tell-me questions, 4 manoeuvres.
+   - `supabase/seed.sql` — inserts 40 real DVSA centres, 400 road-snapped practice routes, their hazards, 18 show-me/tell-me questions, 4 manoeuvres.
 3. Sanity check in the SQL editor:
    ```sql
-   select count(*) from routes;           -- expect 120
+   select count(*) from routes;           -- expect 400
    select count(*) from show_me_tell_me;  -- expect 18
    ```
 

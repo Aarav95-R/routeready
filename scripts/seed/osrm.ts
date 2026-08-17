@@ -1,3 +1,4 @@
+import { cached } from "./cache";
 import type { LatLng } from "../../src/lib/geo";
 
 export type OsrmManeuver = { type: string; modifier?: string; location: [number, number]; exit?: number };
@@ -14,10 +15,18 @@ export type OsrmRoute = {
 export async function fetchRoute(waypoints: LatLng[]): Promise<OsrmRoute> {
   const path = waypoints.map((w) => `${w.lng},${w.lat}`).join(";");
   const url = `https://router.project-osrm.org/route/v1/driving/${path}?overview=full&geometries=geojson&annotations=speed&steps=true`;
-  const res = await fetch(url, { headers: { "User-Agent": "routeready-seed/1.0" } });
-  if (!res.ok) throw new Error(`OSRM ${res.status} for ${path}`);
-  const json = (await res.json()) as any;
-  if (json.code !== "Ok" || !json.routes?.length) throw new Error(`OSRM no route: ${json.code}`);
+  // A full generator run is ~400 of these. Cached on disk so a failure part
+  // way through costs one retry rather than the whole run again.
+  const json = await cached(`osrm:${path}`, async () => {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "routeready-seed/1.0" },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) throw new Error(`OSRM ${res.status} for ${path}`);
+    const body = (await res.json()) as any;
+    if (body.code !== "Ok" || !body.routes?.length) throw new Error(`OSRM no route: ${body.code}`);
+    return body;
+  });
   const r = json.routes[0];
   return {
     coords: r.geometry.coordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })),

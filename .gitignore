@@ -42,3 +42,6 @@ app-example
 
 # scratch dir (skill/planning scratchpad, never committed)
 .superpowers/
+
+# seed generator's Overpass/OSRM response cache — safe to delete, refetches
+scripts/seed/.cache/

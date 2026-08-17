@@ -39,8 +39,22 @@ async function main() {
   await client.connect();
   console.log("Connected. Clearing any existing seed data…");
   await client.query("truncate test_centres, manoeuvres, show_me_tell_me restart identity cascade;");
-  console.log("Loading supabase/seed.sql (this takes a few seconds)…");
-  await client.query(readFileSync("supabase/seed.sql", "utf8"));
+  // The generator writes one statement per line, and the file is now ~8 MB.
+  // Sent as a single query that is one 8 MB string for the server to parse
+  // before anything happens, with no progress and a timeout if it is slow —
+  // so it goes in batches instead, inside the file's own begin/commit.
+  const statements = readFileSync("supabase/seed.sql", "utf8")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("--"));
+  console.log(`Loading supabase/seed.sql — ${statements.length} statements…`);
+  const BATCH = 250;
+  for (let i = 0; i < statements.length; i += BATCH) {
+    await client.query(statements.slice(i, i + BATCH).join("\n"));
+    const done = Math.min(i + BATCH, statements.length);
+    process.stdout.write(`\r  ${done}/${statements.length} (${Math.round((done / statements.length) * 100)}%)`);
+  }
+  process.stdout.write("\n");
   const { rows } = await client.query(
     `select
        (select count(*) from test_centres)    as centres,

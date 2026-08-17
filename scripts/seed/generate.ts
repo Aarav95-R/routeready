@@ -3,26 +3,23 @@ import centres from "./centres.json";
 import { fetchRoute } from "./osrm";
 import { derivePassHistory, deriveDifficulty, deriveHazards, deriveObservationZones, deriveSpeedProfile } from "./derive";
 import { buildNavSteps } from "./navsteps";
-import type { LatLng } from "../../src/lib/geo";
+import { fetchFeatures } from "./overpass";
+import { nameFromSteps, planRoutes, type Feature } from "./routePlan";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const esc = (s: string) => s.replace(/'/g, "''");
 const j = (v: unknown) => `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
 
-// 3 loops per centre: out-and-back triangles at different bearings/radii
-function waypointSets(c: { lat: number; lng: number }): LatLng[][] {
-  const ring = (bearing: number, km: number): LatLng => ({
-    lat: c.lat + (km / 111) * Math.cos((bearing * Math.PI) / 180),
-    lng: c.lng + (km / (111 * Math.cos((c.lat * Math.PI) / 180))) * Math.sin((bearing * Math.PI) / 180),
-  });
-  return [
-    [c, ring(30, 1.6), ring(120, 1.9), c],
-    [c, ring(200, 2.2), ring(280, 1.7), c],
-    [c, ring(330, 2.5), ring(60, 2.1), c],
-  ];
-}
+/** How many practice routes every centre gets. */
+const ROUTES_PER_CENTRE = 10;
 
-const ROUTE_NAMES = ["Town loop", "Residential circuit", "Main-road run"];
+/**
+ * The fallback names, used only when a loop drove no named road at all —
+ * an industrial estate or a new-build development where OSM has the geometry
+ * but not the labels. Everywhere else the name comes from the roads OSRM
+ * reports, via nameFromSteps.
+ */
+const FALLBACK_NAMES = ["Town loop", "Residential circuit", "Main-road run"];
 
 // --- DVSA "show me, tell me" vehicle safety questions (gov.uk) ---
 type SmtmRow = { category: "under_bonnet" | "inside_car" | "safety"; question: string; answer: string; is_show_me: boolean };
@@ -243,6 +240,7 @@ async function main() {
     "begin;",
     "alter table routes add column if not exists steps jsonb default '[]';",
   ];
+  const failures: string[] = [];
   for (let ci = 0; ci < centres.length; ci++) {
     const c = centres[ci];
     lines.push(
@@ -250,14 +248,34 @@ async function main() {
       `(gen_random_uuid(), '${esc(c.name)}', '${esc(c.address)}', ${c.lat}, ${c.lng}, ${c.pass_rate}, ` +
       `${j(derivePassHistory(c.pass_rate, ci))}, '{${c.test_types.join(",")}}', '${esc(c.region)}');`
     );
-    for (let ri = 0; ri < 3; ri++) {
+    // One Overpass call per centre, cached. A centre OSM knows nothing about
+    // still gets its ten routes — planRoutes fills the gaps with rings.
+    let features: Feature[] = [];
+    try {
+      features = await fetchFeatures(c);
+    } catch (e) {
+      console.log(`Overpass failed for ${c.name}, falling back to rings: ${(e as Error).message}`);
+    }
+    const counts = features.reduce<Record<string, number>>((acc, f) => ({ ...acc, [f.kind]: (acc[f.kind] ?? 0) + 1 }), {});
+    console.log(`${c.name}: ${features.length} features ${JSON.stringify(counts)}`);
+    await sleep(3000); // Overpass rate-limits per IP; 1.2s earned a run of 429s
+
+    const usedNames = new Set<string>();
+    const planned = planRoutes({ lat: c.lat, lng: c.lng }, features, ROUTES_PER_CENTRE);
+
+    for (let ri = 0; ri < planned.length; ri++) {
+      const plan = planned[ri];
       try {
-        const r = await fetchRoute(waypointSets(c)[ri]);
+        const r = await fetchRoute(plan.waypoints);
         const geometry = { type: "LineString", coordinates: r.coords.map((p) => [p.lng, p.lat]) };
         const hazards = deriveHazards(r.coords);
+        // Named after the fact, from the roads it drove — see nameFromSteps.
+        const derived = nameFromSteps(r.steps, usedNames);
+        for (const road of (derived ?? "").split(" and ")) if (road) usedNames.add(road);
+        const route = { name: `Route ${ri + 1} · ${derived ?? FALLBACK_NAMES[ri % FALLBACK_NAMES.length]}` };
         lines.push(
           `insert into routes (id, centre_id, name, geometry, estimated_minutes, distance_km, difficulty, speed_profile, observation_zones, steps) ` +
-          `select gen_random_uuid(), id, '${esc(`Route ${ri + 1} · ${ROUTE_NAMES[ri]}`)}', ${j(geometry)}, ` +
+          `select gen_random_uuid(), id, '${esc(route.name)}', ${j(geometry)}, ` +
           `${Math.round((r.durationS / 60) * 1.15)}, ${(r.distanceM / 1000).toFixed(2)}, ` +
           `${deriveDifficulty(r.distanceM / 1000, hazards.length * 2)}, ${j(deriveSpeedProfile(r.speedsMps))}, ` +
           `${j(deriveObservationZones(r.coords))}, ${j(buildNavSteps(r.steps))} from test_centres where name = '${esc(c.name)}';`
@@ -266,16 +284,29 @@ async function main() {
           lines.push(
             `insert into hazards (id, route_id, lat, lng, type, description, severity) ` +
             `select gen_random_uuid(), id, ${h.lat}, ${h.lng}, '${h.type}', '${esc(h.description)}', '${h.severity}' ` +
-            `from routes where name = '${esc(`Route ${ri + 1} · ${ROUTE_NAMES[ri]}`)}' and centre_id = (select id from test_centres where name = '${esc(c.name)}');`
+            `from routes where name = '${esc(route.name)}' and centre_id = (select id from test_centres where name = '${esc(c.name)}');`
           );
         }
-        console.log(`ok: ${c.name} route ${ri + 1} (${(r.distanceM / 1000).toFixed(1)} km)`);
+        console.log(`  ok: ${route.name} (${(r.distanceM / 1000).toFixed(1)} km, ${plan.kinds.join("/")})`);
       } catch (e) {
-        console.warn(`SKIP ${c.name} route ${ri + 1}: ${(e as Error).message}`);
+        // Not a warning. This file is truncate-and-reload, so a route that is
+        // skipped here is a route that disappears from the app on the next
+        // push — and the run still ends with "wrote supabase/seed.sql".
+        failures.push(`${c.name} route ${ri + 1}: ${(e as Error).message}`);
+        console.error(`FAILED ${c.name} route ${ri + 1}: ${(e as Error).message}`);
       }
       await sleep(700); // be polite to the public OSRM server
     }
   }
+
+  if (failures.length) {
+    console.error(
+      `\n${failures.length} route(s) could not be fetched. supabase/seed.sql was NOT written,\n` +
+      `because writing it would silently drop them from the seed:\n  ${failures.join("\n  ")}`
+    );
+    process.exit(1);
+  }
+
   lines.push(SHOW_ME_TELL_ME_SQL, MANOEUVRES_SQL, "commit;");
   writeFileSync("supabase/seed.sql", lines.join("\n"));
   console.log("wrote supabase/seed.sql");
