@@ -2,6 +2,10 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-
 import type { LatLng } from "@/lib/geo";
 import type { Route } from "@/types/db";
 
+// Each test drives a real GPS track through the screen a fix at a time, so the
+// file runs to about 12 s under full-suite parallelism.
+jest.setTimeout(20000);
+
 jest.mock("@rnmapbox/maps", () => require("../../test/rnmapboxMock"));
 jest.mock("expo-location", () => require("../../test/locationMock"));
 jest.mock("expo-speech", () => ({ speak: jest.fn(), stop: jest.fn() }));
@@ -118,6 +122,7 @@ test("the drive begins only once the driver says so", async () => {
 test("standing on the start line does not finish the route", async () => {
   setLastKnownPosition(A.lat, A.lng);
   await mount();
+  await waitFor(() => expect(screen.getByText("Start")).toBeTruthy());
   await act(async () => { fireEvent.press(screen.getByText("Start")); });
   await drive([A, A, A]);
 
@@ -127,6 +132,7 @@ test("standing on the start line does not finish the route", async () => {
 test("driving the loop back round to the start finishes the route", async () => {
   setLastKnownPosition(A.lat, A.lng);
   await mount();
+  await waitFor(() => expect(screen.getByText("Start")).toBeTruthy());
   await act(async () => { fireEvent.press(screen.getByText("Start")); });
   await drive(LOOP);
 
@@ -155,6 +161,7 @@ test("a manoeuvre the driver never gets close to does not strand the drive", asy
   setLastKnownPosition(A.lat, A.lng);
   await mount();
 
+  await waitFor(() => expect(screen.getByText("Start")).toBeTruthy());
   await act(async () => { fireEvent.press(screen.getByText("Start")); });
   await drive(LOOP);
 
@@ -180,6 +187,12 @@ const beginAtStart = async () => {
   (require("expo-speech").speak as jest.Mock).mockClear();
   setLastKnownPosition(A.lat, A.lng);
   await mount();
+  // Waited for rather than read straight off the tree. The preview card only
+  // offers "Start" once the last known position has arrived and put the driver
+  // on the start line; until then it offers "Guide me to the start". mount()
+  // waits on the route name, which lands first, so reading immediately is a
+  // race — and one that only loses under full-suite parallelism.
+  await waitFor(() => expect(screen.getByText("Start")).toBeTruthy());
   await act(async () => { fireEvent.press(screen.getByText("Start")); });
 };
 

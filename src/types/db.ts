@@ -17,10 +17,34 @@ export type Centre = {
   id: string; name: string; address: string; lat: number; lng: number;
   pass_rate: number | null; pass_rate_history: number[]; test_types: string[]; region: string | null;
 };
+export type RoutePhaseName =
+  | "settle-in" | "junction-work" | "faster-road" | "independent" | "manoeuvre" | "return";
+
+/**
+ * One leg of a practice loop, as a slice of the route's own coordinates.
+ *
+ * `faster-road` and `manoeuvre` are missing for a centre with no such road or
+ * no street with room to stop, so this is the phases a route actually has —
+ * never a fixed six.
+ */
+export type RoutePhase = {
+  name: RoutePhaseName;
+  /**
+   * The OSM feature that anchored the phase, or "ring" for a synthetic compass
+   * point. A plain string rather than the seed script's FeatureKind union: the
+   * value is read back out of jsonb, so the app cannot vouch for it.
+   */
+  kind: string;
+  startIdx: number;
+  endIdx: number;
+};
+
 export type Route = {
   id: string; centre_id: string; name: string; geometry: GeoLineString;
   estimated_minutes: number | null; distance_km: number | null; difficulty: 1 | 2 | 3 | 4 | 5;
   speed_profile: SpeedProfileSegment[]; observation_zones: ObservationZone[]; steps: NavStep[];
+  /** Empty for every route seeded before the phase planner existed. */
+  phases?: RoutePhase[];
 };
 export type Hazard = {
   id: string; route_id: string; lat: number; lng: number;
