@@ -121,3 +121,45 @@ export function travelBearing(
   if (gpsCourse != null && gpsCourse >= 0) return gpsCourse;
   return null;
 }
+
+// How much of a route's length has to be behind the driver before arriving at
+// its final coordinate can mean the drive is over. Not 1.0: the trail index
+// stops at the last vertex the driver actually snapped to, and a car that
+// pulls in a few metres short of the polyline's end would otherwise never
+// finish.
+export const ROUTE_PROGRESS_MIN = 0.9;
+
+// The fraction of the route already driven, measured in metres rather than in
+// vertices. `cum` is cumulativeM(coords), which the screens memoise per route.
+//
+// Vertices would be the obvious thing to count and would quietly lie: OSRM
+// puts them densely round bends and sparsely along a straight, so a loop that
+// is half bends reads as far more driven than it is.
+export function routeProgress(cum: number[], trailIdx: number): number {
+  const total = cum[cum.length - 1] ?? 0;
+  if (total <= 0) return 0;
+  const i = Math.min(Math.max(trailIdx, 0), cum.length - 1);
+  return cum[i] / total;
+}
+
+/**
+ * Whether the drive is over.
+ *
+ * Two conditions, and they have to hold at the same moment, because every
+ * seeded route is a loop whose finish is its start — measured across the 400
+ * of them, the first and last coordinate are the same point to within 0.8 m.
+ * A radius on its own is therefore true while the car is still parked at the
+ * kerb, and progress on its own is true on the far side of the loop.
+ *
+ * Driven by the trail index rather than by advance()'s step index on purpose.
+ * The step index only moves when the driver passes within ADVANCE_RADIUS_M of
+ * each manoeuvre in turn; miss one — a wide roundabout, a dropped fix, a snap
+ * onto the return leg — and it sticks there for the rest of the drive, which
+ * makes arrival unreachable by construction. The trail index only needs the
+ * driver to be near the *line*.
+ */
+export function routeComplete(coords: LatLng[], cum: number[], pos: LatLng, trailIdx: number): boolean {
+  if (coords.length < 2) return false;
+  if (routeProgress(cum, trailIdx) < ROUTE_PROGRESS_MIN) return false;
+  return haversineM(pos, coords[coords.length - 1]) <= ARRIVE_M;
+}

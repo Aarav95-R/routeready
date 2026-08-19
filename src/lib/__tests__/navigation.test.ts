@@ -1,5 +1,5 @@
-import { advance, ADVANCE_RADIUS_M, destinationPoint, formatDistance, navZoom, NAV_ZOOM_NEAR, NAV_ZOOM_MID, NAV_ZOOM_FAR, remainingM, ROAD_BEARING_MIN_MPH, trailIndex, travelBearing } from "../navigation";
-import { haversineM } from "../geo";
+import { advance, ADVANCE_RADIUS_M, destinationPoint, formatDistance, navZoom, NAV_ZOOM_NEAR, NAV_ZOOM_MID, NAV_ZOOM_FAR, remainingM, ROAD_BEARING_MIN_MPH, routeComplete, ROUTE_PROGRESS_MIN, trailIndex, travelBearing } from "../navigation";
+import { cumulativeM, haversineM } from "../geo";
 import type { NavStep } from "@/types/db";
 
 const mk = (lat: number, lng: number, instruction: string, distanceM = 100): NavStep =>
@@ -142,4 +142,61 @@ test("travelBearing rejects the invalid GPS course iOS reports", () => {
 test("ROAD_BEARING_MIN_MPH is a walking-pace threshold", () => {
   expect(ROAD_BEARING_MIN_MPH).toBeGreaterThan(0);
   expect(ROAD_BEARING_MIN_MPH).toBeLessThan(10);
+});
+
+// ── Completing a route ────────────────────────────────────────────────────
+//
+// A seeded route is a loop: its last coordinate IS its first, so "near the
+// finish" is true while parked on the start line. These cover the two
+// conditions that have to hold together for the drive to be over.
+
+// A closed loop: 100 vertices out and back, ending exactly where it started.
+const loop = (() => {
+  const out = Array.from({ length: 51 }, (_, i) => ({ lat: 51.5 + i * 0.0002, lng: -0.1 }));
+  const back = Array.from({ length: 50 }, (_, i) => ({ lat: 51.51 - (i + 1) * 0.0002, lng: -0.1001 }));
+  return [...out, ...back, { lat: 51.5, lng: -0.1 }];
+})();
+const loopCum = cumulativeM(loop);
+
+test("routeComplete is false on the start line of a loop, before driving it", () => {
+  // The case the whole check exists for: standing on coords[0], which is also
+  // coords[n]. A radius alone would call this finished.
+  expect(routeComplete(loop, loopCum, { lat: 51.5, lng: -0.1 }, 0)).toBe(false);
+});
+
+test("routeComplete is false when back at the start but short of the distance", () => {
+  const idx = Math.round((loop.length - 1) * 0.7);
+  expect(routeComplete(loop, loopCum, loop[loop.length - 1], idx)).toBe(false);
+});
+
+test("routeComplete is true once the loop is driven and the driver is back", () => {
+  expect(routeComplete(loop, loopCum, loop[loop.length - 1], loop.length - 1)).toBe(true);
+});
+
+test("routeComplete is false at the far end of the loop, however much is driven", () => {
+  // 95% of the way round but still ~1 km from home: not finished.
+  const idx = Math.round((loop.length - 1) * 0.95);
+  expect(routeComplete(loop, loopCum, { lat: 51.505, lng: -0.1001 }, idx)).toBe(false);
+});
+
+test("routeComplete ends a straight there-and-stop leg, like the drive to the start", () => {
+  const line = Array.from({ length: 11 }, (_, i) => ({ lat: 51.5 + i * 0.001, lng: -0.1 }));
+  const cum = cumulativeM(line);
+  expect(routeComplete(line, cum, line[10], 10)).toBe(true);
+  expect(routeComplete(line, cum, line[0], 0)).toBe(false);
+});
+
+test("routeComplete tolerates GPS noise at the kerb", () => {
+  // ~20 m east of the finish, loop driven: still finished.
+  const near = destinationPoint(loop[loop.length - 1], 90, 20);
+  expect(routeComplete(loop, loopCum, near, loop.length - 1)).toBe(true);
+});
+
+test("routeComplete says no when there is no route", () => {
+  expect(routeComplete([], [], { lat: 51.5, lng: -0.1 }, 0)).toBe(false);
+});
+
+test("ROUTE_PROGRESS_MIN leaves room for a shortcut home but not for half a loop", () => {
+  expect(ROUTE_PROGRESS_MIN).toBeGreaterThan(0.75);
+  expect(ROUTE_PROGRESS_MIN).toBeLessThan(1);
 });

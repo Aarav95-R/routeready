@@ -59,8 +59,11 @@ export function formatInstruction(s: OsrmStep): string {
   }
 }
 
+// Stitched on the way out: an OSRM response with intermediate waypoints
+// arrives as several legs, and what the driver is taking is one drive. See
+// stitchLegs below.
 export function buildNavSteps(steps: OsrmStep[]): NavStep[] {
-  return steps.map((s) => ({
+  return stitchLegs(steps.map((s) => ({
     lat: s.maneuver.location[1],
     lng: s.maneuver.location[0],
     instruction: formatInstruction(s),
@@ -68,5 +71,48 @@ export function buildNavSteps(steps: OsrmStep[]): NavStep[] {
     type: s.maneuver.type,
     modifier: s.maneuver.modifier ?? "",
     distanceM: Math.round(s.distance ?? 0),
-  }));
+  })));
+}
+
+/**
+ * One drive out of OSRM's several legs.
+ *
+ * A route is fetched in a single call with intermediate waypoints — the
+ * seeded loops pass through three OSM features between leaving the test
+ * centre and returning to it — and OSRM answers with one leg per waypoint
+ * pair. Flattening those legs concatenates their steps, so every leg boundary
+ * lands an `arrive` and a `depart` in the middle of the drive: the driver is
+ * told "You have reached the end of the route" twice before they have, and
+ * then to "Head off" again from a road they are already on.
+ *
+ * The two are treated differently because they carry different things:
+ *
+ *   - A mid-route `arrive` is dropped. Measured across the 400 seeded routes
+ *     it carries 0 m (max 1 m), and it sits within 1.9 m of the `depart` that
+ *     follows it, so nothing geometric goes with it.
+ *   - A mid-route `depart` is *retyped*, never dropped. It carries the real
+ *     length of the road it starts — a median of 67 m and up to 3.1 km — and
+ *     remainingM() sums step.distanceM, so dropping it would count the drive
+ *     down to zero kilometres before the car got home.
+ *
+ * Idempotent, which is what lets it run in two places at once: inside
+ * buildNavSteps, so every future seed and every approach fetch is clean at
+ * source, and again at read time in the app, so the rows already in Supabase
+ * are fixed without a re-push.
+ */
+export function stitchLegs(steps: NavStep[]): NavStep[] {
+  const last = steps.length - 1;
+  const out: NavStep[] = [];
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    if (s.type === "arrive" && i !== last) continue;
+    if (s.type === "depart" && i !== 0) {
+      // Phrased exactly as formatInstruction's "continue" case, because that
+      // is what this step now is.
+      out.push({ ...s, type: "continue", instruction: s.road ? `Continue on ${s.road}` : "Continue" });
+      continue;
+    }
+    out.push(s);
+  }
+  return out;
 }

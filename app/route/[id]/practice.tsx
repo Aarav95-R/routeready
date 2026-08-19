@@ -10,10 +10,12 @@ import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
-import { advance, ANNOUNCE_M, ARRIVE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM } from "@/lib/navigation";
-import { bearingDeg, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
+import { advance, ANNOUNCE_M, ARRIVE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM, routeComplete } from "@/lib/navigation";
+import { bearingDeg, cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
+import { stitchLegs } from "@/lib/navsteps";
 import type { Hazard, NavStep, Route } from "@/types/db";
+import { ArrivalCard } from "@/ui/ArrivalCard";
 import { ManeuverBanner } from "@/ui/ManeuverBanner";
 import { RoutePreviewCard } from "@/ui/RoutePreviewCard";
 import { colors } from "@/ui/theme";
@@ -29,7 +31,12 @@ import { NavMap, NavMapHandle } from "@/ui/NavMap";
 // throttle) live in src/lib/navmap.ts, shared with mock.tsx, so tuning one
 // screen on device does not silently diverge from the other.
 
-type Phase = "preview" | "approach" | "route" | "finished";
+// "at-start" is the pause on the start line, after being guided there. It used
+// not to exist: reaching the start called beginRoute() straight from the GPS
+// callback, so the drive began itself while the phone was still in the
+// driver's hand. Nothing is narrated or counted in this phase — the watch
+// keeps running only so the map stays alive under the card.
+type Phase = "preview" | "approach" | "at-start" | "route" | "finished";
 
 export default function Practice() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -42,6 +49,10 @@ export default function Practice() {
   const [permissionDenied, setPermissionDenied] = useState(false);
 
   const [phase, setPhase] = useState<Phase>("preview");
+  // "Not yet" on the arrival card. The card gives way to a bar carrying the
+  // same action, so a learner who wants a minute at the kerb gets one without
+  // the drive becoming two taps away again.
+  const [held, setHeld] = useState(false);
   const [approach, setApproach] = useState<Directions | null>(null);
   const [fallback, setFallback] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -66,6 +77,13 @@ export default function Practice() {
   const fallbackRef = useRef(false);
   const routeLLRef = useRef<LatLng[]>([]);
   const routeStepsRef = useRef<NavStep[]>([]);
+  // cumulativeM of each leg's polyline, so routeComplete can measure progress
+  // in metres. Held per leg because the two legs are different lines.
+  const routeCumRef = useRef<number[]>([]);
+  const approachCumRef = useRef<number[]>([]);
+  // Latches the end of a leg. routeComplete stays true once it is true, and
+  // this callback runs several times a second.
+  const completedRef = useRef(false);
   const startRef = useRef<LatLng | null>(null);
   const indexRef = useRef(1);
   const trailRef = useRef(0);
@@ -91,7 +109,11 @@ export default function Practice() {
     () => (route?.geometry.coordinates ?? []).map(([lng, lat]) => ({ lat, lng })),
     [route]
   );
-  const routeSteps = useMemo(() => route?.steps ?? [], [route]);
+  // Stitched on the way in. The rows in Supabase were written by flattening
+  // OSRM's legs, so a loop planned through three waypoints carries three
+  // mid-route "You have reached the end of the route" steps — see stitchLegs.
+  const routeSteps = useMemo(() => stitchLegs(route?.steps ?? []), [route]);
+  const routeCum = useMemo(() => cumulativeM(routeLL), [routeLL]);
   const isLoop = useMemo(
     () => routeLL.length > 1 && haversineM(routeLL[0], routeLL[routeLL.length - 1]) < LOOP_CLOSE_M,
     [routeLL]
@@ -100,8 +122,9 @@ export default function Practice() {
   useEffect(() => {
     routeLLRef.current = routeLL;
     routeStepsRef.current = routeSteps;
+    routeCumRef.current = routeCum;
     startRef.current = routeLL[0] ?? null;
-  }, [routeLL, routeSteps]);
+  }, [routeLL, routeSteps, routeCum]);
 
   useEffect(() => {
     if (!routeLL.length) return;
@@ -129,6 +152,7 @@ export default function Practice() {
   const resetLeg = (startIndex: number) => {
     indexRef.current = startIndex;
     trailRef.current = 0;
+    completedRef.current = false;
     preparedRef.current = new Set();
     executedRef.current = new Set();
     setStepIndex(startIndex);
@@ -139,6 +163,15 @@ export default function Practice() {
     mapBearingSeededRef.current = false;
   };
 
+  // Reaching the start line. The drive does not begin here — the card does.
+  const reachStart = useCallback(() => {
+    phaseRef.current = "at-start";
+    setPhase("at-start");
+    setHeld(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Speech.speak("You've reached the start.", { language: "en-GB" });
+  }, []);
+
   const beginRoute = useCallback(() => {
     phaseRef.current = "route";
     fallbackRef.current = false;
@@ -146,8 +179,15 @@ export default function Practice() {
     setFallback(false);
     resetLeg(1);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Speech.speak("You've reached the start. Beginning the route.", { language: "en-GB" });
+    Speech.speak("Beginning the route.", { language: "en-GB" });
   }, []);
+
+  const finishRoute = useCallback(() => {
+    stopWatching();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    phaseRef.current = "finished";
+    setPhase("finished");
+  }, [stopWatching]);
 
   // Re-lock the camera onto the driver after they've panned the map.
   const recenter = () => {
@@ -164,6 +204,7 @@ export default function Practice() {
     const start = startRef.current;
     const coords = ph === "route" ? routeLLRef.current : approachRef.current?.coords ?? [];
     const steps = ph === "route" ? routeStepsRef.current : approachRef.current?.steps ?? [];
+    const cum = ph === "route" ? routeCumRef.current : approachCumRef.current;
     const isFallback = ph === "approach" && fallbackRef.current && !!start;
     const seeded = mapBearingSeededRef.current;
 
@@ -197,6 +238,23 @@ export default function Practice() {
     // even when the phone did not move.
     setIconRotation(result.iconRotation);
 
+    // Waiting on the start line for the driver to tap Begin. The map keeps up
+    // with them; nothing is narrated, and no leg is being navigated.
+    if (ph === "at-start") {
+      mapRef.current?.pushCamera(p, mapBearingRef.current, zoomRef.current);
+      return;
+    }
+
+    // The end of a leg, decided from the trail index rather than the step
+    // index — see routeComplete. Latched, because it stays true once true and
+    // this callback runs several times a second.
+    if (!isFallback && !completedRef.current && routeComplete(coords, cum, p, result.trailIdx)) {
+      completedRef.current = true;
+      if (ph === "approach") reachStart();
+      else finishRoute();
+      return;
+    }
+
     if (isFallback) {
       const d = haversineM(p, start!);
       setDirectDist(Math.round(d));
@@ -207,7 +265,7 @@ export default function Practice() {
       setCrowRot(bearingDeg(p, start!) - mapBearingRef.current);
       zoomRef.current = NAV_ZOOM_FAR;
       mapRef.current?.pushCamera(p, mapBearingRef.current, NAV_ZOOM_FAR);
-      if (d <= ARRIVE_M) beginRoute();
+      if (d <= ARRIVE_M && !completedRef.current) { completedRef.current = true; reachStart(); }
       return;
     }
 
@@ -243,16 +301,7 @@ export default function Practice() {
       }
     }
 
-    if (st!.arrived) {
-      if (ph === "approach") beginRoute();
-      else {
-        stopWatching();
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        phaseRef.current = "finished";
-        setPhase("finished");
-      }
-    }
-  }, [beginRoute, stopWatching]);
+  }, [reachStart, finishRoute]);
 
   const zoomToMe = async () => {
     try {
@@ -320,9 +369,11 @@ export default function Practice() {
       if (!me || !start) throw new Error("no fix");
       const dirs = await fetchDirections(me, start);
       approachRef.current = dirs; setApproach(dirs);
+      approachCumRef.current = cumulativeM(dirs.coords);
       fallbackRef.current = false; setFallback(false);
     } catch {
       approachRef.current = null; setApproach(null);
+      approachCumRef.current = [];
       fallbackRef.current = true; setFallback(true);
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -367,7 +418,7 @@ export default function Practice() {
         trailIdx={trailIdx}
         // The puck is the driver on the leg being driven: none while the route
         // is being previewed, and none once it has been finished.
-        pos={phase === "approach" || phase === "route" ? pos : null}
+        pos={phase === "preview" || phase === "finished" ? null : pos}
         iconRotation={iconRotation}
         follow={following}
         onFollowChange={setFollowing}
@@ -396,6 +447,29 @@ export default function Practice() {
           onStartHere={startDirectly}
           onBack={() => router.back()}
         />
+      )}
+
+      {/* ---------- AT THE START ---------- */}
+      {phase === "at-start" && route && (
+        held ? (
+          <View
+            className="absolute bottom-0 left-0 right-0 bg-card px-4 pt-3"
+            style={{ paddingBottom: insets.bottom + 12, shadowColor: "#221F1C", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -3 } }}
+          >
+            <Pressable onPress={beginRoute} className="min-h-[52px] items-center justify-center rounded-full bg-accent active:bg-accent-pressed">
+              <Text className="text-[16px] font-semibold text-white">Begin practice drive</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <ArrivalCard
+            title={route.name}
+            detail={`${route.distance_km?.toFixed(1)} km · ${route.estimated_minutes} min`}
+            primaryLabel="Begin practice drive"
+            onPrimary={beginRoute}
+            secondaryLabel="Not yet — hold here"
+            onSecondary={() => setHeld(true)}
+          />
+        )
       )}
 
       {/* ---------- APPROACH FALLBACK ---------- */}

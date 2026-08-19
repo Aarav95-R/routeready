@@ -39,3 +39,19 @@ test("buildNavSteps maps OSRM steps to NavStep shape", () => {
   });
   expect(steps[0].distanceM).toBe(241);
 });
+
+test("buildNavSteps stitches a multi-leg response into one drive", () => {
+  // What OSRM returns for a loop planned as centre -> feature -> centre.
+  const steps = buildNavSteps([
+    step("depart", undefined, "Watford Way", undefined, 120),
+    step("turn", "left", "The Broadway", undefined, 200),
+    step("arrive", undefined, "", undefined, 0),
+    step("depart", undefined, "The Broadway", undefined, 340),
+    step("turn", "right", "Watford Way", undefined, 180),
+    step("arrive", undefined, "", undefined, 0),
+  ]);
+
+  expect(steps.map((s) => s.type)).toEqual(["depart", "turn", "continue", "turn", "arrive"]);
+  expect(steps[2].instruction).toBe("Continue on The Broadway");
+  expect(steps[2].distanceM).toBe(340);
+});

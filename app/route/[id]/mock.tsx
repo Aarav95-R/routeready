@@ -11,10 +11,11 @@ import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
 import { useMockTest } from "@/stores/mockTestStore";
 import { EXAMINER_CATEGORIES, habitualWarnings, minorCountsByCategory, type MarkLevel } from "@/lib/examiner";
-import { bearingDeg, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
-import { advance, ANNOUNCE_M, ARRIVE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM } from "@/lib/navigation";
+import { bearingDeg, cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
+import { advance, ANNOUNCE_M, ARRIVE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM, routeComplete } from "@/lib/navigation";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
 import type { ObservationZone, Route } from "@/types/db";
+import { ArrivalCard } from "@/ui/ArrivalCard";
 import { EXAMINER_BAR_H, ExaminerBar, ExaminerCategoryList, ExaminerWarningPill } from "@/ui/ExaminerSheet";
 import { ManeuverBanner } from "@/ui/ManeuverBanner";
 import { NavMap, NavMapHandle } from "@/ui/NavMap";
@@ -28,7 +29,15 @@ import { colors } from "@/ui/theme";
 // Nothing is marked, timed or sampled before "test" — a fault cannot be scored
 // against a driver who has not been told the test has begun, and the clock used
 // to start the moment this screen opened.
-type Leg = "preview" | "approach" | "test";
+// "at-start" is the pause on the start line, after being guided there. It
+// used not to exist: reaching the start called beginTest() straight from the
+// GPS callback, so the clock started and the first fault became markable while
+// the phone was still in the driver's hand. The store stays idle throughout.
+//
+// There is no matching leg at the other end. Closing the loop is not a
+// decision — the driver is back at the test centre and the drive is over — so
+// the test scores itself and leaves for the result screen.
+type Leg = "preview" | "approach" | "at-start" | "test";
 
 // The collapsed sheet is gorhom's handle — container padding 10 pt top and
 // bottom plus a 4 pt indicator (node_modules/@gorhom/bottom-sheet/src/
@@ -123,6 +132,10 @@ export default function Mock() {
   // test that has not started. It is handed over in beginTest.
   const [route, setRoute] = useState<Route | null>(null);
   const [leg, setLeg] = useState<Leg>("preview");
+  // "Not yet" on the arrival card. The card gives way to a bar carrying the
+  // same action, so a learner who wants a minute at the kerb gets one without
+  // the test becoming two taps away again.
+  const [held, setHeld] = useState(false);
   const [clock, setClock] = useState("0:00");
   const [pos, setPos] = useState<LatLng | null>(null);
   const [trailIdx, setTrailIdx] = useState(0);
@@ -159,6 +172,14 @@ export default function Mock() {
   const preparedRef = useRef(new Set<number>());
   const executedRef = useRef(new Set<number>());
   const routeLLRef = useRef<LatLng[]>([]);
+  // cumulativeM of each leg's polyline, so routeComplete can measure progress
+  // in metres. Held per leg because the two legs are different lines.
+  const routeCumRef = useRef<number[]>([]);
+  const approachCumRef = useRef<number[]>([]);
+  // Latches the end of a leg. routeComplete stays true once it is true, and
+  // the watch fires several times a second — without this the test would be
+  // scored again on every fix and the result screen stacked on itself.
+  const completedRef = useRef(false);
   const trailRef = useRef(0);
   const mapBearingRef = useRef(0);            // what the map is rotated to: travel direction only
   const mapBearingSeededRef = useRef(false);  // first fix snaps straight to target, no ease-in
@@ -202,11 +223,14 @@ export default function Mock() {
     [routeLL]
   );
 
+  const routeCum = useMemo(() => cumulativeM(routeLL), [routeLL]);
+
   useEffect(() => {
     routeLLRef.current = routeLL;
+    routeCumRef.current = routeCum;
     routeRef.current = route;
     startRef.current = routeLL[0] ?? null;
-  }, [routeLL, route]);
+  }, [routeLL, routeCum, route]);
 
   // routeLL is a dependency because it arrives after the first render: the fit
   // is a no-op until there is a route to frame.
@@ -226,11 +250,21 @@ export default function Mock() {
     })();
   }, [routeLL.length]);
 
-  // The drive proper begins here: from the Start buttons, or on reaching the
-  // start line after being guided to it. This is the only place the store is
-  // told anything, so it is also the moment the clock, the samples and the
-  // marks come alive.
-  const beginTest = useCallback((spoken: boolean) => {
+  // Reaching the start line after being guided to it. The test does not begin
+  // here — the card does.
+  const reachStart = useCallback(() => {
+    legRef.current = "at-start";
+    setLeg("at-start");
+    setHeld(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Speech.speak("You have reached the start.", { language: "en-GB" });
+  }, []);
+
+  // The drive proper begins here, and only ever from a tap: the Start buttons
+  // on the preview card, or Begin on the arrival card. This is the only place
+  // the store is told anything, so it is also the moment the clock, the
+  // samples and the marks come alive.
+  const beginTest = useCallback(() => {
     const r = routeRef.current;
     if (!r) return;
     legRef.current = "test";
@@ -238,12 +272,13 @@ export default function Mock() {
     start(r);
     trailRef.current = 0;
     setTrailIdx(0);
+    completedRef.current = false;
     // A new leg means a new active polyline, which can carry an unrelated
     // bearing — re-seed rather than easing round from the approach's.
     mapBearingSeededRef.current = false;
     zoomRef.current = NAV_ZOOM_MID;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (spoken) Speech.speak("You've reached the start. The mock test begins now.", { language: "en-GB" });
+    Speech.speak("The mock test begins now.", { language: "en-GB" });
   }, [start]);
 
   // The drive to the start line. Narrated turn by turn and never marked: no
@@ -278,6 +313,17 @@ export default function Mock() {
     mapBearingSeededRef.current = true;
     setIconRotation(result.iconRotation);
 
+    // The start line is reached geometrically, not by walking the step index —
+    // see routeComplete. A step index only moves when the driver passes within
+    // 25 m of each manoeuvre in turn, and one missed junction used to strand
+    // the handover for the rest of the drive.
+    if (!isFallback && !completedRef.current
+        && routeComplete(dirs?.coords ?? [], approachCumRef.current, p, result.trailIdx)) {
+      completedRef.current = true;
+      reachStart();
+      return;
+    }
+
     // No directions could be fetched, so there is nothing to follow but the
     // direction of the start. The arrow is screen-space, so it is measured
     // against the bearing the map is actually rotated to.
@@ -287,7 +333,7 @@ export default function Mock() {
       setCrowRot(bearingDeg(p, startPt!) - mapBearingRef.current);
       zoomRef.current = NAV_ZOOM_FAR;
       mapRef.current?.pushCamera(p, mapBearingRef.current, NAV_ZOOM_FAR);
-      if (d <= ARRIVE_M) beginTest(true);
+      if (d <= ARRIVE_M && !completedRef.current) { completedRef.current = true; reachStart(); }
       return;
     }
 
@@ -320,11 +366,25 @@ export default function Mock() {
       }
     }
 
-    if (st.arrived) beginTest(true);
-  }, [beginTest]);
+  }, [reachStart]);
+
+  // The end of the drive. No confirmation and no guard on the samples: unlike
+  // the Finish button, which can be pressed from a car that never got a fix,
+  // getting here at all requires the trail index to have travelled the length
+  // of the route, and that only moves on real fixes.
+  //
+  // The watch is not torn down here — the screen is leaving, and its unmount
+  // effect owns that, exactly as the Finish button leaves it to.
+  const endTest = useCallback(() => {
+    finish();
+    router.replace(`/route/${id}/result`);
+  }, [finish, router, id]);
 
   const onPosition = useCallback((loc: Location.LocationObject) => {
     if (legRef.current === "approach") { onApproachPosition(loc); return; }
+    // Waiting on the start line for the driver to tap Begin. Nothing reaches
+    // the store: a fault cannot be scored against a test that has not started.
+    if (legRef.current === "at-start") { setPos({ lat: loc.coords.latitude, lng: loc.coords.longitude }); return; }
 
     const c = loc.coords;
     // Scoring sees the raw fix, never the snapped one. Snapping assumes you are
@@ -370,7 +430,15 @@ export default function Mock() {
     setTrailIdx(result.trailIdx);
     zoomRef.current = result.zoom;
     mapRef.current?.pushCamera(result.pos, result.mapBearing, result.zoom);
-  }, [onSample, onApproachPosition]);
+
+    // Back at the test centre with the loop behind them: the drive is over,
+    // and unlike setting off that is not a decision anyone needs to confirm.
+    // Latched, because routeComplete stays true once true.
+    if (!completedRef.current && routeComplete(routeLLRef.current, routeCumRef.current, result.pos, result.trailIdx)) {
+      completedRef.current = true;
+      endTest();
+    }
+  }, [onSample, onApproachPosition, endTest]);
 
   const stopWatching = useCallback(() => {
     subRef.current?.remove();
@@ -460,7 +528,7 @@ export default function Mock() {
 
   const startDirectly = useCallback(async () => {
     if (!(await ensurePermission())) return;
-    beginTest(false);
+    beginTest();
     await startWatch();
   }, [beginTest, startWatch]);
 
@@ -482,9 +550,11 @@ export default function Mock() {
       if (!me || !startPt) throw new Error("no fix");
       const dirs = await fetchDirections(me, startPt);
       approachRef.current = dirs; setApproach(dirs);
+      approachCumRef.current = cumulativeM(dirs.coords);
       fallbackRef.current = false; setFallback(false);
     } catch {
       approachRef.current = null; setApproach(null);
+      approachCumRef.current = [];
       fallbackRef.current = true; setFallback(true);
     }
 
@@ -656,6 +726,29 @@ export default function Mock() {
           onStartHere={startDirectly}
           onBack={() => router.back()}
         />
+      )}
+
+      {/* ---------- AT THE START ---------- */}
+      {leg === "at-start" && route && (
+        held ? (
+          <View
+            className="absolute bottom-0 left-0 right-0 bg-card px-4 pt-3"
+            style={{ paddingBottom: insets.bottom + 12, shadowColor: "#221F1C", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -3 } }}
+          >
+            <Pressable onPress={beginTest} className="min-h-[52px] items-center justify-center rounded-full bg-accent active:bg-accent-pressed">
+              <Text className="text-[16px] font-semibold text-white">Begin mock test</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <ArrivalCard
+            title={route.name}
+            detail={`${route.distance_km?.toFixed(1)} km · ${route.estimated_minutes} min`}
+            primaryLabel="Begin mock test"
+            onPrimary={beginTest}
+            secondaryLabel="Not yet — hold here"
+            onSecondary={() => setHeld(true)}
+          />
+        )
       )}
 
       {/* ---------- HEADING TO THE START ---------- */}
