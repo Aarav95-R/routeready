@@ -11,9 +11,10 @@ import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
 import { useMockTest } from "@/stores/mockTestStore";
 import { EXAMINER_CATEGORIES, habitualWarnings, minorCountsByCategory, type MarkLevel } from "@/lib/examiner";
-import { bearingDeg, cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
+import { bearingDeg, cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath } from "@/lib/geo";
 import { advance, ANNOUNCE_M, ARRIVE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM, routeComplete } from "@/lib/navigation";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
+import { chooseRejoin, departureLine, initialOffRoute, REJOINED_LINE, SKIP_WARN_M, stepOffRoute, type OffRouteState, type Rejoin } from "@/lib/offRoute";
 import type { ObservationZone, Route } from "@/types/db";
 import { ArrivalCard } from "@/ui/ArrivalCard";
 import { EXAMINER_BAR_H, ExaminerBar, ExaminerCategoryList, ExaminerWarningPill } from "@/ui/ExaminerSheet";
@@ -99,6 +100,11 @@ const CONTROLS_BOTTOM = 150;
 //   banner       [insets.top + 6,  insets.top + 40]
 //   zone toast    insets.top + 56                    one line, ~28 pt
 //   warning pill  insets.top + 92                     36 pt clear of the toast
+// While off route the amber banner takes the top slot, and everything
+// stacked below it moves down by its height plus a gap. Measured from
+// ManeuverBanner: the eyebrow strip is 20 pt and the manoeuvre row is a
+// 48 pt tile in 14 pt of padding, so 96 clears both with the gap included.
+const OFF_ROUTE_BANNER_H = 96;
 const ZONE_TOAST_TOP_GAP = 56;
 const PILL_TOP_GAP = 92;
 
@@ -124,8 +130,15 @@ export default function Mock() {
   const insets = useSafeAreaInsets();
   const {
     startedAt, activeZoneIdx, marks, samples,
-    start, onSample, tapMirrors, addMark, undoMark, finish,
+    start, onSample, tapMirrors, addMark, undoMark, finish, addDeviation,
   } = useMockTest();
+
+  // The way back onto the route, and how far off it we are.
+  const [returnLeg, setReturnLeg] = useState<Directions | null>(null);
+  const [offPhase, setOffPhase] = useState<OffRouteState["phase"]>("on-route");
+  // Metres of route the chosen rejoin skips, or null when nothing worth
+  // naming is skipped. State, not a ref — the banner renders from it.
+  const [skippedM, setSkippedM] = useState<number | null>(null);
 
   // Held here rather than read back off the store: the route has to be drawn
   // and framed while it is being previewed, and the store must not know about a
@@ -187,6 +200,15 @@ export default function Mock() {
   const compassSeededRef = useRef(false);
   const lastIconRef = useRef(0);
   const zoomRef = useRef(NAV_ZOOM_MID);
+  const offRef = useRef<OffRouteState>(initialOffRoute);
+  const returnLegRef = useRef<Directions | null>(null);
+  const rejoinRef = useRef<Rejoin | null>(null);
+  // Guards the directions fetch: the GPS callback runs several times a second
+  // and a departure stays true until the driver is back on the line.
+  const fetchingReturnRef = useRef(false);
+  // When the current departure began, so its duration can be recorded. Null
+  // whenever the driver is on the route.
+  const offSinceRef = useRef<number | null>(null);
   // Where a mark gets stamped. The raw fix, like everything else the store is
   // told: a mark is evidence of what happened, not a point on the drawn line.
   const posRef = useRef<LatLng | null>(null);
@@ -264,12 +286,43 @@ export default function Mock() {
   // on the preview card, or Begin on the arrival card. This is the only place
   // the store is told anything, so it is also the moment the clock, the
   // samples and the marks come alive.
+  /**
+   * Fetch the way back onto the route.
+   *
+   * Never awaited by the GPS callback: that runs on every fix, and awaiting
+   * here would serialise the whole nav loop behind a network call.
+   */
+  const fetchReturnLeg = useCallback(async (from: LatLng, rejoin: Rejoin) => {
+    if (fetchingReturnRef.current) return;
+    fetchingReturnRef.current = true;
+    try {
+      const dirs = await fetchDirections(from, rejoin.point);
+      returnLegRef.current = dirs;
+      setReturnLeg(dirs);
+    } catch {
+      // No directions available. The banner still says "off route" and the
+      // route stays drawn, which is more use at the wheel than an error.
+      returnLegRef.current = null;
+      setReturnLeg(null);
+    } finally {
+      fetchingReturnRef.current = false;
+    }
+  }, []);
+
   const beginTest = useCallback(() => {
     const r = routeRef.current;
     if (!r) return;
     legRef.current = "test";
     setLeg("test");
     start(r);
+    // A departure on the drive to the start must not carry into the test.
+    offRef.current = initialOffRoute;
+    rejoinRef.current = null;
+    returnLegRef.current = null;
+    offSinceRef.current = null;
+    setOffPhase("on-route");
+    setReturnLeg(null);
+    setSkippedM(null);
     trailRef.current = 0;
     setTrailIdx(0);
     completedRef.current = false;
@@ -431,6 +484,66 @@ export default function Mock() {
     zoomRef.current = result.zoom;
     mapRef.current?.pushCamera(result.pos, result.mapBearing, result.zoom);
 
+    // Off-route. Identical guidance to the practice screen — a learner mid-turn
+    // needs the same help whether or not the run is being scored — but here
+    // each departure is also recorded, because a mock result that quietly hides
+    // a wandered drive is not worth taking. It is not a fault and never reaches
+    // the marks.
+    {
+      const coords = routeLLRef.current;
+      const departedBefore = offRef.current.departedIdx;
+      const routeSnap = snapToPath(coords, raw, trailRef.current);
+      const legSnap = returnLegRef.current
+        ? snapToPath(returnLegRef.current.coords, raw, 0, returnLegRef.current.coords.length)
+        : null;
+      const { state, event } = stepOffRoute(offRef.current, {
+        routeDistM: routeSnap?.distM ?? Infinity,
+        returnLegDistM: legSnap?.distM ?? null,
+        trailIdx: result.trailIdx,
+        returnLegReady: returnLegRef.current !== null,
+      });
+      offRef.current = state;
+      setOffPhase(state.phase);
+
+      if (event === "departed" || event === "recompute") {
+        const rejoin = chooseRejoin(coords, routeCumRef.current, result.pos, departedBefore ?? result.trailIdx, mapBearingRef.current);
+        rejoinRef.current = rejoin;
+        returnLegRef.current = null;
+        setReturnLeg(null);
+        setSkippedM(rejoin && rejoin.skippedM >= SKIP_WARN_M ? rejoin.skippedM : null);
+        if (rejoin) {
+          if (event === "departed") {
+            offSinceRef.current = Date.now();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            Speech.speak(departureLine(rejoin.skippedM), { language: "en-GB" });
+          }
+          void fetchReturnLeg(result.pos, rejoin);
+        }
+      }
+
+      if (event === "rejoined") {
+        // Recorded before the refs are cleared, and against the index the
+        // driver actually left at rather than where they came back.
+        const since = offSinceRef.current;
+        if (since !== null) {
+          addDeviation({
+            atIdx: departedBefore ?? result.trailIdx,
+            lat: result.pos.lat,
+            lng: result.pos.lng,
+            skippedM: rejoinRef.current?.skippedM ?? 0,
+            seconds: Math.round((Date.now() - since) / 1000),
+          });
+        }
+        offSinceRef.current = null;
+        rejoinRef.current = null;
+        returnLegRef.current = null;
+        setReturnLeg(null);
+        setSkippedM(null);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Speech.speak(REJOINED_LINE, { language: "en-GB" });
+      }
+    }
+
     // Back at the test centre with the loop behind them: the drive is over,
     // and unlike setting off that is not a decision anyone needs to confirm.
     // Latched, because routeComplete stays true once true.
@@ -438,7 +551,7 @@ export default function Mock() {
       completedRef.current = true;
       endTest();
     }
-  }, [onSample, onApproachPosition, endTest]);
+  }, [onSample, onApproachPosition, endTest, addDeviation, fetchReturnLeg]);
 
   const stopWatching = useCallback(() => {
     subRef.current?.remove();
@@ -663,7 +776,13 @@ export default function Mock() {
   const sheetSnapPoints = useMemo(() => [sheetCollapsedH, "85%"], [sheetCollapsedH]);
 
   const logoBottom = sheetCollapsedH + LOGO_GAP;
-  const pillTop = insets.top + PILL_TOP_GAP;
+  // "straying" is deliberately excluded: it is the silent phase, and a driver
+  // who has merely clipped a wide roundabout should see nothing change.
+  const offRoute = leg === "test" && (offPhase === "off-route" || offPhase === "returning");
+  // Everything stacked under the top slot moves down while the amber banner
+  // occupies it, so the clock and the zone toast are never hidden behind it.
+  const offRouteShift = offRoute ? OFF_ROUTE_BANNER_H : 0;
+  const pillTop = insets.top + PILL_TOP_GAP + offRouteShift;
   const controlsBottom = CONTROLS_BOTTOM + insets.bottom;
 
   const distToStart = previewLoc && routeLL[0] ? haversineM(previewLoc, routeLL[0]) : null;
@@ -709,6 +828,8 @@ export default function Mock() {
         // and drawn over the approach they are discs floating off the line
         // being driven, marking places the driver is not being assessed on yet.
         observationZones={leg === "approach" ? NO_ZONES : observationZones}
+        returnLL={returnLeg?.coords ?? undefined}
+        dimRoute={offRoute}
         // The examiner sheet only exists once the test does; on the other legs
         // NavMap's own default clears the bottom chrome.
         logoBottom={leg === "test" ? logoBottom : undefined}
@@ -808,9 +929,29 @@ export default function Mock() {
       {/* ---------- MOCK TEST ---------- */}
       {leg === "test" && (
       <>
+      {offRoute && (
+        <View className="absolute left-3 right-3 z-10" style={{ top: insets.top + 6 }}>
+          <ManeuverBanner
+            tone="off"
+            eyebrow="Off route"
+            // Until the return leg lands there is no turn to give, so the
+            // banner says what is happening rather than showing a stale
+            // instruction from the route the driver has left.
+            fallback={!returnLeg}
+            fallbackText="Rejoining the route"
+            step={returnLeg?.steps?.[0]}
+            next={returnLeg?.steps?.[1]}
+            distanceM={null}
+            distanceLabel={
+              skippedM !== null ? `Rejoining — ${formatDistance(skippedM)} skipped` : "Rejoining ahead"
+            }
+          />
+        </View>
+      )}
+
       <View
         className="absolute left-4 right-4 flex-row items-center justify-between rounded-xl bg-card px-4 py-2.5"
-        style={{ top: insets.top + 6, shadowColor: "#221F1C", shadowOpacity: 0.12, shadowRadius: 12 }}
+        style={{ top: insets.top + 6 + offRouteShift, shadowColor: "#221F1C", shadowOpacity: 0.12, shadowRadius: 12 }}
       >
         <View className="flex-row items-center gap-2">
           <View className="h-2 w-2 rounded-full bg-danger" />
@@ -825,7 +966,7 @@ export default function Mock() {
       {activeZoneIdx !== null && (
         <Text
           className="absolute self-center rounded-full bg-card/90 px-4 py-1.5 text-[11px] font-semibold text-slate-600"
-          style={{ top: insets.top + ZONE_TOAST_TOP_GAP }}
+          style={{ top: insets.top + ZONE_TOAST_TOP_GAP + offRouteShift }}
         >
           Observation zone — check your mirrors
         </Text>

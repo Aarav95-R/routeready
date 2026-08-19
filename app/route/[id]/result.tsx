@@ -6,6 +6,7 @@ import Animated from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { saveProgress } from "@/services/progressRepo";
 import { creditsByCategory, faultElapsedMs, formatElapsed } from "@/lib/resultView";
+import { formatDistance } from "@/lib/navigation";
 import { useMockTest } from "@/stores/mockTestStore";
 import { Button } from "@/ui/Button";
 import { Card } from "@/ui/Card";
@@ -15,7 +16,7 @@ import { FACES } from "@/ui/type";
 export default function Result() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { result, reset, marks, startedAt } = useMockTest();
+  const { result, reset, marks, startedAt, deviations } = useMockTest();
 
   useEffect(() => {
     if (!result) return;
@@ -25,8 +26,11 @@ export default function Result() {
     saveProgress({
       route_id: id, mock_test_score: result.score,
       mistakes: result.tags, duration_seconds: result.durationSeconds,
+      // Recorded alongside the faults, never among them: leaving the route is
+      // not on the DVSA marking sheet, so it cannot move the score.
+      deviations,
     }).catch(() => {});
-  }, [result, id]);
+  }, [result, id, deviations]);
 
   if (!result) return null;
   const mins = Math.floor(result.durationSeconds / 60);
@@ -88,6 +92,24 @@ export default function Result() {
         {result.faults.length === 0 && (
           <Animated.View entering={enterAfter(450)} className="w-full">
             <Card><Text className="text-center text-[13px] font-semibold text-accent">A clean drive — no faults recorded</Text></Card>
+          </Animated.View>
+        )}
+        {deviations.length > 0 && (
+          <Animated.View entering={enterAfter(500 + result.faults.length * 90)} className="w-full">
+            <Card className="flex-row items-center justify-between">
+              <View className="flex-1 pr-3">
+                <Text className="text-[14px] font-semibold text-primary">
+                  {deviations.length === 1 ? "Went off route once" : `Went off route ${deviations.length} times`}
+                </Text>
+                {/* Said plainly, and not scored. The learner is being told
+                    there is route left worth re-driving, not marked down for
+                    something no examiner marks. */}
+                <Text className="text-[11px] text-slate-500">
+                  {formatDistance(deviations.reduce((s, d) => s + d.skippedM, 0))} of the route not driven · not a fault
+                </Text>
+              </View>
+              <Text className="text-[10px] font-bold uppercase text-warning">off route</Text>
+            </Card>
           </Animated.View>
         )}
         <View className="mt-2 w-full">

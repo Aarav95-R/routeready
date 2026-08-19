@@ -27,9 +27,38 @@ export type Hazard = {
   type: "roundabout" | "zebra" | "narrow" | "junction"; description: string;
   severity: "low" | "medium" | "high";
 };
+/** One numbered step of a manoeuvre, as the `steps` jsonb array holds it. */
+export type ManoeuvreStep = { title: string; detail: string };
+export type Manoeuvre = { id: string; name: string; steps: ManoeuvreStep[]; tips: string[] };
+/**
+ * One departure from the route during a drive.
+ *
+ * Not a DVSA fault — leaving the examiner's route is not on the marking sheet,
+ * so this never reaches `mistakes` or `mock_test_score`. It is recorded
+ * because a mock result that quietly hides a wandered drive is not worth
+ * taking.
+ */
+export type Deviation = {
+  /** The route vertex the driver left at, into `geometry.coordinates`. */
+  atIdx: number;
+  lat: number;
+  lng: number;
+  /** Metres of route skipped by the rejoin that followed. */
+  skippedM: number;
+  /** How long they were off the route. */
+  seconds: number;
+};
+
 export type ProgressEntry = {
   id?: string; user_id: string; route_id: string; completed_at?: string;
   mock_test_score: number | null; mistakes: string[]; duration_seconds: number;
+  /**
+   * Optional rather than defaulted, because every row written before the
+   * column existed genuinely has none — and to a reader "[]" and "never
+   * recorded" say the same thing, so pretending otherwise would need a
+   * backfill that changes nothing anyone can see.
+   */
+  deviations?: Deviation[];
 };
 
 /**
@@ -44,4 +73,30 @@ export type ProgressEntry = {
  */
 export type ProgressEntryWithRoute = ProgressEntry & {
   routes: { name: string; centre_id: string; centres: { name: string } | null } | null;
+};
+
+/**
+ * One option under a quiz question. Exactly one per question is correct.
+ *
+ * These are not DVSA content. The agency publishes the questions and the model
+ * answers, because the real test is verbal and has no options — the three
+ * wrong ones per question are written for this app, each bending a single real
+ * detail out of true so that picking it means missing the thing that actually
+ * gets marked.
+ */
+export type QuizChoice = { text: string; correct: boolean };
+
+export type QuizCategory = "safety" | "inside_car" | "under_bonnet";
+
+export type QuizQuestion = {
+  id: string;
+  category: QuizCategory;
+  /** "Tyre tread and condition" — the first line of the row. */
+  topic: string;
+  /** The DVSA wording, in full. Shown in a round, not in the list. */
+  question: string;
+  /** The DVSA model answer. What the learner says out loud. */
+  answer: string;
+  is_show_me: boolean;
+  choices: QuizChoice[];
 };

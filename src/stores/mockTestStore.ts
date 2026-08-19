@@ -3,7 +3,7 @@ import { isInZone } from "@/lib/geo";
 import type { LatLng } from "@/lib/geo";
 import { aggregate, detectObservationFaults, detectSpeedingFaults, GpsSample, MockResult } from "@/lib/scoring/engine";
 import { creditCount, habitualWarnings, marksToFaults, type Mark, type MarkLevel } from "@/lib/examiner";
-import type { Route } from "@/types/db";
+import type { Deviation, Route } from "@/types/db";
 
 type MockPhase = "idle" | "running" | "finished";
 
@@ -17,11 +17,19 @@ type MockState = {
   zoneOutcomes: { zoneIdx: number; tapped: boolean }[];
   result: MockResult | null;
   marks: Mark[];
+  /**
+   * Off-route departures during this run. Lives in the store rather than in
+   * mock.tsx because the screen navigates away to the result before anything
+   * is saved, and a ref goes with it.
+   */
+  deviations: Deviation[];
   start: (route: Route, now?: number) => void;
   onSample: (s: GpsSample) => void;
   tapMirrors: () => void;
   addMark: (category: string, level: MarkLevel, at?: LatLng | null, now?: number) => void;
   undoMark: () => void;
+  /** Record one departure. Never a mark: leaving the route is not a fault. */
+  addDeviation: (d: Deviation) => void;
   warnings: () => { category: string; label: string; count: number }[];
   finish: (now?: number) => MockResult;
   reset: () => void;
@@ -30,7 +38,7 @@ type MockState = {
 const initial = {
   phase: "idle" as MockPhase, route: null, startedAt: 0, samples: [],
   activeZoneIdx: null, activeTapped: false, zoneOutcomes: [], result: null,
-  marks: [] as Mark[],
+  marks: [] as Mark[], deviations: [] as Deviation[],
 };
 
 export const useMockTest = create<MockState>((set, get) => ({
@@ -62,6 +70,7 @@ export const useMockTest = create<MockState>((set, get) => ({
   // Mis-taps in a moving car are certain, and a stray major would otherwise
   // fail the test silently.
   undoMark: () => set({ marks: get().marks.slice(0, -1) }),
+  addDeviation: (d) => set({ deviations: [...get().deviations, d] }),
 
   warnings: () => habitualWarnings(get().marks),
 

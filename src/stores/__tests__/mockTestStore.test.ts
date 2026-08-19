@@ -105,3 +105,29 @@ test("repeated minors on one category surface as a warning", () => {
     { category: "mirrors", label: "Use of mirrors", count: HABITUAL_MINOR_THRESHOLD },
   ]);
 });
+
+test("a drive with no departures records none", () => {
+  expect(useMockTest.getState().deviations).toEqual([]);
+});
+
+test("departures accumulate in the order they happened", () => {
+  const { addDeviation } = useMockTest.getState();
+  addDeviation({ atIdx: 40, lat: 51.7, lng: -0.3, skippedM: 380, seconds: 47 });
+  addDeviation({ atIdx: 210, lat: 51.75, lng: -0.34, skippedM: 240, seconds: 22 });
+  const d = useMockTest.getState().deviations;
+  expect(d).toHaveLength(2);
+  expect(d.map((x) => x.atIdx)).toEqual([40, 210]);
+  expect(d[0].skippedM).toBe(380);
+});
+
+test("starting a new test clears the previous run's departures", () => {
+  useMockTest.getState().addDeviation({ atIdx: 40, lat: 51.7, lng: -0.3, skippedM: 380, seconds: 47 });
+  useMockTest.getState().start({ observation_zones: [], speed_profile: [] } as never);
+  expect(useMockTest.getState().deviations).toEqual([]);
+});
+
+test("a departure is never scored as a fault", () => {
+  const before = useMockTest.getState().marks.length;
+  useMockTest.getState().addDeviation({ atIdx: 40, lat: 51.7, lng: -0.3, skippedM: 380, seconds: 47 });
+  expect(useMockTest.getState().marks).toHaveLength(before);
+});
