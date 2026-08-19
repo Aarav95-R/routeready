@@ -15,6 +15,9 @@
  * Pure — no React, no network. The screens own the fetching and the speaking.
  */
 
+import { bearingDeg, haversineM, turnAngleDeg, type LatLng } from "./geo";
+import { formatDistance } from "./navigation";
+
 /** Past this distance from the line the driver is a candidate for "left the route". */
 export const OFF_ROUTE_ENTER_M = 45;
 /**
@@ -120,4 +123,89 @@ export function stepOffRoute(prev: OffRouteState, input: OffRouteInput): OffRout
       return { state: { ...prev, streak: 0 }, event: "none" };
     }
   }
+}
+
+/**
+ * What a metre of skipped route costs, against a metre of driving to reach the
+ * rejoin. Above 1 so that skipping is never free — at 1.0 the scorer would
+ * happily throw away half the loop to save a single metre of detour — and not
+ * far above it, because a driver who has genuinely overshot should not be sent
+ * backwards down the road to save route they can no longer reach.
+ */
+export const SKIP_PENALTY = 1.5;
+
+/**
+ * A rejoin more than this far off the driver's heading is behind them, and
+ * reaching it means a U-turn. 120° rather than 90°: at exactly abeam, a point
+ * across a dual carriageway is usually still reachable at the next junction,
+ * and rejecting it would push the rejoin needlessly far down the route.
+ */
+export const BEHIND_DEG = 120;
+
+export type Rejoin = {
+  /** Index into the route polyline to rejoin at. */
+  idx: number;
+  point: LatLng;
+  /** Metres of route between where they left and where they rejoin. */
+  skippedM: number;
+};
+
+/**
+ * The cheapest point on the route ahead that does not require a U-turn.
+ *
+ * Candidates start at `departedIdx` and run to the end of the line. Rejoining
+ * *behind* the departure is deliberately not offered: that is the "drive back
+ * to where you went wrong" option, and on a missed roundabout exit it means
+ * instructing a learner to turn around, which this app should not do.
+ *
+ * `headingDeg` is the driver's course, or null when they are too slow for one
+ * to be meaningful (see travelBearing). Null disables the behind-you filter
+ * rather than rejecting everything: a stationary driver has no "behind".
+ */
+export function chooseRejoin(
+  coords: LatLng[],
+  cum: number[],
+  pos: LatLng,
+  departedIdx: number,
+  headingDeg: number | null,
+): Rejoin | null {
+  const from = Math.min(Math.max(departedIdx, 0), coords.length - 1);
+  if (from >= coords.length - 1) return null;
+
+  let best: Rejoin | null = null;
+  let bestScore = Infinity;
+
+  for (let i = from; i < coords.length; i++) {
+    const c = coords[i];
+    const reach = haversineM(pos, c);
+    // Below a metre there is no meaningful bearing to the candidate, and the
+    // driver is already on it.
+    if (headingDeg !== null && reach > 1) {
+      const off = Math.abs(turnAngleDeg(headingDeg, bearingDeg(pos, c)));
+      if (off > BEHIND_DEG) continue;
+    }
+    const skippedM = Math.max(0, (cum[i] ?? 0) - (cum[from] ?? 0));
+    const score = reach + skippedM * SKIP_PENALTY;
+    if (score < bestScore) {
+      bestScore = score;
+      best = { idx: i, point: c, skippedM: Math.round(skippedM) };
+    }
+  }
+
+  return best;
+}
+
+export const REJOINED_LINE = "Back on route.";
+
+/**
+ * What the app says when the driver has left the route.
+ *
+ * The distance is dropped below SKIP_WARN_M rather than rounded down to zero:
+ * a sentence ending "you'll miss about 0 m" is worse than one that does not
+ * mention it at all, and the number is only there to tell the learner they
+ * have some route left worth re-driving.
+ */
+export function departureLine(skippedM: number): string {
+  if (skippedM < SKIP_WARN_M) return "You've left the route. Getting you back on.";
+  return `You've left the route. Rejoining ahead — you'll miss about ${formatDistance(skippedM)}.`;
 }

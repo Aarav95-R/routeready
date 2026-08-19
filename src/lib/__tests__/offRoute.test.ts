@@ -6,6 +6,8 @@ import {
   type OffRouteInput,
   type OffRouteState,
 } from "../offRoute";
+import { chooseRejoin, departureLine, REJOINED_LINE, SKIP_WARN_M } from "../offRoute";
+import type { LatLng } from "../geo";
 
 const input = (over: Partial<OffRouteInput> = {}): OffRouteInput => ({
   routeDistM: 5,
@@ -105,4 +107,82 @@ test("coming back before the return leg arrives still counts as rejoined", () =>
   const r = feed(gone, { routeDistM: 5 }, 2);
   expect(r.state.phase).toBe("on-route");
   expect(r.event).toBe("rejoined");
+});
+
+// ── chooseRejoin ────────────────────────────────────────────────────────────
+
+// A straight eastbound line at 51.5N, one point roughly every 69 m.
+const straight: LatLng[] = Array.from({ length: 21 }, (_, i) => ({ lat: 51.5, lng: -0.1 + i * 0.001 }));
+const cumOf = (cs: LatLng[]) => {
+  const out = [0];
+  for (let i = 1; i < cs.length; i++) {
+    const dx = (cs[i].lng - cs[i - 1].lng) * 111320 * Math.cos((51.5 * Math.PI) / 180);
+    const dy = (cs[i].lat - cs[i - 1].lat) * 110540;
+    out.push(out[i - 1] + Math.hypot(dx, dy));
+  }
+  return out;
+};
+const cum = cumOf(straight);
+
+test("a driver just north of the line rejoins at the nearest vertex ahead", () => {
+  const pos = { lat: 51.5008, lng: -0.0945 }; // ~88 m north, just past vertex 5
+  const r = chooseRejoin(straight, cum, pos, 5, 90)!;
+  expect(r.idx).toBeGreaterThanOrEqual(5);
+  expect(r.idx).toBeLessThanOrEqual(8);
+  expect(r.skippedM).toBeGreaterThanOrEqual(0);
+});
+
+test("skipped distance is measured along the route, not as the crow flies", () => {
+  const pos = { lat: 51.5008, lng: -0.0905 };
+  const r = chooseRejoin(straight, cum, pos, 5, 90)!;
+  expect(r.skippedM).toBe(Math.round(cum[r.idx] - cum[5]));
+  // Crow distance from the driver to that vertex is nothing like the route
+  // distance skipped, which is the whole point of measuring along `cum`.
+  expect(r.skippedM).toBeGreaterThan(200);
+});
+
+test("a candidate behind the driver is rejected rather than asking for a U-turn", () => {
+  // Level with vertex 15, still heading east; the departure was back at 5.
+  const pos = { lat: 51.5008, lng: -0.085 };
+  const r = chooseRejoin(straight, cum, pos, 5, 90)!;
+  expect(r.idx).toBeGreaterThanOrEqual(15);
+});
+
+test("with no heading known, nothing is rejected for being behind", () => {
+  const pos = { lat: 51.5008, lng: -0.085 };
+  const r = chooseRejoin(straight, cum, pos, 5, null)!;
+  // Free to pick the departure point itself, which is much the closest thing
+  // to it in route terms — a stationary driver has no "behind".
+  expect(r.idx).toBe(5);
+});
+
+test("the skip penalty stops a far rejoin winning on crow distance alone", () => {
+  const pos = { lat: 51.5004, lng: -0.0941 };
+  const r = chooseRejoin(straight, cum, pos, 5, 90)!;
+  expect(r.idx).toBeLessThan(12);
+});
+
+test("a route with no vertices ahead of the departure returns null", () => {
+  const r = chooseRejoin(straight, cum, { lat: 51.5008, lng: -0.08 }, straight.length - 1, 90);
+  expect(r).toBeNull();
+});
+
+test("the returned point is the coordinate at the chosen index", () => {
+  const pos = { lat: 51.5008, lng: -0.0945 };
+  const r = chooseRejoin(straight, cum, pos, 5, 90)!;
+  expect(r.point).toEqual(straight[r.idx]);
+});
+
+// ── the spoken lines ────────────────────────────────────────────────────────
+
+test("a long skip is quantified out loud", () => {
+  expect(departureLine(380)).toBe("You've left the route. Rejoining ahead — you'll miss about 380 m.");
+});
+
+test("a skip under the warning threshold is not mentioned", () => {
+  expect(departureLine(SKIP_WARN_M - 1)).toBe("You've left the route. Getting you back on.");
+});
+
+test("rejoining says one short thing", () => {
+  expect(REJOINED_LINE).toBe("Back on route.");
 });
