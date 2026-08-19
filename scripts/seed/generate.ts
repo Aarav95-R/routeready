@@ -6,7 +6,7 @@ import { buildNavSteps } from "./navsteps";
 import { fetchFeatures } from "./overpass";
 import { SHOW_ME_TELL_ME_SQL } from "./questions";
 import { nameFromSteps, type Feature } from "./routePlan";
-import { MAX_TRIES, nextScale, PACE, phaseBounds, planTestRoute } from "./testPhases";
+import { MAX_TRIES, nextScale, PACE, phaseBounds, planTestRoute, SCALE_HI, SCALE_LO } from "./testPhases";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const esc = (s: string) => s.replace(/'/g, "''");
@@ -141,7 +141,7 @@ async function main() {
         // Bisect the radius until the drive lands in the test-length band.
         // Every fetch is cached on disk, so a re-run after a failure part way
         // through costs one call rather than the whole search again.
-        let scale = 1, lo = 0.4, hi = 2.5;
+        let scale = 1, lo = SCALE_LO, hi = SCALE_HI;
         let plan = planTestRoute({ lat: c.lat, lng: c.lng }, features, ri, scale);
         let r = await fetchRoute(plan.waypoints);
         for (let t = 0; t < MAX_TRIES; t++) {

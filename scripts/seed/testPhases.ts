@@ -216,19 +216,32 @@ export function planTestRoute(
 }
 
 /**
- * The learner-pace multiplier, already used when writing `estimated_minutes`.
- * OSRM answers for a driver who knows the road; a candidate on test does not.
+ * What OSRM's answer has to be multiplied by to become a real drive.
+ *
+ * Was 1.15, on the theory that a learner is a little slower than a driver who
+ * knows the road. That is true and it is not the main thing: OSRM routes at
+ * free-flow speed and knows nothing about traffic, queues at lights, or the
+ * pauses a candidate takes. Measured against the seeded loops it implied about
+ * 37 km/h through Mill Hill, where a driving test averages nearer 25.
+ *
+ * 1.5 puts a 16 km loop at about forty minutes, which is what DVSA says a
+ * practical test takes. It is a calibration, not a measurement — but it is
+ * much closer than 1.15, and the number is shown to learners planning their
+ * time.
  */
-export const PACE = 1.15;
+export const PACE = 1.5;
 
 /**
  * The band a loop has to land in, in OSRM seconds — that is, before the pace
  * multiplier, because that is what the router reports.
  *
- * 36 to 42 minutes of driving. A DVSA practical test is about 40 minutes at
- * the wheel, and a band rather than a target because bisecting onto a single
- * number would spend fetches chasing a precision the road network does not
- * have.
+ * 36 to 42 real minutes at the wheel, which is what a DVSA practical takes. A
+ * band rather than a target, because bisecting onto a single number would
+ * spend fetches chasing a precision the road network does not have.
+ *
+ * Distance is the primary constraint and this is the secondary one — see
+ * TARGET_MIN_M. Time depends on the traffic on the day; the length of the
+ * drive does not.
  */
 export const TARGET_MIN_S = (36 * 60) / PACE;
 export const TARGET_MAX_S = (42 * 60) / PACE;
@@ -239,18 +252,32 @@ export const TARGET_MAX_S = (42 * 60) / PACE;
  * road network's own granularity — past that the search is chasing noise, and
  * at 400 routes each extra try is another 400 calls to a public server.
  */
-export const MAX_TRIES = 4;
+export const MAX_TRIES = 6;
 
 /**
- * The longest a practice loop may be, whatever the clock says.
+ * The bracket the radius search runs inside.
  *
- * A DVSA practical covers roughly eight to twelve miles. OSRM answers at
- * free-flow speed and knows nothing about traffic, so targeting duration alone
- * produced 26 km loops that it called 37 minutes — a drive no learner finishes
- * in forty minutes anywhere near Mill Hill. Distance is the honest anchor:
- * it is a property of the route, where duration is a guess about the day.
+ * The floor is far below 1 on purpose. Around Hendon the road network is dual
+ * carriageways and severed side streets, so even a one-kilometre ring of
+ * waypoints routes into a 21 km drive — the search sat pinned at the old 0.4
+ * floor for all ten routes and never reached the band. At 0.12 the waypoints
+ * can be pulled in to a few hundred metres, which is what it takes there.
  */
-export const MAX_DISTANCE_M = 20_000;
+export const SCALE_LO = 0.12;
+export const SCALE_HI = 2.5;
+
+/**
+ * How long a practice loop should be, in metres.
+ *
+ * A DVSA practical covers roughly eight to twelve miles, and this is that band.
+ * Distance leads and duration follows, because distance is a property of the
+ * route while duration is a guess about the traffic on the day — and targeting
+ * duration alone against a free-flow router produced 26 km loops it called 37
+ * minutes, which is a drive no learner finishes in forty minutes near Mill
+ * Hill.
+ */
+export const TARGET_MIN_M = 13_000; //  8.1 miles
+export const TARGET_MAX_M = 19_000; // 11.8 miles
 
 /**
  * One step of a bisection on the radius scale.
@@ -264,15 +291,15 @@ export const MAX_DISTANCE_M = 20_000;
 export function nextScale(
   durationS: number, distanceM: number, scale: number, lo: number, hi: number,
 ): { scale: number; lo: number; hi: number; done: boolean } {
-  // The distance ceiling is checked first and only ever shrinks. A loop over
-  // MAX_DISTANCE_M is too long even if the clock likes it.
-  const tooFar = distanceM > MAX_DISTANCE_M;
-  if (!tooFar && durationS >= TARGET_MIN_S && durationS <= TARGET_MAX_S) {
-    return { scale, lo, hi, done: true };
-  }
+  // Distance leads. Duration is only allowed to reject a route that is the
+  // right length but somehow takes far too long — a loop that spends its
+  // sixteen kilometres on a motorway is not a driving test either.
+  const tooFar = distanceM > TARGET_MAX_M || durationS > TARGET_MAX_S;
+  const tooNear = distanceM < TARGET_MIN_M;
+  if (!tooFar && !tooNear) return { scale, lo, hi, done: true };
   // Too short: this scale becomes the new floor, and we try halfway up.
-  if (!tooFar && durationS < TARGET_MIN_S) return { scale: (scale + hi) / 2, lo: scale, hi, done: false };
-  // Too long, by either measure: this scale becomes the new ceiling.
+  if (tooNear && !tooFar) return { scale: (scale + hi) / 2, lo: scale, hi, done: false };
+  // Too long: this scale becomes the new ceiling.
   return { scale: (lo + scale) / 2, lo, hi: scale, done: false };
 }
 

@@ -1,4 +1,4 @@
-import { MAX_DISTANCE_M, MAX_TRIES, nextScale, PACE, phaseBounds, PHASES, planTestRoute, TARGET_MAX_S, TARGET_MIN_S } from "../testPhases";
+import { MAX_TRIES, nextScale, PACE, phaseBounds, PHASES, planTestRoute, TARGET_MAX_M, TARGET_MAX_S, TARGET_MIN_M, TARGET_MIN_S } from "../testPhases";
 import type { Feature } from "../routePlan";
 
 const CENTRE = { lat: 51.748, lng: -0.336 };
@@ -111,14 +111,14 @@ describe("nextScale", () => {
   const mid = (TARGET_MIN_S + TARGET_MAX_S) / 2;
 
   test("a drive already the right length is done, and the scale is left alone", () => {
-    const r = nextScale(mid, 15000, 1.3, 0.4, 2.5);
+    const r = nextScale(mid, 16000, 1.3, 0.4, 2.5);
     expect(r.done).toBe(true);
     expect(r.scale).toBe(1.3);
   });
 
   test("both ends of the band count as inside it", () => {
-    expect(nextScale(TARGET_MIN_S, 15000, 1, 0.4, 2.5).done).toBe(true);
-    expect(nextScale(TARGET_MAX_S, 15000, 1, 0.4, 2.5).done).toBe(true);
+    expect(nextScale(TARGET_MIN_S, 16000, 1, 0.4, 2.5).done).toBe(true);
+    expect(nextScale(TARGET_MAX_S, 16000, 1, 0.4, 2.5).done).toBe(true);
   });
 
   test("a drive that is too short grows the loop and raises the floor", () => {
@@ -148,20 +148,20 @@ describe("nextScale", () => {
     }
   });
 
-  test("a proportional drive time converges into the band within the fetch budget", () => {
-    // duration = scale * 1500 s reaches the band (1880-2192 s) at scale ~1.25-1.46.
+  test("a loop whose length rises with scale converges inside the fetch budget", () => {
+    // distance = scale * 12 km reaches the 13-19 km band at scale ~1.08-1.58.
     let s = { scale: 1, lo: 0.4, hi: 2.5, done: false };
     let tries = 0;
     while (!s.done && tries < MAX_TRIES) {
-      s = nextScale(s.scale * 1500, s.scale * 12000, s.scale, s.lo, s.hi);
+      s = nextScale(s.scale * 1200, s.scale * 12000, s.scale, s.lo, s.hi);
       tries++;
     }
     expect(s.done).toBe(true);
-    expect(s.scale * 1500).toBeGreaterThanOrEqual(TARGET_MIN_S);
-    expect(s.scale * 1500).toBeLessThanOrEqual(TARGET_MAX_S);
+    expect(s.scale * 12000).toBeGreaterThanOrEqual(TARGET_MIN_M);
+    expect(s.scale * 12000).toBeLessThanOrEqual(TARGET_MAX_M);
   });
 
-  test("the band is the real test's length once the learner-pace multiplier is applied", () => {
+  test("the time band is the real test's length once the pace multiplier is applied", () => {
     expect(Math.round((TARGET_MIN_S * PACE) / 60)).toBe(36);
     expect(Math.round((TARGET_MAX_S * PACE) / 60)).toBe(42);
   });
@@ -206,11 +206,11 @@ describe("phaseBounds", () => {
   });
 });
 
-describe("the distance ceiling", () => {
+describe("the distance band", () => {
   const good = (TARGET_MIN_S + TARGET_MAX_S) / 2;
 
-  test("a loop over the ceiling is shrunk even when the clock is happy", () => {
-    const r = nextScale(good, MAX_DISTANCE_M + 5000, 1, 0.4, 2.5);
+  test("a loop over the band is shrunk even when the clock is happy", () => {
+    const r = nextScale(good, TARGET_MAX_M + 5000, 1, 0.4, 2.5);
     expect(r.done).toBe(false);
     expect(r.scale).toBeLessThan(1);
     expect(r.hi).toBe(1);
@@ -219,15 +219,30 @@ describe("the distance ceiling", () => {
   test("a short-but-enormous loop is shrunk, not grown", () => {
     // Free-flow duration says "too short", distance says "far too long".
     // Growing it here is how a 29 km route gets called a 37 minute drive.
-    const r = nextScale(TARGET_MIN_S / 2, MAX_DISTANCE_M * 2, 1, 0.4, 2.5);
+    const r = nextScale(TARGET_MIN_S / 2, TARGET_MAX_M * 2, 1, 0.4, 2.5);
     expect(r.scale).toBeLessThan(1);
   });
 
-  test("a loop exactly on the ceiling is still acceptable", () => {
-    expect(nextScale(good, MAX_DISTANCE_M, 1, 0.4, 2.5).done).toBe(true);
+  test("both ends of the distance band are acceptable", () => {
+    expect(nextScale(good, TARGET_MAX_M, 1, 0.4, 2.5).done).toBe(true);
+    expect(nextScale(good, TARGET_MIN_M, 1, 0.4, 2.5).done).toBe(true);
   });
 
-  test("the ceiling is about twelve miles, the long end of a real test", () => {
-    expect(MAX_DISTANCE_M / 1609).toBeCloseTo(12.4, 1);
+  test("the band is the eight to twelve miles a real test covers", () => {
+    expect(TARGET_MIN_M / 1609).toBeCloseTo(8.1, 1);
+    expect(TARGET_MAX_M / 1609).toBeCloseTo(11.8, 1);
+  });
+
+  test("a loop that is the right length but absurdly slow is still rejected", () => {
+    // Sixteen kilometres is a test-length drive; two hours of it is not.
+    const r = nextScale(TARGET_MAX_S * 3, 16000, 1, 0.4, 2.5);
+    expect(r.done).toBe(false);
+    expect(r.scale).toBeLessThan(1);
+  });
+
+  test("distance leads: a short loop grows even when the clock already likes it", () => {
+    const r = nextScale((TARGET_MIN_S + TARGET_MAX_S) / 2, TARGET_MIN_M - 3000, 1, 0.4, 2.5);
+    expect(r.done).toBe(false);
+    expect(r.scale).toBeGreaterThan(1);
   });
 });
