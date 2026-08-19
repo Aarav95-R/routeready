@@ -194,3 +194,50 @@ export function planTestRoute(
   waypoints.push(centre);
   return { waypoints, phases };
 }
+
+/**
+ * The learner-pace multiplier, already used when writing `estimated_minutes`.
+ * OSRM answers for a driver who knows the road; a candidate on test does not.
+ */
+export const PACE = 1.15;
+
+/**
+ * The band a loop has to land in, in OSRM seconds — that is, before the pace
+ * multiplier, because that is what the router reports.
+ *
+ * 36 to 42 minutes of driving. A DVSA practical test is about 40 minutes at
+ * the wheel, and a band rather than a target because bisecting onto a single
+ * number would spend fetches chasing a precision the road network does not
+ * have.
+ */
+export const TARGET_MIN_S = (36 * 60) / PACE;
+export const TARGET_MAX_S = (42 * 60) / PACE;
+
+/**
+ * How many OSRM fetches one route may spend finding its length. Four halvings
+ * take the 0.4-2.5 bracket down to about 0.13 wide, which is finer than the
+ * road network's own granularity — past that the search is chasing noise, and
+ * at 400 routes each extra try is another 400 calls to a public server.
+ */
+export const MAX_TRIES = 4;
+
+/**
+ * One step of a bisection on the radius scale.
+ *
+ * Bisection rather than a proportional guess, because drive time is not linear
+ * in radius: doubling the radius can leave the duration flat if the extra
+ * reach finds a bypass, or triple it if it finds a town centre. Bisection does
+ * not care about the shape of the curve, and it cannot overshoot outside the
+ * bracket.
+ */
+export function nextScale(
+  durationS: number, scale: number, lo: number, hi: number,
+): { scale: number; lo: number; hi: number; done: boolean } {
+  if (durationS >= TARGET_MIN_S && durationS <= TARGET_MAX_S) {
+    return { scale, lo, hi, done: true };
+  }
+  // Too short: this scale becomes the new floor, and we try halfway up.
+  if (durationS < TARGET_MIN_S) return { scale: (scale + hi) / 2, lo: scale, hi, done: false };
+  // Too long: this scale becomes the new ceiling.
+  return { scale: (lo + scale) / 2, lo, hi: scale, done: false };
+}

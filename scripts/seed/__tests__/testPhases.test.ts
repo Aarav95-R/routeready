@@ -1,4 +1,4 @@
-import { PHASES, planTestRoute } from "../testPhases";
+import { MAX_TRIES, nextScale, PACE, PHASES, planTestRoute, TARGET_MAX_S, TARGET_MIN_S } from "../testPhases";
 import type { Feature } from "../routePlan";
 
 const CENTRE = { lat: 51.748, lng: -0.336 };
@@ -93,4 +93,66 @@ test("the scale factor pushes the loop further out", () => {
 
 test("the same inputs always give the same plan", () => {
   expect(planTestRoute(CENTRE, RICH, 3, 1.2)).toEqual(planTestRoute(CENTRE, RICH, 3, 1.2));
+});
+
+// ── tuning a loop to test length ────────────────────────────────────────────
+
+describe("nextScale", () => {
+  const mid = (TARGET_MIN_S + TARGET_MAX_S) / 2;
+
+  test("a drive already the right length is done, and the scale is left alone", () => {
+    const r = nextScale(mid, 1.3, 0.4, 2.5);
+    expect(r.done).toBe(true);
+    expect(r.scale).toBe(1.3);
+  });
+
+  test("both ends of the band count as inside it", () => {
+    expect(nextScale(TARGET_MIN_S, 1, 0.4, 2.5).done).toBe(true);
+    expect(nextScale(TARGET_MAX_S, 1, 0.4, 2.5).done).toBe(true);
+  });
+
+  test("a drive that is too short grows the loop and raises the floor", () => {
+    const r = nextScale(TARGET_MIN_S / 2, 1, 0.4, 2.5);
+    expect(r.done).toBe(false);
+    expect(r.scale).toBeGreaterThan(1);
+    expect(r.lo).toBe(1);
+    expect(r.hi).toBe(2.5);
+  });
+
+  test("a drive that is too long shrinks the loop and lowers the ceiling", () => {
+    const r = nextScale(TARGET_MAX_S * 2, 1, 0.4, 2.5);
+    expect(r.done).toBe(false);
+    expect(r.scale).toBeLessThan(1);
+    expect(r.hi).toBe(1);
+    expect(r.lo).toBe(0.4);
+  });
+
+  test("the bracket only ever narrows", () => {
+    let s = { scale: 1, lo: 0.4, hi: 2.5, done: false };
+    let width = s.hi - s.lo;
+    for (let i = 0; i < 6 && !s.done; i++) {
+      // Pretend drive time rises with scale, hitting the band around 1.6.
+      s = nextScale(s.scale * 1500, s.scale, s.lo, s.hi);
+      expect(s.hi - s.lo).toBeLessThanOrEqual(width);
+      width = s.hi - s.lo;
+    }
+  });
+
+  test("a proportional drive time converges into the band within the fetch budget", () => {
+    // duration = scale * 1500 s reaches the band (1880-2192 s) at scale ~1.25-1.46.
+    let s = { scale: 1, lo: 0.4, hi: 2.5, done: false };
+    let tries = 0;
+    while (!s.done && tries < MAX_TRIES) {
+      s = nextScale(s.scale * 1500, s.scale, s.lo, s.hi);
+      tries++;
+    }
+    expect(s.done).toBe(true);
+    expect(s.scale * 1500).toBeGreaterThanOrEqual(TARGET_MIN_S);
+    expect(s.scale * 1500).toBeLessThanOrEqual(TARGET_MAX_S);
+  });
+
+  test("the band is the real test's length once the learner-pace multiplier is applied", () => {
+    expect(Math.round((TARGET_MIN_S * PACE) / 60)).toBe(36);
+    expect(Math.round((TARGET_MAX_S * PACE) / 60)).toBe(42);
+  });
 });
