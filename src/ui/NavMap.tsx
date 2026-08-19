@@ -43,6 +43,13 @@ const toPos = (c: LatLng): Lng => [c.lng, c.lat];
 // ours, and it also meant re-uploading the whole polyline at exactly the moment
 // the driver starts moving.
 const EMPTY_SHAPE = { type: "FeatureCollection" as const, features: [] };
+// A stable default for `returnLL`, for the same reason `observationZones`
+// documents: the compass re-renders this screen about fifteen times a second,
+// and a `[]` literal in the parameter list is a new array on every one of them.
+const EMPTY_RETURN: LatLng[] = [];
+// How far the route recedes while the return leg is the thing being driven.
+// Dimmed rather than hidden — see `returnLL`.
+const DIM_OPACITY = 0.35;
 const lineShape = (coords: LatLng[]) =>
   coords.length > 1
     ? {
@@ -110,6 +117,16 @@ export type NavMapProps = {
   // re-renders the screen about fifteen times a second, so an array literal
   // would re-upload every zone's geometry on each of them.
   observationZones?: ObservationZone[];
+  /**
+   * The amber leg back onto the route. Empty draws nothing.
+   *
+   * Kept separate from `routeLL` rather than swapped into it, because the
+   * route has to stay on screen underneath: a driver who cannot see the line
+   * they left has no way to judge whether the way back makes sense.
+   */
+  returnLL?: LatLng[];
+  /** Mute the route while the return leg is the thing being driven. */
+  dimRoute?: boolean;
   // Mapbox's terms require the logo and attribution notice to stay visible.
   // 92 pt clears practice.tsx's bottom bar; a caller with its own bottom
   // chrome (mock.tsx's examiner sheet) overrides this to clear its own.
@@ -129,6 +146,8 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
     start = null,
     finish = null,
     observationZones,
+    returnLL = EMPTY_RETURN,
+    dimRoute = false,
     logoBottom = 92,
     children,
   },
@@ -231,6 +250,8 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
     [routeLL, trailIdx, preview]
   );
 
+  const returnShape = useMemo(() => lineShape(returnLL), [returnLL]);
+
   return (
     <MapView
       style={{ flex: 1 }} styleURL={NAV_STYLE} scaleBarEnabled={false} compassEnabled={false}
@@ -296,15 +317,23 @@ export const NavMap = forwardRef<NavMapHandle, NavMapProps>(function NavMap(
       </ShapeSource>
 
       <ShapeSource id="trail" shape={traveledShape}>
-        <LineLayer id="trailCasing" style={{ lineColor: mapColors.routeDrivenCasing, lineWidth: 14, lineCap: "round", lineJoin: "round" }} />
-        <LineLayer id="trailCore" style={{ lineColor: mapColors.routeDrivenCore, lineWidth: 9, lineCap: "round", lineJoin: "round" }} />
+        <LineLayer id="trailCasing" style={{ lineColor: mapColors.routeDrivenCasing, lineWidth: 14, lineCap: "round", lineJoin: "round", lineOpacity: dimRoute ? DIM_OPACITY : 1 }} />
+        <LineLayer id="trailCore" style={{ lineColor: mapColors.routeDrivenCore, lineWidth: 9, lineCap: "round", lineJoin: "round", lineOpacity: dimRoute ? DIM_OPACITY : 1 }} />
       </ShapeSource>
 
       {/* Preview draws the route a shade narrower than the road ahead does
           while driving, as it did when it had a source of its own. */}
       <ShapeSource id="ahead" shape={aheadShape}>
-        <LineLayer id="aheadCasing" style={{ lineColor: mapColors.routeCasing, lineWidth: preview ? 15 : 16, lineCap: "round", lineJoin: "round" }} />
-        <LineLayer id="aheadCore" style={{ lineColor: mapColors.routeCore, lineWidth: preview ? 10 : 11, lineCap: "round", lineJoin: "round" }} />
+        <LineLayer id="aheadCasing" style={{ lineColor: mapColors.routeCasing, lineWidth: preview ? 15 : 16, lineCap: "round", lineJoin: "round", lineOpacity: dimRoute ? DIM_OPACITY : 1 }} />
+        <LineLayer id="aheadCore" style={{ lineColor: mapColors.routeCore, lineWidth: preview ? 10 : 11, lineCap: "round", lineJoin: "round", lineOpacity: dimRoute ? DIM_OPACITY : 1 }} />
+      </ShapeSource>
+
+      {/* Drawn after the route so it sits on top of it: while it exists, it is
+          the line being driven. Mounted permanently and fed an empty shape
+          when there is none — see the comment above EMPTY_SHAPE. */}
+      <ShapeSource id="returnLeg" shape={returnShape}>
+        <LineLayer id="returnLegCasing" style={{ lineColor: mapColors.returnCasing, lineWidth: 16, lineCap: "round", lineJoin: "round" }} />
+        <LineLayer id="returnLegCore" style={{ lineColor: mapColors.returnCore, lineWidth: 11, lineCap: "round", lineJoin: "round" }} />
       </ShapeSource>
 
       {start && (

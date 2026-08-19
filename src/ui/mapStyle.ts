@@ -26,6 +26,12 @@ export const mapColors = {
   // along white roads and still has to read as a line rather than vanish.
   routeDrivenCore: "#A7AEA5",
   routeDrivenCasing: "#7F8880",
+  // The leg back onto the route after leaving it. The app's hazard amber, not
+  // a new hue: it already means "attend to this" on the observation zones, and
+  // an off-route driver is looking at the one line on the map that is not the
+  // route they meant to be on.
+  returnCore: colors.warning,
+  returnCasing: "#8F4D06",
 } as const;
 
 type Stops = readonly (readonly [number, number])[];

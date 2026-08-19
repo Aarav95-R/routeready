@@ -105,7 +105,7 @@ test("lineWidthExpression flattens stops into a mapbox interpolate expression", 
   ]);
 });
 
-test("all eleven palette colors have exact correct values", () => {
+test("all thirteen palette colors have exact correct values", () => {
   expect(mapColors).toEqual({
     land: "#EFEEE8",
     roadFill: "#FFFFFF",
@@ -118,7 +118,16 @@ test("all eleven palette colors have exact correct values", () => {
     routeCasing: "#115B41",
     routeDrivenCore: "#A7AEA5",
     routeDrivenCasing: "#7F8880",
+    returnCore: "#D97706",
+    returnCasing: "#8F4D06",
   });
+});
+
+test("the return leg is the app's hazard amber, and reads against the route green", () => {
+  // It has to be tellable from the route at a glance and in peripheral vision,
+  // which is the whole reason it is a different hue rather than a lighter green.
+  expect(mapColors.returnCore).toBe(colors.warning);
+  expect(mapColors.returnCore).not.toBe(mapColors.routeCore);
 });
 
 test("road width stops have exact correct values", () => {
