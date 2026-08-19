@@ -30,6 +30,20 @@ export type ManeuverBannerProps = {
   /** Replaces "then …" when the next step is the arrival at the destination. */
   arriveLabel?: string;
   distanceM: number | null;
+  /**
+   * "go" is the normal green drive; "off" is the amber off-route state.
+   *
+   * Same geometry and same position in both, because a driver mid-turn should
+   * not have to re-find the banner — only its colour and its eyebrow change.
+   */
+  tone?: "go" | "off";
+  /**
+   * Replaces the formatted distance, e.g. "Rejoining ahead". Off route there
+   * is no meaningful distance to the next manoeuvre yet: the return leg is
+   * still being fetched, and a number that turns out to be wrong is worse than
+   * a word that is right.
+   */
+  distanceLabel?: string | null;
 };
 
 /**
@@ -39,22 +53,32 @@ export type ManeuverBannerProps = {
  */
 export function ManeuverBanner({
   eyebrow = null, fallback = false, fallbackText = "Head toward the start point",
-  step, next, arriveLabel, distanceM,
+  step, next, arriveLabel, distanceM, tone = "go", distanceLabel = null,
 }: ManeuverBannerProps) {
+  // Amber is the app's hazard colour, and it already means "look here" on the
+  // observation zones. Off route is exactly that: not an error, but the one
+  // place on the screen the driver has to attend to.
+  const off = tone === "off";
+  const stripBg = off ? "#7C4A06" : "#064E3B";
+  const stripFg = off ? "#FCD9A0" : "#6EE7B7";
   return (
     <View className="overflow-hidden rounded-2xl bg-primary" style={{ shadowColor: "#221F1C", shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } }}>
       {eyebrow && (
-        <View className="flex-row items-center gap-1.5 px-4 py-1.5" style={{ backgroundColor: "#064E3B" }}>
-          <Ionicons name="flag-outline" size={12} color="#6EE7B7" />
-          <Text className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-300">{eyebrow}</Text>
+        <View className="flex-row items-center gap-1.5 px-4 py-1.5" style={{ backgroundColor: stripBg }}>
+          <Ionicons name={off ? "warning-outline" : "flag-outline"} size={12} color={stripFg} />
+          <Text className="text-[10px] font-extrabold uppercase tracking-wider" style={{ color: stripFg }}>{eyebrow}</Text>
         </View>
       )}
       <View className="flex-row items-center gap-3 px-4 py-3.5">
-        <View className={`h-12 w-12 items-center justify-center rounded-xl ${fallback ? "bg-slate-600" : "bg-accent"}`}>
+        <View className={`h-12 w-12 items-center justify-center rounded-xl ${fallback ? "bg-slate-600" : off ? "bg-warning" : "bg-accent"}`}>
           <Ionicons name={fallback ? "navigate" : maneuverIcon(step)} size={26} color="#fff" />
         </View>
         <View className="flex-1">
-          {distanceM !== null && <Text className="text-[13px] font-semibold text-emerald-300">{formatDistance(distanceM)}</Text>}
+          {(distanceLabel !== null || distanceM !== null) && (
+            <Text className="text-[13px] font-semibold" style={{ color: stripFg }}>
+              {distanceLabel ?? formatDistance(distanceM!)}
+            </Text>
+          )}
           <Text className="text-[17px] font-semibold leading-[21px] text-white" numberOfLines={2}>
             {fallback ? fallbackText : step?.instruction ?? "Follow the route"}
           </Text>
