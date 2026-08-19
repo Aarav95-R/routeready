@@ -823,3 +823,46 @@ State the measured in-band figure from Task 5 Step 8 and anything that did not l
 **Type consistency.** `PhaseName` in `testPhases.ts` and `RoutePhaseName` in `db.ts` list the same six strings; `PlannedPhase.kind` is `FeatureKind | "ring"` and is widened to `string` on `RoutePhase.kind` because the stored JSON is read back untyped. `planTestRoute(centre, features, routeIndex, scale)` is called with exactly that arity in Task 5.
 
 **Ordering note.** Task 4's migration must be applied before Task 5's generated SQL is pushed, since the insert names the `phases` column.
+
+---
+
+## Status, 19 August 2026 — Task 5 blocked on a real finding
+
+Tasks 1–4 are done, tested and committed. Task 5's code is written and works;
+what is not done is the full 40-centre run, and it should not be run yet.
+
+**What works.** Mill Hill produces ten loops of 15.1–18.6 km at 31–41 minutes,
+each with all six phases, each named after roads it actually drives. That is
+the intended output.
+
+**What does not.** Hendon does not converge. Every route pins at the bottom of
+the radius bracket and still comes back 19–22 km:
+
+```
+Route 1 · Watford Way and Colindeep Lane   (51 min, 21.2 km, scale 0.13)
+Route 6 · Kingsbury Road and Townsend Lane (52 min, 22.4 km, scale 0.13)
+Route 8 · Edgware Road and The Hyde        (55 min, 22.4 km, scale 0.13)
+```
+
+Scale 0.13 puts every waypoint within about 310 m of the test centre, and the
+drive between them is still 22 km. So route length there is not controlled by
+the radius at all, and no amount of further bisection will fix it.
+
+**Why.** The Hendon centre sits on Aerodrome Road between the M1 and the A41.
+Six waypoints a few hundred metres apart can be on opposite sides of a dual
+carriageway, and each hop between them costs a two- or three-kilometre detour
+to the next legal crossing. The six-waypoint model assumes waypoints near each
+other are cheap to string together, and severed geography breaks that
+assumption.
+
+**The fix, for a following session.** Stop making all six phases waypoints.
+Route through two or three waypoints and *infer* the phases from what the
+returned polyline actually passes — which is closer to how an examiner works
+anyway, and removes the assumption entirely. `phaseBounds` would change from
+slicing by leg to matching features against the finished line; nothing else in
+the module needs to move.
+
+**Do not run `npm run seed` until then.** Roughly half the centres are urban
+in the way Hendon is, and a full run would replace 400 working routes with a
+mixture of good ones and 22 km ones. The current `supabase/seed.sql` is
+untouched and still holds the previous 400.
