@@ -1,4 +1,4 @@
-import { MAX_TRIES, nextScale, PACE, PHASES, planTestRoute, TARGET_MAX_S, TARGET_MIN_S } from "../testPhases";
+import { MAX_DISTANCE_M, MAX_TRIES, nextScale, PACE, phaseBounds, PHASES, planTestRoute, TARGET_MAX_S, TARGET_MIN_S } from "../testPhases";
 import type { Feature } from "../routePlan";
 
 const CENTRE = { lat: 51.748, lng: -0.336 };
@@ -13,9 +13,12 @@ function at(kind: Feature["kind"], bearing: number, km: number): Feature {
 }
 
 /** Several of every kind, spread all round the centre, so nothing is missing. */
+// Each kind sits on its own radius, so no two features share a position — the
+// reuse check below compares coordinates, and identical ones would read as a
+// phase taking a feature another phase already had.
 const RICH: Feature[] = (
   ["estate", "roundabout", "signals", "dual", "fast", "parking", "crossing"] as const
-).flatMap((kind) => Array.from({ length: 6 }, (_, i) => at(kind, (i * 360) / 6, 1.2 + (i % 3) * 0.6)));
+).flatMap((kind, k) => Array.from({ length: 6 }, (_, i) => at(kind, (i * 360) / 6, 1.0 + k * 0.11 + (i % 3) * 0.6)));
 
 const names = (fs: Feature[], i = 0, scale = 1) => planTestRoute(CENTRE, fs, i, scale).phases.map((p) => p.name);
 
@@ -43,9 +46,16 @@ test("a centre with no fast road drops that phase rather than reaching for one",
   expect(names(noFast)).not.toContain("faster-road");
 });
 
-test("a centre with nowhere to pull in drops the manoeuvre phase", () => {
+test("a centre with no tagged parking still gets a manoeuvre, on a quiet street", () => {
+  // Kerbside-parking tagging is patchy enough in the UK that requiring it
+  // dropped the phase everywhere, so a residential street is the fallback.
   const noParking = RICH.filter((f) => f.kind !== "parking");
-  expect(names(noParking)).not.toContain("manoeuvre");
+  expect(names(noParking)).toContain("manoeuvre");
+});
+
+test("a centre with nowhere at all to pull in drops the manoeuvre phase", () => {
+  const noStreets = RICH.filter((f) => f.kind !== "parking" && f.kind !== "estate");
+  expect(names(noStreets)).not.toContain("manoeuvre");
 });
 
 test("an optional phase is dropped, never filled with a synthetic point", () => {
@@ -101,18 +111,18 @@ describe("nextScale", () => {
   const mid = (TARGET_MIN_S + TARGET_MAX_S) / 2;
 
   test("a drive already the right length is done, and the scale is left alone", () => {
-    const r = nextScale(mid, 1.3, 0.4, 2.5);
+    const r = nextScale(mid, 15000, 1.3, 0.4, 2.5);
     expect(r.done).toBe(true);
     expect(r.scale).toBe(1.3);
   });
 
   test("both ends of the band count as inside it", () => {
-    expect(nextScale(TARGET_MIN_S, 1, 0.4, 2.5).done).toBe(true);
-    expect(nextScale(TARGET_MAX_S, 1, 0.4, 2.5).done).toBe(true);
+    expect(nextScale(TARGET_MIN_S, 15000, 1, 0.4, 2.5).done).toBe(true);
+    expect(nextScale(TARGET_MAX_S, 15000, 1, 0.4, 2.5).done).toBe(true);
   });
 
   test("a drive that is too short grows the loop and raises the floor", () => {
-    const r = nextScale(TARGET_MIN_S / 2, 1, 0.4, 2.5);
+    const r = nextScale(TARGET_MIN_S / 2, 8000, 1, 0.4, 2.5);
     expect(r.done).toBe(false);
     expect(r.scale).toBeGreaterThan(1);
     expect(r.lo).toBe(1);
@@ -120,7 +130,7 @@ describe("nextScale", () => {
   });
 
   test("a drive that is too long shrinks the loop and lowers the ceiling", () => {
-    const r = nextScale(TARGET_MAX_S * 2, 1, 0.4, 2.5);
+    const r = nextScale(TARGET_MAX_S * 2, 40000, 1, 0.4, 2.5);
     expect(r.done).toBe(false);
     expect(r.scale).toBeLessThan(1);
     expect(r.hi).toBe(1);
@@ -132,7 +142,7 @@ describe("nextScale", () => {
     let width = s.hi - s.lo;
     for (let i = 0; i < 6 && !s.done; i++) {
       // Pretend drive time rises with scale, hitting the band around 1.6.
-      s = nextScale(s.scale * 1500, s.scale, s.lo, s.hi);
+      s = nextScale(s.scale * 1500, s.scale * 12000, s.scale, s.lo, s.hi);
       expect(s.hi - s.lo).toBeLessThanOrEqual(width);
       width = s.hi - s.lo;
     }
@@ -143,7 +153,7 @@ describe("nextScale", () => {
     let s = { scale: 1, lo: 0.4, hi: 2.5, done: false };
     let tries = 0;
     while (!s.done && tries < MAX_TRIES) {
-      s = nextScale(s.scale * 1500, s.scale, s.lo, s.hi);
+      s = nextScale(s.scale * 1500, s.scale * 12000, s.scale, s.lo, s.hi);
       tries++;
     }
     expect(s.done).toBe(true);
@@ -154,5 +164,70 @@ describe("nextScale", () => {
   test("the band is the real test's length once the learner-pace multiplier is applied", () => {
     expect(Math.round((TARGET_MIN_S * PACE) / 60)).toBe(36);
     expect(Math.round((TARGET_MAX_S * PACE) / 60)).toBe(42);
+  });
+});
+
+describe("phaseBounds", () => {
+  const phase = (name: string) => ({ name, kind: "estate", at: { lat: 0, lng: 0 } }) as never;
+  const three = [phase("settle-in"), phase("junction-work"), phase("return")];
+
+  test("phases tile the polyline end to end, without gaps", () => {
+    const b = phaseBounds([10, 20, 30], three, 61);
+    expect(b[0].startIdx).toBe(0);
+    expect(b[0].endIdx).toBe(b[1].startIdx);
+    expect(b[1].endIdx).toBe(b[2].startIdx);
+    expect(b[2].endIdx).toBe(60);
+  });
+
+  test("the last phase always reaches the end of the route", () => {
+    // Leg counts that undershoot the geometry must not leave the loop short.
+    const b = phaseBounds([5, 5, 5], three, 61);
+    expect(b[b.length - 1].endIdx).toBe(60);
+  });
+
+  test("no index ever runs past the end of the polyline", () => {
+    const b = phaseBounds([500, 500, 500], three, 61);
+    for (const p of b) {
+      expect(p.startIdx).toBeLessThanOrEqual(60);
+      expect(p.endIdx).toBeLessThanOrEqual(60);
+    }
+  });
+
+  test("a missing leg count does not shift every later phase", () => {
+    const b = phaseBounds([10], three, 61);
+    expect(b[0].endIdx).toBe(10);
+    expect(b[1].startIdx).toBe(10);
+  });
+
+  test("the phase names and kinds are carried through untouched", () => {
+    const b = phaseBounds([10, 20, 30], three, 61);
+    expect(b.map((p) => p.name)).toEqual(["settle-in", "junction-work", "return"]);
+    expect(b.every((p) => p.kind === "estate")).toBe(true);
+  });
+});
+
+describe("the distance ceiling", () => {
+  const good = (TARGET_MIN_S + TARGET_MAX_S) / 2;
+
+  test("a loop over the ceiling is shrunk even when the clock is happy", () => {
+    const r = nextScale(good, MAX_DISTANCE_M + 5000, 1, 0.4, 2.5);
+    expect(r.done).toBe(false);
+    expect(r.scale).toBeLessThan(1);
+    expect(r.hi).toBe(1);
+  });
+
+  test("a short-but-enormous loop is shrunk, not grown", () => {
+    // Free-flow duration says "too short", distance says "far too long".
+    // Growing it here is how a 29 km route gets called a 37 minute drive.
+    const r = nextScale(TARGET_MIN_S / 2, MAX_DISTANCE_M * 2, 1, 0.4, 2.5);
+    expect(r.scale).toBeLessThan(1);
+  });
+
+  test("a loop exactly on the ceiling is still acceptable", () => {
+    expect(nextScale(good, MAX_DISTANCE_M, 1, 0.4, 2.5).done).toBe(true);
+  });
+
+  test("the ceiling is about twelve miles, the long end of a real test", () => {
+    expect(MAX_DISTANCE_M / 1609).toBeCloseTo(12.4, 1);
   });
 });

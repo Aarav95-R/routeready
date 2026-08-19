@@ -39,7 +39,15 @@ type PhaseSpec = {
    * about still gets a drivable loop.
    */
   optional: boolean;
-  /** Where this phase's fallback point sits, as a fraction of the radius. */
+  /**
+   * How far out this phase belongs, as a fraction of the route radius.
+   *
+   * Used both to score real features and to place the synthetic fallback
+   * point. Scoring against the whole radius instead was a bug worth naming:
+   * the return leg is supposed to hug the centre at 0.5, and without this it
+   * was picking roads 3.2 km out, which on its own added six kilometres to
+   * every loop.
+   */
   reach: number;
   /**
    * Where this phase sits round the loop, in degrees from the route spine.
@@ -73,7 +81,11 @@ export const PHASES: readonly PhaseSpec[] = [
   // signs rather than turn-by-turn.
   { name: "independent",   wants: ["fast", "dual", "roundabout", "estate"], optional: false, reach: 1.0, offset: 191 },
   // Somewhere a parallel park or a pull-up-on-the-right is actually possible.
-  { name: "manoeuvre",     wants: ["parking"],                              optional: true,  reach: 0.7, offset: 263 },
+  // A properly tagged parking street is the ideal and a quiet residential one
+  // the fallback. Kerbside-parking tagging is patchy in the UK — Mill Hill, a
+  // suburb built almost entirely of terraced streets, carries none at all —
+  // and a phase that is absent everywhere is a phase that does not exist.
+  { name: "manoeuvre",     wants: ["parking", "estate"],                    optional: true,  reach: 0.7, offset: 263 },
   // Back to the centre. This is the phase that absorbs whatever length the
   // rest of the loop did not account for.
   { name: "return",        wants: ["estate", "crossing"],                   optional: false, reach: 0.5, offset: 309 },
@@ -110,6 +122,8 @@ const GOLDEN_ANGLE = 137.5;
  */
 const direction = (routeIndex: number) => (routeIndex % 2 === 0 ? 1 : -1);
 
+const wantKmOf = (spec: PhaseSpec, radiusKm: number) => radiusKm * spec.reach;
+
 const ringPoint = (c: LatLng, bearing: number, km: number): LatLng => ({
   lat: c.lat + (km / 111) * Math.cos((bearing * Math.PI) / 180),
   lng: c.lng + (km / (111 * Math.cos((c.lat * Math.PI) / 180))) * Math.sin((bearing * Math.PI) / 180),
@@ -133,6 +147,9 @@ function pick(
   centre: LatLng, features: Feature[], spec: PhaseSpec,
   bearing: number, radiusKm: number, used: Set<Feature>,
 ): Feature | null {
+  // Each phase has its own distance from the centre, not the route's outer
+  // radius — see PhaseSpec.reach.
+  const wantKm = radiusKm * spec.reach;
   for (const kind of spec.wants) {
     const candidates = features.filter((f) => f.kind === kind && !used.has(f));
     if (!candidates.length) continue;
@@ -143,7 +160,10 @@ function pick(
       // a low rate a distant feature on a perfect bearing still won and loops
       // came back over 20 km; at 120 per km a kilometre of overshoot costs
       // more than any bearing error can, so the band holds.
-      return { f, score: gap + Math.max(0, km - radiusKm) * 120 };
+      // Distance error is two-sided now. Penalising only overshoot let a phase
+      // that wanted to be 1 km out sit on top of the centre for free, which is
+      // how loops ended up as a wide ring with one waypoint in the middle.
+      return { f, score: gap + Math.abs(km - wantKm) * 120 };
     });
     scored.sort((a, b) => a.score - b.score);
     return scored[0].f;
@@ -186,7 +206,7 @@ export function planTestRoute(
     // exactly how the old planner produced a 49 km route. A required phase
     // gets a compass point so the loop still exists.
     if (spec.optional) return;
-    const at = ringPoint(centre, bearing, radiusKm * spec.reach);
+    const at = ringPoint(centre, bearing, wantKmOf(spec, radiusKm));
     phases.push({ name: spec.name, kind: "ring", at });
     waypoints.push(at);
   });
@@ -222,6 +242,17 @@ export const TARGET_MAX_S = (42 * 60) / PACE;
 export const MAX_TRIES = 4;
 
 /**
+ * The longest a practice loop may be, whatever the clock says.
+ *
+ * A DVSA practical covers roughly eight to twelve miles. OSRM answers at
+ * free-flow speed and knows nothing about traffic, so targeting duration alone
+ * produced 26 km loops that it called 37 minutes — a drive no learner finishes
+ * in forty minutes anywhere near Mill Hill. Distance is the honest anchor:
+ * it is a property of the route, where duration is a guess about the day.
+ */
+export const MAX_DISTANCE_M = 20_000;
+
+/**
  * One step of a bisection on the radius scale.
  *
  * Bisection rather than a proportional guess, because drive time is not linear
@@ -231,13 +262,48 @@ export const MAX_TRIES = 4;
  * bracket.
  */
 export function nextScale(
-  durationS: number, scale: number, lo: number, hi: number,
+  durationS: number, distanceM: number, scale: number, lo: number, hi: number,
 ): { scale: number; lo: number; hi: number; done: boolean } {
-  if (durationS >= TARGET_MIN_S && durationS <= TARGET_MAX_S) {
+  // The distance ceiling is checked first and only ever shrinks. A loop over
+  // MAX_DISTANCE_M is too long even if the clock likes it.
+  const tooFar = distanceM > MAX_DISTANCE_M;
+  if (!tooFar && durationS >= TARGET_MIN_S && durationS <= TARGET_MAX_S) {
     return { scale, lo, hi, done: true };
   }
   // Too short: this scale becomes the new floor, and we try halfway up.
-  if (durationS < TARGET_MIN_S) return { scale: (scale + hi) / 2, lo: scale, hi, done: false };
-  // Too long: this scale becomes the new ceiling.
+  if (!tooFar && durationS < TARGET_MIN_S) return { scale: (scale + hi) / 2, lo: scale, hi, done: false };
+  // Too long, by either measure: this scale becomes the new ceiling.
   return { scale: (lo + scale) / 2, lo, hi: scale, done: false };
+}
+
+/**
+ * Where each phase landed on the finished polyline.
+ *
+ * Derived from the leg lengths rather than by searching the geometry for each
+ * waypoint: OSRM snaps a waypoint to the nearest road, so the coordinate we
+ * asked for is usually not in the returned geometry at all, and searching for
+ * it finds either nothing or the wrong vertex.
+ *
+ * A route planned through N waypoints comes back as N-1 legs whose geometries
+ * are concatenated, and each leg has one more node than it has edges — but the
+ * legs share their join nodes, so the running index advances by the edge count
+ * and the last phase is closed at the final vertex.
+ */
+export function phaseBounds(
+  legEdgeCounts: number[], phases: PlannedPhase[], totalCoords: number,
+): { name: PhaseName; kind: string; startIdx: number; endIdx: number }[] {
+  const out: { name: PhaseName; kind: string; startIdx: number; endIdx: number }[] = [];
+  let idx = 0;
+  for (let i = 0; i < phases.length; i++) {
+    const edges = legEdgeCounts[i] ?? 0;
+    const startIdx = Math.min(idx, Math.max(0, totalCoords - 1));
+    // The final phase runs to the end of the line whatever the leg counts say,
+    // so no route can end with a phase that stops short of its own finish.
+    const endIdx = i === phases.length - 1
+      ? Math.max(0, totalCoords - 1)
+      : Math.min(idx + edges, Math.max(0, totalCoords - 1));
+    out.push({ name: phases[i].name, kind: phases[i].kind, startIdx, endIdx });
+    idx += edges;
+  }
+  return out;
 }

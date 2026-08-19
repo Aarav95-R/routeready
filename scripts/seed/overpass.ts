@@ -18,33 +18,45 @@ import { classify, type Feature, type OverpassElement } from "./routePlan";
  * ways outnumber roundabouts by two orders of magnitude, so the cap would be
  * spent entirely on side streets and every route would be an estate crawl.
  * Interleaved `out` statements cap each category on its own.
+ *
+ * The caps are generous, and that matters more than it looks. Overpass returns
+ * the first N matches in id order, not the N nearest — so a tight cap does not
+ * give you a local sample, it gives you an arbitrary one. At 60 residential
+ * ways the nearest street it returned for Mill Hill was 1.94 km from the test
+ * centre, with a median of 3.7 km, in a suburb made almost entirely of
+ * residential streets. Every phase was then forced to pick something far out,
+ * and the loops came back at 25 km against a real test's eight to twelve
+ * miles. Picking what is near is this code's job; Overpass's job is to hand
+ * over enough to choose from.
  */
 function query(lat: number, lng: number, radiusM: number): string {
   const near = `(around:${radiusM},${lat},${lng})`;
   return [
     "[out:json][timeout:90];",
     `way${near}[junction=roundabout];`,
-    "out center 30;",
+    "out center 90;",
     `node${near}[highway=traffic_signals];`,
-    "out 30;",
+    "out 90;",
     `node${near}[highway=crossing]["crossing:markings"~"zebra"];`,
-    "out 30;",
+    "out 90;",
     // Dual carriageways are asked for before the general A-road query, and
     // capped separately. They are rare next to primary roads in general, and a
     // shared cap would return none of them for most centres — which is exactly
     // the phase that is allowed to be missing, so it has to be missing for the
     // real reason rather than because the cap was spent.
     `way${near}[highway~"^(primary|trunk)$"][dual_carriageway=yes];`,
-    "out center 20;",
+    "out center 60;",
     `way${near}[highway~"^(primary|trunk)$"];`,
-    "out center 30;",
+    "out center 90;",
     // Same argument as dual carriageways: a street with kerbside parking is a
     // small fraction of all residential ways, and the manoeuvre phase depends
-    // on finding one.
-    `way${near}[highway=residential]["parking:lane:both"];`,
-    "out center 30;",
+    // on finding one. The key is matched by regex because the tagging moved:
+    // "parking:lane:both" is the old spelling and "parking:both" the current
+    // one, and asking for only the first returned nothing at all for London.
+    `way${near}[highway=residential][~"^parking:(lane:)?(both|left|right)$"~"parallel|diagonal|perpendicular"];`,
+    "out center 120;",
     `way${near}[highway=residential];`,
-    "out center 60;",
+    "out center 400;",
   ].join("\n");
 }
 

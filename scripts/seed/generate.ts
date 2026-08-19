@@ -4,7 +4,9 @@ import { fetchRoute } from "./osrm";
 import { derivePassHistory, deriveDifficulty, deriveHazards, deriveObservationZones, deriveSpeedProfile } from "./derive";
 import { buildNavSteps } from "./navsteps";
 import { fetchFeatures } from "./overpass";
-import { nameFromSteps, planRoutes, type Feature } from "./routePlan";
+import { SHOW_ME_TELL_ME_SQL } from "./questions";
+import { nameFromSteps, type Feature } from "./routePlan";
+import { MAX_TRIES, nextScale, PACE, phaseBounds, planTestRoute } from "./testPhases";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const esc = (s: string) => s.replace(/'/g, "''");
@@ -22,140 +24,10 @@ const ROUTES_PER_CENTRE = 10;
 const FALLBACK_NAMES = ["Town loop", "Residential circuit", "Main-road run"];
 
 // --- DVSA "show me, tell me" vehicle safety questions (gov.uk) ---
-type SmtmRow = { category: "under_bonnet" | "inside_car" | "safety"; question: string; answer: string; is_show_me: boolean };
-
-const SHOW_ME_TELL_ME: SmtmRow[] = [
-  // Show me (7) — physically demonstrated while safe to do so
-  {
-    category: "safety",
-    is_show_me: true,
-    question: "Show me how you'd check that the tyres on this car have sufficient tread depth and are in a safe condition to drive.",
-    answer:
-      "I'd check the tread depth is at least 1.6mm across the central three-quarters of the tyre's width, look for cuts or bulges, and check the pressures with a gauge if one is available.",
-  },
-  {
-    category: "inside_car",
-    is_show_me: true,
-    question: "Show me how you'd check that the horn is working (off road only).",
-    answer: "I'd press the horn control, usually found on the steering wheel, to sound it briefly.",
-  },
-  {
-    category: "inside_car",
-    is_show_me: true,
-    question: "Show me how you'd set the demister controls to clear all the windows effectively.",
-    answer:
-      "I'd switch on the fan and heater, select the windscreen setting, choose a warm airflow, and switch on the heated rear window and air conditioning if fitted.",
-  },
-  {
-    category: "inside_car",
-    is_show_me: true,
-    question: "Show me how you'd switch your headlights from dipped to main beam and explain how you'd know the main beam is on.",
-    answer:
-      "I'd move the indicator stalk forward, or press the light switch, to select main beam, and a blue warning light on the dashboard confirms it's on.",
-  },
-  {
-    category: "inside_car",
-    is_show_me: true,
-    question: "Show me how you'd check the footbrake is working effectively as you move away, without the car pulling to either side.",
-    answer:
-      "As I move off, I'd press the brake pedal firmly and check the car stops smoothly and promptly, travelling in a straight line without pulling to one side.",
-  },
-  {
-    category: "inside_car",
-    is_show_me: true,
-    question: "Show me how you'd clean the windscreen using the windscreen washer and wiper.",
-    answer: "I'd operate the washer stalk or button so washer fluid sprays the screen, then let the wipers clear it, repeating until the screen is clean.",
-  },
-  {
-    category: "inside_car",
-    is_show_me: true,
-    question: "Show me how you'd switch on your rear fog light(s) and explain when you'd use it/them.",
-    answer:
-      "I'd pull out or press the switch marked with a light symbol crossed by three horizontal lines, and I'd only use it when visibility drops below 100 metres.",
-  },
-  // Tell me (11) — explained verbally, no need to touch the vehicle
-  {
-    category: "safety",
-    is_show_me: false,
-    question: "Tell me how you'd check that the brakes are working before starting a journey.",
-    answer: "I'd press the brake pedal before moving off and check it feels firm, with no excessive travel and no sponginess.",
-  },
-  {
-    category: "safety",
-    is_show_me: false,
-    question: "Tell me where you'd find the recommended tyre pressures for this car and how you'd check them.",
-    answer:
-      "The recommended pressures are usually shown in the handbook, on a sticker inside the driver's door sill, or on the fuel filler flap, and I'd check them with a pressure gauge when the tyres are cold.",
-  },
-  {
-    category: "safety",
-    is_show_me: false,
-    question: "Tell me how you'd check the head restraint is correctly adjusted so it provides the best protection in the event of a crash.",
-    answer:
-      "The head restraint should be adjusted so the rigid part is level with the top of my head, and as close to the back of my head as is comfortable.",
-  },
-  {
-    category: "safety",
-    is_show_me: false,
-    question: "Tell me how you'd check the tyres have sufficient tread depth and that their general condition is safe to use.",
-    answer:
-      "The legal minimum tread depth is 1.6mm across the central three-quarters of the tyre's width around its entire circumference, and I'd also check for cuts and bulges.",
-  },
-  {
-    category: "inside_car",
-    is_show_me: false,
-    question: "Tell me how you'd check your headlights and sidelights are working, without getting out of the car.",
-    answer:
-      "I'd switch them on and check the dashboard light confirms they're lit, and I could check their reflection in a window or ask someone to confirm they're working.",
-  },
-  {
-    category: "inside_car",
-    is_show_me: false,
-    question: "Tell me how you'd know if there was a problem with your anti-lock braking system.",
-    answer: "A warning light on the instrument panel would illuminate and stay lit if there's a fault with the ABS.",
-  },
-  {
-    category: "inside_car",
-    is_show_me: false,
-    question: "Tell me how you'd check the direction indicators are working.",
-    answer:
-      "I'd switch on the hazard warning lights, or each indicator in turn, and walk round the vehicle to check all the lights are flashing, or ask someone to confirm while I operate them.",
-  },
-  {
-    category: "inside_car",
-    is_show_me: false,
-    question: "Tell me how you'd check the brake lights are working on this car.",
-    answer:
-      "With the ignition on, I'd operate the footbrake and use a reflection in a window or garage door, or ask someone to check the lights come on.",
-  },
-  {
-    category: "inside_car",
-    is_show_me: false,
-    question: "Tell me how you'd check the power-assisted steering is working before starting a journey.",
-    answer:
-      "If the steering feels unusually heavy, or there's no resistance after gently turning the wheel and pulling away, it may indicate a fault, and a dashboard warning light would also alert me.",
-  },
-  {
-    category: "inside_car",
-    is_show_me: false,
-    question: "Tell me when you'd use front or rear fog lights and how you'd know they're switched on.",
-    answer:
-      "I'd use them only when visibility is seriously reduced to less than 100 metres, and a warning light on the dashboard shows when they're switched on.",
-  },
-  {
-    category: "under_bonnet",
-    is_show_me: false,
-    question: "Open the bonnet and tell me how you'd check the engine has sufficient oil, coolant and brake fluid.",
-    answer:
-      "I'd check the oil sits between the minimum and maximum marks on the dipstick, the coolant is between the markers on the header tank, and the brake fluid is between the min and max lines on its reservoir.",
-  },
-];
-
-export const SHOW_ME_TELL_ME_SQL = SHOW_ME_TELL_ME.map(
-  (q) =>
-    `insert into show_me_tell_me (id, category, question, answer, is_show_me) values ` +
-    `(gen_random_uuid(), '${esc(q.category)}', '${esc(q.question)}', '${esc(q.answer)}', ${q.is_show_me});`
-).join("\n");
+//
+// The bank itself lives in ./questions, because this file calls main() at
+// import and spends twenty minutes talking to OSRM and Overpass — which no
+// test of the question content should have to sit through.
 
 // --- Manoeuvres ---
 type Step = { title: string; detail: string };
@@ -239,6 +111,7 @@ async function main() {
     "-- Generated by scripts/seed/generate.ts — do not edit by hand",
     "begin;",
     "alter table routes add column if not exists steps jsonb default '[]';",
+    "alter table routes add column if not exists phases jsonb default '[]';",
   ];
   const failures: string[] = [];
   for (let ci = 0; ci < centres.length; ci++) {
@@ -249,7 +122,8 @@ async function main() {
       `${j(derivePassHistory(c.pass_rate, ci))}, '{${c.test_types.join(",")}}', '${esc(c.region)}');`
     );
     // One Overpass call per centre, cached. A centre OSM knows nothing about
-    // still gets its ten routes — planRoutes fills the gaps with rings.
+    // still gets its ten routes: planTestRoute falls back to compass points for
+    // the required phases and simply drops the two optional ones.
     let features: Feature[] = [];
     try {
       features = await fetchFeatures(c);
@@ -261,24 +135,37 @@ async function main() {
     await sleep(3000); // Overpass rate-limits per IP; 1.2s earned a run of 429s
 
     const usedNames = new Set<string>();
-    const planned = planRoutes({ lat: c.lat, lng: c.lng }, features, ROUTES_PER_CENTRE);
 
-    for (let ri = 0; ri < planned.length; ri++) {
-      const plan = planned[ri];
+    for (let ri = 0; ri < ROUTES_PER_CENTRE; ri++) {
       try {
-        const r = await fetchRoute(plan.waypoints);
+        // Bisect the radius until the drive lands in the test-length band.
+        // Every fetch is cached on disk, so a re-run after a failure part way
+        // through costs one call rather than the whole search again.
+        let scale = 1, lo = 0.4, hi = 2.5;
+        let plan = planTestRoute({ lat: c.lat, lng: c.lng }, features, ri, scale);
+        let r = await fetchRoute(plan.waypoints);
+        for (let t = 0; t < MAX_TRIES; t++) {
+          const step = nextScale(r.durationS, r.distanceM, scale, lo, hi);
+          if (step.done) break;
+          scale = step.scale; lo = step.lo; hi = step.hi;
+          await sleep(700); // be polite to the public OSRM server
+          plan = planTestRoute({ lat: c.lat, lng: c.lng }, features, ri, scale);
+          r = await fetchRoute(plan.waypoints);
+        }
         const geometry = { type: "LineString", coordinates: r.coords.map((p) => [p.lng, p.lat]) };
         const hazards = deriveHazards(r.coords);
+        const phases = phaseBounds(r.legEdgeCounts, plan.phases, r.coords.length);
         // Named after the fact, from the roads it drove — see nameFromSteps.
         const derived = nameFromSteps(r.steps, usedNames);
         for (const road of (derived ?? "").split(" and ")) if (road) usedNames.add(road);
         const route = { name: `Route ${ri + 1} · ${derived ?? FALLBACK_NAMES[ri % FALLBACK_NAMES.length]}` };
+        const minutes = Math.round((r.durationS / 60) * PACE);
         lines.push(
-          `insert into routes (id, centre_id, name, geometry, estimated_minutes, distance_km, difficulty, speed_profile, observation_zones, steps) ` +
+          `insert into routes (id, centre_id, name, geometry, estimated_minutes, distance_km, difficulty, speed_profile, observation_zones, steps, phases) ` +
           `select gen_random_uuid(), id, '${esc(route.name)}', ${j(geometry)}, ` +
-          `${Math.round((r.durationS / 60) * 1.15)}, ${(r.distanceM / 1000).toFixed(2)}, ` +
+          `${minutes}, ${(r.distanceM / 1000).toFixed(2)}, ` +
           `${deriveDifficulty(r.distanceM / 1000, hazards.length * 2)}, ${j(deriveSpeedProfile(r.speedsMps))}, ` +
-          `${j(deriveObservationZones(r.coords))}, ${j(buildNavSteps(r.steps))} from test_centres where name = '${esc(c.name)}';`
+          `${j(deriveObservationZones(r.coords))}, ${j(buildNavSteps(r.steps))}, ${j(phases)} from test_centres where name = '${esc(c.name)}';`
         );
         for (const h of hazards) {
           lines.push(
@@ -287,7 +174,7 @@ async function main() {
             `from routes where name = '${esc(route.name)}' and centre_id = (select id from test_centres where name = '${esc(c.name)}');`
           );
         }
-        console.log(`  ok: ${route.name} (${(r.distanceM / 1000).toFixed(1)} km, ${plan.kinds.join("/")})`);
+        console.log(`  ok: ${route.name} (${minutes} min, ${(r.distanceM / 1000).toFixed(1)} km, scale ${scale.toFixed(2)}, ${plan.phases.map((x) => x.name).join("/")})`);
       } catch (e) {
         // Not a warning. This file is truncate-and-reload, so a route that is
         // skipped here is a route that disappears from the app on the next

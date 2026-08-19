@@ -10,6 +10,16 @@ export type OsrmRoute = {
   durationS: number;
   speedsMps: (number | null)[]; // per geometry edge, from annotations
   steps: OsrmStep[];            // turn-by-turn maneuvers across all legs
+  /**
+   * How many geometry edges each leg contributed, in order.
+   *
+   * A route planned through waypoints comes back as one leg per waypoint pair,
+   * and the whole-route geometry is those legs concatenated — so these counts
+   * are what turn "the third waypoint was the manoeuvre spot" into a slice of
+   * `coords`. Taken from each leg's annotation length, which is per edge and
+   * therefore one short of that leg's node count.
+   */
+  legEdgeCounts: number[];
 };
 
 export async function fetchRoute(waypoints: LatLng[]): Promise<OsrmRoute> {
@@ -33,6 +43,7 @@ export async function fetchRoute(waypoints: LatLng[]): Promise<OsrmRoute> {
     distanceM: r.distance,
     durationS: r.duration,
     speedsMps: r.legs.flatMap((l: any) => l.annotation.speed as (number | null)[]),
+    legEdgeCounts: r.legs.map((l: any) => (l.annotation?.speed?.length ?? 0) as number),
     steps: r.legs.flatMap((l: any) =>
       (l.steps as any[]).map((s) => ({
         name: s.name ?? "",
