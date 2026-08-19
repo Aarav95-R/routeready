@@ -11,8 +11,9 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
 import { advance, ANNOUNCE_M, ARRIVE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM, routeComplete } from "@/lib/navigation";
-import { bearingDeg, cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading } from "@/lib/geo";
+import { bearingDeg, cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath } from "@/lib/geo";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
+import { chooseRejoin, departureLine, initialOffRoute, REJOINED_LINE, SKIP_WARN_M, stepOffRoute, type OffRouteState, type Rejoin } from "@/lib/offRoute";
 import { stitchLegs } from "@/lib/navsteps";
 import type { Hazard, NavStep, Route } from "@/types/db";
 import { ArrivalCard } from "@/ui/ArrivalCard";
@@ -57,6 +58,14 @@ export default function Practice() {
   const [fallback, setFallback] = useState(false);
   const [busy, setBusy] = useState(false);
   const [previewLoc, setPreviewLoc] = useState<LatLng | null>(null);
+  // The way back onto the route, and how far off it we are. Held in state as
+  // well as a ref because both the map and the banner render from them.
+  const [returnLeg, setReturnLeg] = useState<Directions | null>(null);
+  const [offPhase, setOffPhase] = useState<OffRouteState["phase"]>("on-route");
+  // Metres of route the chosen rejoin skips, or null when nothing is skipped
+  // worth naming. State rather than read off rejoinRef at render time — a ref
+  // read during render is not reactive, and React forbids it.
+  const [skippedM, setSkippedM] = useState<number | null>(null);
 
   const [pos, setPos] = useState<LatLng | null>(null);
   const [stepIndex, setStepIndex] = useState(1);
@@ -100,6 +109,13 @@ export default function Practice() {
   const lastIconRef = useRef(0);
   const mapBearingSeededRef = useRef(false); // first fix of a leg snaps straight to target, no ease-in
   const zoomRef = useRef(NAV_ZOOM_MID);
+  const offRef = useRef<OffRouteState>(initialOffRoute);
+  const returnLegRef = useRef<Directions | null>(null);
+  const rejoinRef = useRef<Rejoin | null>(null);
+  // Guards the directions fetch. The GPS callback runs several times a second
+  // and a departure stays true until the driver is back on the line, so
+  // without this one wrong turn queues a call per fix.
+  const fetchingReturnRef = useRef(false);
 
   useEffect(() => {
     getRoute(id).then((r) => { setRoute(r.data.route); setHazards(r.data.hazards); }).catch(() => {});
@@ -163,6 +179,19 @@ export default function Practice() {
     mapBearingSeededRef.current = false;
   };
 
+  /**
+   * Clear any off-route state. Called when a leg begins, so a departure on the
+   * approach leg cannot leak into the drive itself.
+   */
+  const resetOffRoute = useCallback(() => {
+    offRef.current = initialOffRoute;
+    rejoinRef.current = null;
+    returnLegRef.current = null;
+    setOffPhase("on-route");
+    setReturnLeg(null);
+    setSkippedM(null);
+  }, []);
+
   // Reaching the start line. The drive does not begin here — the card does.
   const reachStart = useCallback(() => {
     phaseRef.current = "at-start";
@@ -178,9 +207,10 @@ export default function Practice() {
     setPhase("route");
     setFallback(false);
     resetLeg(1);
+    resetOffRoute();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Speech.speak("Beginning the route.", { language: "en-GB" });
-  }, []);
+  }, [resetOffRoute]);
 
   const finishRoute = useCallback(() => {
     stopWatching();
@@ -194,6 +224,31 @@ export default function Practice() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     mapRef.current?.recenter();
   };
+
+  /**
+   * Fetch the way back onto the route.
+   *
+   * Never awaited by the GPS callback: that runs on every fix, and awaiting
+   * here would serialise the whole nav loop behind a network call that can
+   * take seconds. The result lands in a ref, and the next fix picks it up.
+   */
+  const fetchReturnLeg = useCallback(async (from: LatLng, rejoin: Rejoin) => {
+    if (fetchingReturnRef.current) return;
+    fetchingReturnRef.current = true;
+    try {
+      const dirs = await fetchDirections(from, rejoin.point);
+      returnLegRef.current = dirs;
+      setReturnLeg(dirs);
+    } catch {
+      // No directions available. The banner still says "off route" and the
+      // route stays drawn, which is more use at the wheel than an error the
+      // driver cannot act on.
+      returnLegRef.current = null;
+      setReturnLeg(null);
+    } finally {
+      fetchingReturnRef.current = false;
+    }
+  }, []);
 
   const onPosition = useCallback((c: Location.LocationObjectCoords) => {
     const raw = { lat: c.latitude, lng: c.longitude };
@@ -237,6 +292,52 @@ export default function Practice() {
     // The icon's angle is relative to the map, so a map that turned changes it
     // even when the phone did not move.
     setIconRotation(result.iconRotation);
+
+    // Off-route applies to the route leg only. The approach is a drive to the
+    // start line that the driver may legitimately take any way they like.
+    if (ph === "route") {
+      const departedBefore = offRef.current.departedIdx;
+      const routeSnap = snapToPath(coords, raw, trailRef.current);
+      // Searched end to end rather than through a window: the return leg is
+      // short, and there is no trail index along it to window around.
+      const legSnap = returnLegRef.current
+        ? snapToPath(returnLegRef.current.coords, raw, 0, returnLegRef.current.coords.length)
+        : null;
+      const { state, event } = stepOffRoute(offRef.current, {
+        routeDistM: routeSnap?.distM ?? Infinity,
+        returnLegDistM: legSnap?.distM ?? null,
+        trailIdx: result.trailIdx,
+        returnLegReady: returnLegRef.current !== null,
+      });
+      offRef.current = state;
+      setOffPhase(state.phase);
+
+      if (event === "departed" || event === "recompute") {
+        const rejoin = chooseRejoin(coords, cum, p, departedBefore ?? result.trailIdx, mapBearingRef.current);
+        rejoinRef.current = rejoin;
+        returnLegRef.current = null;
+        setReturnLeg(null);
+        setSkippedM(rejoin && rejoin.skippedM >= SKIP_WARN_M ? rejoin.skippedM : null);
+        if (rejoin) {
+          // Spoken once, on leaving. A recompute is the app changing its own
+          // mind, not the driver doing anything new, so it stays silent.
+          if (event === "departed") {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            Speech.speak(departureLine(rejoin.skippedM), { language: "en-GB" });
+          }
+          void fetchReturnLeg(p, rejoin);
+        }
+      }
+
+      if (event === "rejoined") {
+        rejoinRef.current = null;
+        returnLegRef.current = null;
+        setReturnLeg(null);
+        setSkippedM(null);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Speech.speak(REJOINED_LINE, { language: "en-GB" });
+      }
+    }
 
     // Waiting on the start line for the driver to tap Begin. The map keeps up
     // with them; nothing is narrated, and no leg is being navigated.
@@ -301,7 +402,7 @@ export default function Practice() {
       }
     }
 
-  }, [reachStart, finishRoute]);
+  }, [reachStart, finishRoute, fetchReturnLeg]);
 
   const zoomToMe = async () => {
     try {
@@ -409,6 +510,9 @@ export default function Practice() {
   const isApproach = phase === "approach";
   const current = (isApproach ? approach?.steps : routeSteps)?.[stepIndex];
   const next = (isApproach ? approach?.steps : routeSteps)?.[stepIndex + 1];
+  // "straying" is deliberately not included: it is the silent phase, and a
+  // driver who has merely clipped a wide roundabout should see nothing change.
+  const offRoute = offPhase === "off-route" || offPhase === "returning";
 
   return (
     <View className="flex-1">
@@ -427,6 +531,8 @@ export default function Practice() {
         // A loop finishes where it starts, so the flag would land on the start
         // dot and hide it.
         finish={finish && !isLoop ? finish : null}
+        returnLL={returnLeg?.coords ?? undefined}
+        dimRoute={offRoute}
       >
         {hazards.map((h) => (
           <PointAnnotation key={h.id} id={h.id} coordinate={[h.lng, h.lat]} onSelected={() => { setSelectedHazard(h); sheetRef.current?.snapToIndex(0); }}>
@@ -485,14 +591,32 @@ export default function Practice() {
       {(phase === "approach" || phase === "route") && (
         <>
           <View className="absolute left-3 right-3" style={{ top: insets.top + 6 }}>
-            <ManeuverBanner
-              eyebrow={isApproach ? "Heading to the start" : null}
-              fallback={fallback}
-              step={current}
-              next={next}
-              arriveLabel={isApproach ? "then the route begins" : undefined}
-              distanceM={fallback ? directDist : distanceM}
-            />
+            {offRoute ? (
+              <ManeuverBanner
+                tone="off"
+                eyebrow="Off route"
+                // Until the return leg lands there is no turn to give, so the
+                // banner falls back to saying what is happening rather than
+                // showing a stale instruction from the route they have left.
+                fallback={!returnLeg}
+                fallbackText="Rejoining the route"
+                step={returnLeg?.steps?.[0]}
+                next={returnLeg?.steps?.[1]}
+                distanceM={null}
+                distanceLabel={
+                  skippedM !== null ? `Rejoining — ${formatDistance(skippedM)} skipped` : "Rejoining ahead"
+                }
+              />
+            ) : (
+              <ManeuverBanner
+                eyebrow={isApproach ? "Heading to the start" : null}
+                fallback={fallback}
+                step={current}
+                next={next}
+                arriveLabel={isApproach ? "then the route begins" : undefined}
+                distanceM={fallback ? directDist : distanceM}
+              />
+            )}
           </View>
 
           {phase === "route" && (
