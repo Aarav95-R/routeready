@@ -125,3 +125,54 @@ describe("nameFromSteps", () => {
     expect(nameFromSteps([step("Purley Way", 900)], new Set(["Purley Way"]))).toBeNull();
   });
 });
+
+// ── the wider feature vocabulary ────────────────────────────────────────────
+//
+// A test route is built from the things a driving test contains, so `classify`
+// has to be able to tell a signalled junction from a roundabout, a dual
+// carriageway from a single-carriageway A road, and a street a manoeuvre could
+// actually be done on from any other side street.
+describe("classify", () => {
+  test("a signalled junction is its own kind, not a plain junction", () => {
+    expect(classify({ lat: 51.5, lon: -0.1, tags: { highway: "traffic_signals" } }))
+      .toEqual({ kind: "signals", lat: 51.5, lng: -0.1 });
+  });
+
+  test("a dual carriageway outranks the plain fast-road label", () => {
+    const f = classify({ center: { lat: 51.5, lon: -0.1 }, tags: { highway: "primary", dual_carriageway: "yes" } });
+    expect(f?.kind).toBe("dual");
+  });
+
+  test("a one-way trunk road with two lanes is dual by implication", () => {
+    const f = classify({ center: { lat: 51.5, lon: -0.1 }, tags: { highway: "trunk", lanes: "2", oneway: "yes" } });
+    expect(f?.kind).toBe("dual");
+  });
+
+  test("a single-carriageway A road is still just fast", () => {
+    const f = classify({ center: { lat: 51.5, lon: -0.1 }, tags: { highway: "primary" } });
+    expect(f?.kind).toBe("fast");
+  });
+
+  test("a residential street with parallel parking is a manoeuvre spot", () => {
+    const f = classify({ center: { lat: 51.5, lon: -0.1 }, tags: { highway: "residential", "parking:lane:both": "parallel" } });
+    expect(f?.kind).toBe("parking");
+  });
+
+  test("a plain residential street is still an estate", () => {
+    const f = classify({ center: { lat: 51.5, lon: -0.1 }, tags: { highway: "residential" } });
+    expect(f?.kind).toBe("estate");
+  });
+
+  test("a roundabout wins over the road class it carries", () => {
+    const f = classify({ center: { lat: 51.5, lon: -0.1 }, tags: { junction: "roundabout", highway: "primary" } });
+    expect(f?.kind).toBe("roundabout");
+  });
+
+  test("an element with no position is dropped rather than placed at null island", () => {
+    expect(classify({ tags: { highway: "residential" } })).toBeNull();
+  });
+
+  test("an untagged element is not a feature", () => {
+    expect(classify({ lat: 51.5, lon: -0.1, tags: { building: "yes" } })).toBeNull();
+  });
+});

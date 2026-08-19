@@ -16,7 +16,25 @@ import type { OsrmStep } from "./osrm";
  * be tested without a network.
  */
 
-export type FeatureKind = "roundabout" | "crossing" | "fast" | "estate";
+/**
+ * The things a driving test is made of, as OSM knows them.
+ *
+ * Wider than the original four because a route is now built from the *phases*
+ * of a test rather than from three waypoints on a compass — and two of those
+ * phases need distinctions the old list could not make. A signalled junction
+ * is examined differently from a roundabout; a dual carriageway is the fastest
+ * road a test uses and is joined and left differently from a single-
+ * carriageway A road; and a manoeuvre needs a street it is actually possible
+ * to stop on.
+ */
+export type FeatureKind =
+  | "roundabout"   // give way, lane discipline, counting exits
+  | "signals"      // a signalled junction — the other half of junction work
+  | "crossing"     // zebra and signalled pedestrian crossings
+  | "fast"         // single-carriageway primary or trunk
+  | "dual"         // dual carriageway
+  | "estate"       // residential: slow speed, parked cars, observation
+  | "parking";     // residential with on-street parking — somewhere to manoeuvre
 export type Feature = LatLng & { kind: FeatureKind };
 
 /** An Overpass element, as far as this module cares. */
@@ -34,11 +52,29 @@ export function classify(el: OverpassElement): Feature | null {
   const pos = el.center ?? (el.lat !== undefined && el.lon !== undefined ? { lat: el.lat, lon: el.lon } : null);
   if (!pos) return null;
   const t = el.tags ?? {};
+
+  // Two carriageways is the fastest thing a test will use, and it is examined
+  // differently from a single-carriageway A road — joining, lane changes, a
+  // national speed limit. Tagged outright in some places and only implied in
+  // others, so both spellings are accepted.
+  const isDual =
+    t.dual_carriageway === "yes" ||
+    (t.oneway === "yes" && Number(t.lanes ?? "0") >= 2);
+
+  // A manoeuvre needs somewhere legal to stop, and parked cars are the signal
+  // OSM actually carries for that. The key is spelt several ways
+  // (parking:lane:both, :left, :right, and the newer parking:both), so the
+  // prefix is matched rather than any one of them.
+  const hasKerbsideParking = Object.entries(t).some(
+    ([k, v]) => k.startsWith("parking:") && /parallel|diagonal|perpendicular/.test(v)
+  );
+
   const kind: FeatureKind | null =
     t.junction === "roundabout" ? "roundabout"
+    : t.highway === "traffic_signals" ? "signals"
     : t.highway === "crossing" ? "crossing"
-    : t.highway === "primary" || t.highway === "trunk" ? "fast"
-    : t.highway === "residential" ? "estate"
+    : t.highway === "primary" || t.highway === "trunk" ? (isDual ? "dual" : "fast")
+    : t.highway === "residential" ? (hasKerbsideParking ? "parking" : "estate")
     : null;
   return kind ? { kind, lat: pos.lat, lng: pos.lon } : null;
 }

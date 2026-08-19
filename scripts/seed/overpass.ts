@@ -22,12 +22,26 @@ import { classify, type Feature, type OverpassElement } from "./routePlan";
 function query(lat: number, lng: number, radiusM: number): string {
   const near = `(around:${radiusM},${lat},${lng})`;
   return [
-    "[out:json][timeout:60];",
+    "[out:json][timeout:90];",
     `way${near}[junction=roundabout];`,
     "out center 30;",
+    `node${near}[highway=traffic_signals];`,
+    "out 30;",
     `node${near}[highway=crossing]["crossing:markings"~"zebra"];`,
     "out 30;",
+    // Dual carriageways are asked for before the general A-road query, and
+    // capped separately. They are rare next to primary roads in general, and a
+    // shared cap would return none of them for most centres — which is exactly
+    // the phase that is allowed to be missing, so it has to be missing for the
+    // real reason rather than because the cap was spent.
+    `way${near}[highway~"^(primary|trunk)$"][dual_carriageway=yes];`,
+    "out center 20;",
     `way${near}[highway~"^(primary|trunk)$"];`,
+    "out center 30;",
+    // Same argument as dual carriageways: a street with kerbside parking is a
+    // small fraction of all residential ways, and the manoeuvre phase depends
+    // on finding one.
+    `way${near}[highway=residential]["parking:lane:both"];`,
     "out center 30;",
     `way${near}[highway=residential];`,
     "out center 60;",
