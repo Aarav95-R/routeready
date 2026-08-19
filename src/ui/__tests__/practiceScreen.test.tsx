@@ -160,3 +160,70 @@ test("a manoeuvre the driver never gets close to does not strand the drive", asy
 
   expect(screen.getByText("Route complete")).toBeTruthy();
 });
+
+// ── Off-route recovery ──────────────────────────────────────────────────────
+//
+// The loop runs west→east along the bottom edge (A→B) at lat 51.500. Leaving
+// it means dropping south of that edge: 0.0006 of latitude is about 66 m, well
+// past the 45 m entry threshold, and there is no other leg of the rectangle
+// near enough for a fix to snap onto instead.
+const ON_AB: LatLng[] = [A, { lat: 51.5, lng: -0.099 }, { lat: 51.5, lng: -0.098 }];
+const OFF_AB: LatLng[] = [
+  { lat: 51.4994, lng: -0.0975 },
+  { lat: 51.4994, lng: -0.097 },
+  { lat: 51.4994, lng: -0.0965 },
+];
+
+const beginAtStart = async () => {
+  // The suite-wide beforeEach clears mockBack only, and these tests count
+  // utterances — so the speech log has to start empty for each of them.
+  (require("expo-speech").speak as jest.Mock).mockClear();
+  setLastKnownPosition(A.lat, A.lng);
+  await mount();
+  await act(async () => { fireEvent.press(screen.getByText("Start")); });
+};
+
+const spoken = () => (require("expo-speech").speak as jest.Mock).mock.calls.map((c: unknown[]) => c[0] as string);
+
+test("a single wild fix is not enough to call the driver off route", async () => {
+  await beginAtStart();
+  await drive([...ON_AB, { lat: 51.4994, lng: -0.098 }, ...ON_AB]);
+
+  expect(screen.queryByText("Off route")).toBeNull();
+  expect(spoken().some((s) => s.includes("left the route"))).toBe(false);
+});
+
+test("three fixes clear of the line put the banner into its amber state", async () => {
+  await beginAtStart();
+  await drive([...ON_AB, ...OFF_AB]);
+
+  expect(screen.getByText("Off route")).toBeTruthy();
+});
+
+test("leaving the route is announced exactly once, however long the driver stays off it", async () => {
+  await beginAtStart();
+  await drive([...ON_AB, ...OFF_AB, ...OFF_AB, ...OFF_AB]);
+
+  const left = spoken().filter((s) => s.includes("left the route"));
+  expect(left).toHaveLength(1);
+});
+
+test("getting back on the line clears the banner and says so", async () => {
+  await beginAtStart();
+  await drive([...ON_AB, ...OFF_AB]);
+  expect(screen.getByText("Off route")).toBeTruthy();
+
+  // Two fixes back on the road — EXIT_FIXES.
+  await drive([{ lat: 51.5, lng: -0.096 }, { lat: 51.5, lng: -0.095 }]);
+
+  expect(screen.queryByText("Off route")).toBeNull();
+  expect(spoken()).toContain("Back on route.");
+});
+
+test("a driver who never leaves the route is never told anything about it", async () => {
+  await beginAtStart();
+  await drive(LOOP.slice(0, 20));
+
+  expect(screen.queryByText("Off route")).toBeNull();
+  expect(spoken().some((s) => s.includes("left the route") || s === "Back on route.")).toBe(false);
+});
