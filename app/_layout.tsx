@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { useSession } from "@/stores/sessionStore";
 import { useNetwork } from "@/stores/networkStore";
 import { colors } from "@/ui/theme";
+import { ErrorBoundary } from "@/ui/ErrorBoundary";
 
 // Runtime token for displaying the Mapbox map.
 Mapbox.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? null);
@@ -53,9 +54,14 @@ export default function RootLayout() {
   if (!fontsLoaded || !initialized) return <View className="flex-1 bg-surface" />;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      {/* The ground behind every route, including mid-transition. A literal
-          here is what would flash the old colour on each push. */}
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.field } }} />
+      {/* Outside the Stack rather than inside it. A throw while a screen is
+          mounting takes the navigator with it, so a boundary nested under the
+          navigator would be unmounted by the very error it exists to catch. */}
+      <ErrorBoundary>
+        {/* The ground behind every route, including mid-transition. A literal
+            here is what would flash the old colour on each push. */}
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.field } }} />
+      </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }
