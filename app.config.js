@@ -9,10 +9,16 @@ module.exports = {
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: "routeready",
-  userInterfaceStyle: "automatic",
+  // Light, not "automatic". The palette in src/ui/theme.ts is a single warm-stone
+  // set with no dark twin and nothing reads useColorScheme, so "automatic" only
+  // ever meant iOS darkening the chrome around a light app. This is the honest
+  // declaration until a dark pass exists; theme.ts is already written for one.
+  userInterfaceStyle: "light",
   newArchEnabled: true,
   ios: {
-    supportsTablet: true,
+    // Every screen is laid out at phone widths. Claiming tablet support
+    // guarantees a reviewer opens it on an iPad, where those layouts stretch.
+    supportsTablet: false,
     bundleIdentifier: "com.sumeetraheja.routeready",
     infoPlist: {
       NSLocationWhenInUseUsageDescription:
