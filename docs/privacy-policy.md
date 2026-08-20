@@ -1,0 +1,204 @@
+# RouteReady — Privacy Policy
+
+**Last updated: 20 August 2026**
+
+RouteReady helps learner drivers practise around real UK driving test centres.
+This policy explains what the app collects, why, and what you can do about it.
+It describes what the app actually does; where something is not collected, this
+policy says so plainly rather than staying quiet about it.
+
+RouteReady is operated by **[YOUR NAME OR COMPANY]**, **[ADDRESS]**, United
+Kingdom. For anything in this policy, contact **[SUPPORT EMAIL]**.
+
+Under UK GDPR we are the **data controller** for the information described here.
+
+---
+
+## What we collect
+
+### Your account
+
+When you sign up we collect:
+
+- **Your email address**, which identifies your account and is how you sign in.
+- **Your password**, stored only as a cryptographic hash by our authentication
+  provider. Nobody at RouteReady can see it.
+- **Your first name**, if you choose to give one. It is optional, and it is used
+  only to greet you in the app.
+
+### What you tell us at sign-up
+
+The sign-up questions ask which test centre is nearest you, roughly when your
+test is, how far along you are, and what you want to work on. These are stored
+with your account and used to decide what the app shows you first. You can skip
+the optional ones.
+
+### What you do in the app
+
+- **Mock test results** — the route you drove, your score, which categories of
+  fault were recorded, and how long the drive took.
+- **Off-route events** — how many times you left the route during a mock test,
+  how much of the route that skipped, and how long you were off it. This is
+  recorded as a position *along the route you chose*, not as a map coordinate.
+  **We do not store the GPS location you were at.**
+- **Your favourite routes.**
+
+### Your location
+
+RouteReady uses your device's location **only while the app is open and you are
+using it**. It has no background location access and cannot see where you are
+when the app is closed.
+
+Your location is used, on your device, to:
+
+- show where you are on the map,
+- work out when to speak the next instruction,
+- tell whether you have reached the start of a route or left it,
+- and detect when you enter the observation zones a mock test scores.
+
+**Your location is not stored on our servers and is not part of your account.**
+It is held in your phone's memory while a drive is happening and discarded when
+it ends. The only things that outlive a drive are the results described above.
+
+The one exception is unavoidable and worth being clear about: to draw the map
+and to give you directions to a route's start, coordinates are sent to Mapbox
+as part of an ordinary map request. See **Who else is involved** below.
+
+### What we do not collect
+
+We want to be specific, because "we may collect" language usually hides this:
+
+- **No analytics or usage tracking.** No third-party analytics SDK of any kind
+  is in the app.
+- **No advertising, and no advertising identifiers.** We do not use the IDFA and
+  do not show ads.
+- **No tracking across other apps or websites.**
+- **No contacts, photos, microphone, calendar or health data.**
+- **No payment details.** RouteReady does not take payments.
+- **We never sell your data.** There is no arrangement under which we could.
+
+---
+
+## Why we are allowed to hold it (legal bases)
+
+| What | Why | Legal basis under UK GDPR |
+|---|---|---|
+| Email and password | To create and secure your account | Performance of a contract |
+| Name, sign-up answers | To make the app useful to you | Consent — all optional |
+| Mock test results, favourites | To show you your own progress | Performance of a contract |
+| Location, while driving | To navigate and score a practice drive | Performance of a contract |
+
+Where the basis is consent, you can withdraw it at any time by clearing the
+field in the app or by deleting your account.
+
+---
+
+## Who else is involved
+
+RouteReady uses two service providers. Both are bound by their own contracts and
+neither is permitted to use your data for their own purposes.
+
+**Supabase** hosts the database and handles sign-in. Your email, your name if
+you gave one, your sign-up answers, your mock test results and your favourites
+are stored there. Data is held in the EU (`eu-west-1`, Ireland).
+[supabase.com/privacy](https://supabase.com/privacy)
+
+**Mapbox** provides the map and the driving directions. When the app draws a map
+or asks for directions to a route's start, it sends the coordinates needed for
+that request. Mapbox receives these as part of serving the map; it does not
+receive your name, email, or anything that identifies your account.
+[mapbox.com/legal/privacy](https://www.mapbox.com/legal/privacy)
+
+**Apple** distributes the app and may collect its own data about downloads and
+crashes under its own policy. We do not receive anything from Apple that
+identifies you.
+
+Some processing by these providers happens outside the UK. Where it does, it is
+covered by the safeguards those providers publish, including the UK
+International Data Transfer Addendum.
+
+---
+
+## How long we keep it
+
+Your account and its data are kept for as long as your account exists.
+
+When you delete your account, it is deleted **immediately and permanently** —
+your email, your name, your sign-up answers, every mock test result and every
+favourite. There is no grace period and nothing is retained in an archive.
+Backups held by our hosting provider roll off within 30 days.
+
+---
+
+## Deleting your account
+
+You can delete your account from inside the app, without asking us and without
+sending an email:
+
+> **Account → Delete account → Delete my account**
+
+The screen lists exactly what will be removed before you confirm. Deletion is
+immediate and cannot be undone. Signing up again with the same email address
+gives you a new, empty account.
+
+If you would rather we did it, email **[SUPPORT EMAIL]** from the address on the
+account and we will action it within 30 days.
+
+---
+
+## Your rights
+
+Under UK GDPR you have the right to:
+
+- **access** the personal data we hold about you,
+- **correct** anything inaccurate,
+- **delete** your data — the in-app button above does this immediately,
+- **restrict** or **object to** how we use it,
+- **portability** — receive your data in a machine-readable form,
+- **withdraw consent** where consent was the basis.
+
+To exercise any of these, email **[SUPPORT EMAIL]**. We will respond within one
+month. You will never be charged for making a request or treated differently for
+having made one.
+
+If you are unhappy with how we have handled your data, you can complain to the
+**Information Commissioner's Office** — [ico.org.uk](https://ico.org.uk),
+helpline 0303 123 1113.
+
+---
+
+## Security
+
+Your sign-in session is stored in your device's secure keychain, not in ordinary
+app storage. All traffic between the app and our servers uses TLS. Database
+access is governed by row-level security policies, so one account cannot read
+another's results — this is enforced by the database itself, not only by the app.
+
+No system is perfectly secure, and we will not claim otherwise. If we ever
+discover a breach affecting your data, we will tell you and the ICO as the law
+requires.
+
+---
+
+## Children
+
+RouteReady is intended for people learning to drive. You must be at least 17 to
+apply for a UK provisional car licence, and the app is not directed at children
+under 13. We do not knowingly collect data from anyone under 13; if you believe
+we have, contact us and we will delete it.
+
+---
+
+## Changes to this policy
+
+If we change what we collect or why, we will update this page and change the
+date at the top. If the change is significant, we will tell you in the app
+before it takes effect.
+
+---
+
+## Contact
+
+**[YOUR NAME OR COMPANY]**
+**[ADDRESS]**
+**[SUPPORT EMAIL]**

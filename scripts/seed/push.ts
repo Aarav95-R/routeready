@@ -15,11 +15,24 @@
 //   B) A full connection string (only if the password has no URL-special chars):
 //        npx tsx scripts/seed/push.ts "postgresql://user:pass@host:5432/postgres"
 //
-// Re-running is safe: it clears the seeded tables first, then reloads.
+// This script TRUNCATES before it loads, so it refuses to run without
+// --yes-truncate and prints the host it was about to empty. Which database
+// that is comes from an env var you exported in some earlier shell, and that
+// is not a thing worth finding out afterwards.
 import { readFileSync } from "node:fs";
 import { Client, type ClientConfig } from "pg";
+import { confirmDestructive } from "./confirm";
 
-const conn = process.argv[2] ?? process.env.DATABASE_URL;
+
+// Before the connection is even opened: a refusal that has already connected
+// is a refusal that has already been pointed at something.
+const refusal = confirmDestructive(process.argv.slice(2), process.env);
+if (refusal !== null) {
+  console.error(refusal);
+  process.exit(1);
+}
+const conn = process.argv.slice(2).find((a) => a.startsWith("postgres://") || a.startsWith("postgresql://"))
+  ?? process.env.DATABASE_URL;
 if (!conn && !process.env.PGHOST) {
   console.error(
     "No credentials found.\n" +
