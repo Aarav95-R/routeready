@@ -9,6 +9,8 @@ jest.setTimeout(20000);
 jest.mock("@rnmapbox/maps", () => require("../../test/rnmapboxMock"));
 jest.mock("expo-location", () => require("../../test/locationMock"));
 jest.mock("expo-speech", () => ({ speak: jest.fn(), stop: jest.fn() }));
+const mockKeepAwake = jest.fn();
+jest.mock("expo-keep-awake", () => ({ useKeepAwake: () => mockKeepAwake() }));
 jest.mock("expo-haptics", () => ({
   impactAsync: jest.fn(), notificationAsync: jest.fn(),
   ImpactFeedbackStyle: { Light: "light", Medium: "medium", Heavy: "heavy" },
@@ -239,4 +241,15 @@ test("a driver who never leaves the route is never told anything about it", asyn
 
   expect(screen.queryByText("Off route")).toBeNull();
   expect(spoken().some((s) => s.includes("left the route") || s === "Back on route.")).toBe(false);
+});
+
+// A practice loop runs for tens of minutes with the phone mounted and untouched,
+// which is exactly the condition iOS auto-lock exists to end. The assertion is on
+// the hook rather than on any pixel because there is nothing on screen to look at:
+// a released wake lock looks identical right up until the display goes black.
+test("the screen is held awake for the length of the drive", async () => {
+  mockKeepAwake.mockClear();
+  await mount();
+
+  expect(mockKeepAwake).toHaveBeenCalled();
 });

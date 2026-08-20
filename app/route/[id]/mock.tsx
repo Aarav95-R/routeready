@@ -3,6 +3,7 @@ import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Location from "expo-location";
+import { useKeepAwake } from "expo-keep-awake";
 import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
@@ -128,6 +129,12 @@ export default function Mock() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
+  // A practice loop runs about forty minutes with the phone mounted and
+  // untouched, which is exactly the condition iOS auto-lock is built to end.
+  // Scoped to this screen rather than set globally: the lock should come back
+  // the moment the drive does not need the map. Released on unmount.
+  useKeepAwake();
   const {
     startedAt, activeZoneIdx, marks, samples,
     start, onSample, tapMirrors, addMark, undoMark, finish, addDeviation,
