@@ -1,0 +1,103 @@
+{
+  "code": "Ok",
+  "routes": [
+    {
+      "distance": 1309.964,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -0.240884,
+            51.608728
+          ],
+          [
+            -0.241049,
+            51.609448
+          ],
+          [
+            -0.241227,
+            51.610227
+          ]
+        ]
+      },
+      "legs": [
+        {
+          "steps": [
+            {
+              "name": "Watford Way",
+              "distance": 934.405,
+              "maneuver": {
+                "type": "depart",
+                "location": [
+                  -0.240884,
+                  51.608728
+                ]
+              }
+            },
+            {
+              "name": "Watford Way",
+              "distance": 113.073,
+              "maneuver": {
+                "type": "rotary",
+                "modifier": "slight right",
+                "location": [
+                  -0.244489,
+                  51.616347
+                ],
+                "exit": 1
+              }
+            },
+            {
+              "name": "The Broadway",
+              "distance": 13.113,
+              "maneuver": {
+                "type": "turn",
+                "modifier": "left",
+                "location": [
+                  -0.245665,
+                  51.617012
+                ]
+              }
+            },
+            {
+              "name": "The Broadway",
+              "distance": 80.909,
+              "maneuver": {
+                "type": "continue",
+                "modifier": "left",
+                "location": [
+                  -0.245702,
+                  51.616897
+                ]
+              }
+            },
+            {
+              "name": "Goodwyn Avenue",
+              "distance": 168.463,
+              "maneuver": {
+                "type": "turn",
+                "modifier": "right",
+                "location": [
+                  -0.245063,
+                  51.616317
+                ]
+              }
+            },
+            {
+              "name": "Goodwyn Avenue",
+              "distance": 0,
+              "maneuver": {
+                "type": "arrive",
+                "modifier": "left",
+                "location": [
+                  -0.2473,
+                  51.615796
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
