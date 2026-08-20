@@ -18,7 +18,7 @@ import type { Deviation } from "@/types/db";
 import Result from "../../../app/route/[id]/result";
 
 const deviation = (over: Partial<Deviation> = {}): Deviation => ({
-  atIdx: 40, lat: 51.74, lng: -0.33, skippedM: 380, seconds: 47, ...over,
+  atIdx: 40, skippedM: 380, seconds: 47, ...over,
 });
 
 /** A finished run with no faults, so only the deviation row is under test. */

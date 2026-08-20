@@ -68,8 +68,13 @@ export type Manoeuvre = { id: string; name: string; steps: ManoeuvreStep[]; tips
 export type Deviation = {
   /** The route vertex the driver left at, into `geometry.coordinates`. */
   atIdx: number;
-  lat: number;
-  lng: number;
+  // No lat/lng. This row is written to user_progress, which is a server
+  // table keyed to a user id, and those two fields were the driver's actual
+  // GPS position at a point off any published route - the most identifying
+  // thing the app could store, kept against a named account, and read back
+  // by nothing: the result screen uses the count and skippedM alone. atIdx
+  // indexes the route's own public geometry, which is what a map pin would
+  // be drawn from if one is ever wanted.
   /** Metres of route skipped by the rejoin that followed. */
   skippedM: number;
   /** How long they were off the route. */

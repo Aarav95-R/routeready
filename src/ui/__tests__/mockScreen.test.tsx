@@ -162,3 +162,32 @@ test("the screen is held awake for the length of the drive", async () => {
 
   expect(mockKeepAwake).toHaveBeenCalled();
 });
+
+// A deviation is written to user_progress - a server table, keyed to a user
+// id, holding rows that outlive the drive. It used to carry the raw GPS fix
+// the driver was sitting at, which is a real position off any public route,
+// linked to a named account, that nothing ever read back: the result screen
+// uses the count and skippedM and nothing else. atIdx indexes the route's own
+// published geometry and is what a map pin would be drawn from, so it stays.
+//
+// Asserted on the exact key set rather than on the two absent names, so that
+// a future field carrying a position cannot be added without this failing.
+test("leaving the route records no GPS position, because none is ever read", async () => {
+  setLastKnownPosition(A.lat, A.lng);
+  await mount();
+  await waitFor(() => expect(screen.getByText("Start")).toBeTruthy());
+  await act(async () => { fireEvent.press(screen.getByText("Start")); });
+
+  // Along the first side, three fixes well clear of it, then back on.
+  await drive(side(A, B, 6));
+  await drive([
+    { lat: 51.4975, lng: -0.0955 },
+    { lat: 51.4972, lng: -0.0950 },
+    { lat: 51.4970, lng: -0.0945 },
+  ]);
+  await drive([{ lat: 51.5, lng: -0.094 }, { lat: 51.5, lng: -0.0935 }]);
+
+  const [deviation] = useMockTest.getState().deviations;
+  expect(deviation).toBeDefined();
+  expect(Object.keys(deviation).sort()).toEqual(["atIdx", "seconds", "skippedM"]);
+});

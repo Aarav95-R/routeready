@@ -535,8 +535,6 @@ export default function Mock() {
         if (since !== null) {
           addDeviation({
             atIdx: departedBefore ?? result.trailIdx,
-            lat: result.pos.lat,
-            lng: result.pos.lng,
             skippedM: rejoinRef.current?.skippedM ?? 0,
             seconds: Math.round((Date.now() - since) / 1000),
           });
