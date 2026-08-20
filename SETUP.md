@@ -7,11 +7,11 @@ Phase 1 is code-complete on the `phase-1` branch: auth, test-centre directory, r
 1. Create a new project at https://supabase.com.
 2. Open the **SQL Editor** and run, in order:
    - `supabase/schema.sql` — creates the 6 tables, RLS policies, and Phase-1 columns/`favourites` table.
-   - `supabase/seed.sql` — inserts 40 real DVSA centres, 400 road-snapped practice routes, their hazards, 18 show-me/tell-me questions, 4 manoeuvres.
+   - `supabase/seed.sql` — inserts 40 real DVSA centres, 400 road-snapped practice routes, their hazards, 20 show-me/tell-me questions, 4 manoeuvres.
 3. Sanity check in the SQL editor:
    ```sql
    select count(*) from routes;           -- expect 400
-   select count(*) from show_me_tell_me;  -- expect 18
+   select count(*) from show_me_tell_me;  -- expect 20
    ```
 
 ## 2. Configure credentials
@@ -58,4 +58,10 @@ Walk through these on the device:
 
 ## What's deliberately not in Phase 1
 
-The Progress, Manoeuvres, and Quiz tabs show "Coming in Phase 2" placeholders. Their data is already seeded; only the screens remain. Phase 2 also has one noted cleanup: the show-me/tell-me questions currently skew toward the "inside car" category, to be rebalanced when the quiz UI is built.
+The Quiz tab is built: the bank is browsable by category, and a round deals ten questions as multiple choice, one screen each, ending on a summary. Results live on the device under `cache:progress:quiz`, so signing out clears them with everything else personal.
+
+Two things to know about the bank. The rebalance this file used to promise is done — the single "under the bonnet" row that crammed oil, coolant and brake fluid into one question is now the three real DVSA questions it stood in for, and the indicator and brake-light checks moved to "safety and the outside", where you actually do them. That is how 18 questions became 20.
+
+The four options under each question are **not DVSA content**. The agency publishes the questions and the model answers only, because the real test is verbal and offers nobody a choice of four. Every wrong option was written for this app, each bending one real detail out of true — a threshold, a condition, a dashboard symbol. They live in `scripts/seed/questions.ts` and are worth reading before release.
+
+Manoeuvres is built: four manoeuvres, each with a top-down diagram whose car moves to whichever step you tap or scroll to. It is a reference only \u2014 nothing is saved, so there is no ticking, no confidence rating and no per-user state.

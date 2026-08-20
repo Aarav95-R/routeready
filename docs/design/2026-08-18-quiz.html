@@ -1,0 +1,786 @@
+<title>Show Me, Tell Me</title>
+<style>
+  :root {
+    /* Document chrome — the house style the seven sibling docs already use. */
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --line-soft: #EFF2EC; --emerald: #1A875E;
+    --emerald-bright: #2AA173; --clay: #B8624A; --amber: #B45309;
+    --code-bg: #F0F2EC; --frame: #D7D3CB; --shell: #EFEDE8;
+
+    /* The app's own roles, quoted verbatim from src/ui/theme.ts as it stands
+       today. These never invert: the phone shows the product, and the product
+       has one appearance. */
+    --a-field: #F5F0E8; --a-cell: #FFFFFF; --a-label: #1C1917;
+    --a-label2: #6B635B; --a-label3: #8A827A; --a-sep: #E4DFD8;
+    --a-fill: #EBE7E1; --a-accent: #1A875E; --a-clay: #B8624A;
+    --a-clay-tint: #F7E6DB; --a-danger: #DC2626; --a-drawing: #EDEBE4;
+
+    /* Two tints that do not exist in theme.ts yet, and are the only new values
+       this feature asks for. Each is its hue laid over the cell at low alpha,
+       resolved to a flat hex so a cell never has to be transparent. */
+    --a-accent-tint: #E7F2ED; --a-danger-tint: #FBE9E9;
+
+    --ease: cubic-bezier(0.33, 1, 0.68, 1); /* Easing.out(Easing.cubic) */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+      --line: #26302A; --line-soft: #1C241E; --emerald: #34D399;
+      --emerald-bright: #6EE7B7; --clay: #E8927A; --amber: #FBBF24;
+      --code-bg: #1A211C; --frame: #2C352E; --shell: #1A211C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+    --line: #26302A; --line-soft: #1C241E; --emerald: #34D399;
+    --emerald-bright: #6EE7B7; --clay: #E8927A; --amber: #FBBF24;
+    --code-bg: #1A211C; --frame: #2C352E; --shell: #1A211C;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-direction: column; gap: 34px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0;
+  }
+  h1 { font-size: clamp(28px, 5vw, 42px); line-height: 1.06; letter-spacing: -0.028em; font-weight: 680; margin: 10px 0 0; text-wrap: balance; }
+  .lede { margin: 14px 0 0; font-size: 17px; color: var(--muted); max-width: 62ch; }
+  h2 { font-size: 20px; letter-spacing: -0.015em; font-weight: 650; margin: 0; text-wrap: balance; }
+  h3 { font-size: 13.5px; font-weight: 640; margin: 0; }
+  p { margin: 0; max-width: 64ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14px; }
+  a { color: var(--emerald); }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 18px; }
+  .sec-head { display: flex; flex-direction: column; gap: 6px; }
+  code { font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace; font-size: 13px; background: var(--code-bg); padding: 1.5px 5px; border-radius: 4px; }
+  pre { margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; padding: 15px 16px; overflow-x: auto; }
+  pre code { background: none; padding: 0; font-size: 12.5px; line-height: 1.65; }
+
+  ul.notes { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+  ul.notes li { max-width: 64ch; }
+
+  .decisions { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .decision { background: var(--card); padding: 15px 16px; display: flex; flex-direction: column; gap: 5px; }
+  .decision .k {
+    font-family: ui-monospace, "SF Mono", monospace; font-size: 10.5px;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+  }
+  .decision .v { font-size: 14.5px; font-weight: 600; line-height: 1.35; }
+  .decision .why { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+  /* ── Phone ───────────────────────────────────────────────────────────── */
+  .stage { display: flex; flex-wrap: wrap; gap: 30px; align-items: flex-start; }
+  .stage > .aside { flex: 1 1 300px; min-width: 260px; display: flex; flex-direction: column; gap: 14px; }
+
+  .phone {
+    flex: 0 0 auto; width: 348px; background: var(--shell);
+    border: 1px solid var(--frame); border-radius: 40px; padding: 12px;
+    box-shadow: 0 18px 44px rgba(14, 22, 19, 0.12);
+  }
+  .screen {
+    width: 322px; height: 660px; border-radius: 29px; overflow: hidden;
+    background: var(--a-field); color: var(--a-label);
+    display: flex; flex-direction: column; position: relative;
+    /* The app is Plus Jakarta Sans. It cannot be loaded here (the artifact CSP
+       blocks font CDNs), so the phone uses the system face at the app's real
+       sizes — judge the scale and the rhythm, not the letterforms. */
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    letter-spacing: -0.01em;
+  }
+  .statusbar {
+    height: 40px; flex: 0 0 40px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 22px; font-size: 12.5px; font-weight: 640; color: var(--a-label);
+  }
+  .statusbar .dots { display: flex; gap: 3px; align-items: center; }
+  .statusbar .dots i { width: 3px; height: 9px; border-radius: 1px; background: var(--a-label); display: block; opacity: 0.75; }
+
+  .tabbar {
+    flex: 0 0 58px; display: flex; border-top: 1px solid var(--a-sep);
+    background: rgba(255,255,255,0.94);
+  }
+  .tabbar div { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 10px; font-weight: 600; color: #94A3B8; }
+  .tabbar div.on { color: var(--a-accent); }
+  .tabbar svg { display: block; }
+
+  .scroller { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+  .scroller::-webkit-scrollbar { width: 0; }
+
+  /* Grouped-inset list, as src/ui/List.tsx draws it. */
+  .g-head {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+    color: var(--a-label3); padding: 18px 36px 7px;
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .g-head .n { font-variant-numeric: tabular-nums; letter-spacing: 0.5px; }
+  .group { margin: 0 16px; background: var(--a-cell); border-radius: 10px; overflow: hidden; }
+  .cell { min-height: 44px; padding: 11px 16px; display: flex; align-items: center; gap: 13px; }
+  .cell + .cell { border-top: 1px solid var(--a-sep); margin-left: 16px; padding-left: 0; }
+  .chev { margin-left: auto; opacity: 0.7; flex: 0 0 auto; }
+
+  .lgtitle { font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.9px; padding: 8px 16px 0; }
+  .sub { font-size: 15px; line-height: 20px; color: var(--a-label2); padding: 6px 16px 0; max-width: none; }
+
+  .q-topic { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+  .q-kind { font-size: 13px; line-height: 18px; color: var(--a-label3); margin-top: 2px; }
+
+  /* The three row states. Unseen draws nothing at all — the absence is the
+     state, and 20 empty rings would be louder than the ticks. */
+  .pip { flex: 0 0 auto; margin-left: auto; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; }
+  .pip .dot { width: 7px; height: 7px; border-radius: 4px; background: var(--a-clay); display: block; }
+
+  /* The round card at the top of the tab. */
+  .roundcard { margin: 18px 16px 2px; background: var(--a-cell); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .roundcard .know { font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.46px; font-variant-numeric: tabular-nums; }
+  .roundcard .know em { font-style: normal; color: var(--a-label3); font-weight: 600; }
+  .track { height: 6px; border-radius: 3px; background: var(--a-fill); overflow: hidden; }
+  .track i { display: block; height: 100%; background: var(--a-clay); border-radius: 3px; }
+  .cta {
+    min-height: 46px; border-radius: 10px; background: var(--a-accent); color: #FFFFFF;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 600; letter-spacing: -0.41px;
+  }
+  .cta.quiet { background: none; color: var(--a-accent); }
+
+  /* ── The round ───────────────────────────────────────────────────────── */
+  .navbar {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+    padding: 2px 14px 10px; font-size: 15px; font-weight: 600; letter-spacing: -0.17px;
+    color: var(--a-label3); font-variant-numeric: tabular-nums;
+  }
+  .navbar button {
+    appearance: none; border: 0; background: none; padding: 4px; cursor: pointer;
+    display: flex; align-items: center; color: var(--a-label3); font: inherit;
+  }
+  .rtrack { flex: 0 0 auto; height: 3px; background: var(--a-fill); margin: 0 16px 18px; border-radius: 2px; overflow: hidden; }
+  .rtrack i { display: block; height: 100%; background: var(--a-clay); transition: width 320ms var(--ease); }
+
+  .kind {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+    color: var(--a-label3); padding: 0 20px;
+  }
+  .qtext { font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.46px; padding: 7px 20px 0; text-wrap: pretty; }
+
+  .choices { display: flex; flex-direction: column; gap: 8px; padding: 20px 16px 0; }
+  .choice {
+    background: var(--a-cell); border-radius: 10px; border: 1.5px solid transparent;
+    padding: 13px 14px; display: flex; gap: 11px; align-items: flex-start;
+    font-size: 15px; line-height: 20px; color: var(--a-label);
+    transition: background 200ms var(--ease), border-color 200ms var(--ease), opacity 200ms var(--ease);
+  }
+  .choice .mark { flex: 0 0 auto; width: 18px; height: 18px; margin-top: 1px; display: flex; align-items: center; justify-content: center; }
+  .choice .mark .ring { width: 17px; height: 17px; border-radius: 9px; border: 1.5px solid var(--a-sep); display: block; }
+  .choice.right { background: var(--a-accent-tint); border-color: var(--a-accent); }
+  .choice.wrong { background: var(--a-danger-tint); border-color: var(--a-danger); }
+  .choice.faded { opacity: 0.42; }
+
+  .saycard { margin: 20px 16px 0; }
+  .say-head {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+    color: var(--a-label3); padding: 0 4px 7px;
+  }
+  .say { background: var(--a-cell); border-radius: 10px; padding: 14px 16px; font-size: 15px; line-height: 21px; color: var(--a-label2); }
+  .say b { color: var(--a-label); font-weight: 600; }
+
+  .footer { flex: 0 0 auto; padding: 12px 16px 16px; background: var(--a-field); border-top: 1px solid var(--a-sep); }
+
+  /* ── Summary ─────────────────────────────────────────────────────────── */
+  .strip { display: flex; gap: 6px; padding: 14px 20px 0; }
+  .strip i { width: 100%; height: 6px; border-radius: 3px; background: var(--a-accent); display: block; }
+  .strip i.miss { background: var(--a-clay); }
+
+  /* Preview switcher — doc chrome, not part of the screen. */
+  .switch { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .switch .lbl { font-family: ui-monospace, "SF Mono", monospace; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+  .switch button {
+    appearance: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 560;
+    padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); transition: background 140ms, border-color 140ms, color 140ms;
+  }
+  .switch button:hover { border-color: var(--emerald); }
+  .switch button[aria-pressed="true"] { background: var(--emerald); border-color: var(--emerald); color: #FFFFFF; }
+  :focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; }
+
+  .state { display: none; }
+  .state.on { display: contents; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-family: ui-monospace, "SF Mono", monospace; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  td.mono { font-family: ui-monospace, "SF Mono", monospace; font-size: 12.5px; white-space: nowrap; }
+  .tablescroll { overflow-x: auto; }
+
+  .flag { border-left: 2px solid var(--amber); padding-left: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .flag h3 { color: var(--amber); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Design · 18 August 2026 · Phase 2</p>
+    <h1>Show Me, Tell Me</h1>
+    <p class="lede">
+      The last stub on the tab bar. Twenty vehicle safety questions the examiner can
+      ask before and during your test — the copy for most of them has been sitting in
+      the database since Phase 1, unread, behind a screen that says “Coming in Phase 2”.
+    </p>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <h2>What was decided</h2>
+      <p class="dim small">Four answers that between them fix the whole shape of the work.</p>
+    </div>
+    <div class="decisions">
+      <div class="decision">
+        <span class="k">Scope</span>
+        <span class="v">Show me / tell me only</span>
+        <span class="why">No Highway Code bank. That would be a second table and dozens of questions I would be inventing rather than quoting.</span>
+      </div>
+      <div class="decision">
+        <span class="k">Answering</span>
+        <span class="v">Multiple choice, four options</span>
+        <span class="why">Pick one of four. The full model answer then appears as the thing to actually say aloud.</span>
+      </div>
+      <div class="decision">
+        <span class="k">Memory</span>
+        <span class="v">On the device</span>
+        <span class="why"><code>AsyncStorage</code>, alongside the existing cache. No migration, no RLS, works with no signal.</span>
+      </div>
+      <div class="decision">
+        <span class="k">Shape</span>
+        <span class="v">Browse, plus a round of ten</span>
+        <span class="why">The tab is a readable reference. A button on top of it deals ten questions one at a time and ends on a summary.</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>The tab</h2>
+      <p class="dim small">
+        Every one of these questions opens with the same six words. Left as written, the
+        list is twenty rows all beginning “Tell me how you’d check…”, and nothing is
+        scannable. So the row leads with the subject and puts the phrasing underneath.
+      </p>
+    </div>
+
+    <div class="stage">
+      <div class="phone">
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i><i style="opacity:.3"></i></span></div>
+          <div class="scroller">
+            <div class="lgtitle">Quiz</div>
+            <p class="sub">One “tell me” before you drive, one “show me” once you’re moving. Both count as one fault if you get them wrong.</p>
+
+            <div class="roundcard">
+              <div class="know">9 <em>of 20 known</em></div>
+              <div class="track"><i style="width:45%"></i></div>
+              <div class="cta">Start a round</div>
+            </div>
+
+            <div class="g-head"><span>Safety and the outside</span><span class="n">7</span></div>
+            <div class="group">
+              <div class="cell">
+                <div>
+                  <div class="q-topic">Tyre tread and condition</div>
+                  <div class="q-kind">Tell me</div>
+                </div>
+                <span class="pip">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.4l3.2 3.2L13 4.8" stroke="#1A875E" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+              </div>
+              <div class="cell">
+                <div>
+                  <div class="q-topic">Tyre tread and condition</div>
+                  <div class="q-kind">Show me</div>
+                </div>
+                <span class="pip">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.4l3.2 3.2L13 4.8" stroke="#1A875E" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+              </div>
+              <div class="cell">
+                <div>
+                  <div class="q-topic">Brakes before a journey</div>
+                  <div class="q-kind">Tell me</div>
+                </div>
+                <span class="pip"><span class="dot"></span></span>
+              </div>
+              <div class="cell">
+                <div>
+                  <div class="q-topic">Tyre pressures</div>
+                  <div class="q-kind">Tell me</div>
+                </div>
+                <span class="pip"></span>
+              </div>
+              <div class="cell">
+                <div>
+                  <div class="q-topic">Head restraint</div>
+                  <div class="q-kind">Tell me</div>
+                </div>
+                <span class="pip">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.4l3.2 3.2L13 4.8" stroke="#1A875E" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+              </div>
+            </div>
+
+            <div class="g-head"><span>Inside the car</span><span class="n">10</span></div>
+            <div class="group">
+              <div class="cell">
+                <div>
+                  <div class="q-topic">Demisting the windows</div>
+                  <div class="q-kind">Show me</div>
+                </div>
+                <span class="pip"><span class="dot"></span></span>
+              </div>
+              <div class="cell">
+                <div>
+                  <div class="q-topic">Main beam</div>
+                  <div class="q-kind">Show me</div>
+                </div>
+                <span class="pip"></span>
+              </div>
+              <div class="cell">
+                <div>
+                  <div class="q-topic">Anti-lock brakes</div>
+                  <div class="q-kind">Tell me</div>
+                </div>
+                <span class="pip">
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.4l3.2 3.2L13 4.8" stroke="#1A875E" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+              </div>
+              <div class="cell">
+                <div>
+                  <div class="q-topic">The horn</div>
+                  <div class="q-kind">Show me</div>
+                </div>
+                <span class="pip"></span>
+              </div>
+            </div>
+
+            <div class="g-head"><span>Under the bonnet</span><span class="n">3</span></div>
+            <div class="group">
+              <div class="cell">
+                <div>
+                  <div class="q-topic">Engine oil</div>
+                  <div class="q-kind">Tell me</div>
+                </div>
+                <span class="pip"></span>
+              </div>
+              <div class="cell">
+                <div>
+                  <div class="q-topic">Coolant</div>
+                  <div class="q-kind">Tell me</div>
+                </div>
+                <span class="pip"></span>
+              </div>
+              <div class="cell">
+                <div>
+                  <div class="q-topic">Brake fluid</div>
+                  <div class="q-kind">Tell me</div>
+                </div>
+                <span class="pip"></span>
+              </div>
+            </div>
+            <div style="height:26px"></div>
+          </div>
+          <div class="tabbar">
+            <div><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 10.5L12 4l8 6.5V19a1 1 0 01-1 1h-4v-6H9v6H5a1 1 0 01-1-1z" stroke-linejoin="round"/></svg><span>Home</span></div>
+            <div><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 4L3 6.5v13L9 17m0-13l6 3m-6-3v13m6-10l6-2.5v13L15 20m0-13v13m-6-3l6 3" stroke-linejoin="round"/></svg><span>Centres</span></div>
+            <div><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 16v-3.2L5.6 8A2 2 0 017.5 6.6h9A2 2 0 0118.4 8L20 12.8V16m-16 0h16m-16 0v2.2h2.6V16m13.4 0v2.2h-2.6V16M7 13h1m8 0h1" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Manoeuvres</span></div>
+            <div class="on"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 013.9-1.6c1.4.9 1 2.6-.3 3.3-.8.4-1.2 1-1.2 1.8v.3" stroke-linecap="round"/><circle cx="12" cy="16.6" r="0.9" fill="currentColor" stroke="none"/></svg><span>Quiz</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="aside">
+        <h3>The row</h3>
+        <p class="dim small">
+          Subject on top, phrasing underneath — the same two-line shape the manoeuvre
+          rows already use, so the two reference tabs read as siblings. The phrasing
+          line is not decoration: “show me” means you will be doing it while driving,
+          “tell me” means you will be talking at the kerb.
+        </p>
+        <h3>Three states, one of which draws nothing</h3>
+        <p class="dim small">
+          A green tick means you got it right last time. A clay dot means you did not.
+          A question you have never seen shows an empty space, because twenty hollow
+          rings would shout louder than the few ticks that carry the information.
+        </p>
+        <h3>Why the progress bar is clay and the button is green</h3>
+        <p class="dim small">
+          <code>theme.ts</code> already splits these: green is the road — go, route,
+          correct — and clay is you. “9 of 20 known” is a fact about the person, so it
+          is clay. “Start a round” is an action, so it is green.
+        </p>
+        <h3>Tapping a row</h3>
+        <p class="dim small">
+          Expands it in place to show the question in full and the model answer beneath
+          — no navigation. Twenty detail screens for one paragraph each would be a
+          push transition where a disclosure will do. One row is open at a time.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>A round</h2>
+      <p class="dim small">
+        Ten questions, one screen each, no going back. The four buttons below the phone
+        are document chrome — they step through the states one screen actually moves
+        between.
+      </p>
+    </div>
+
+    <div class="switch">
+      <span class="lbl">State</span>
+      <button type="button" data-go="ask" aria-pressed="true">Asking</button>
+      <button type="button" data-go="ok" aria-pressed="false">Answered right</button>
+      <button type="button" data-go="no" aria-pressed="false">Answered wrong</button>
+      <button type="button" data-go="end" aria-pressed="false">Summary</button>
+    </div>
+
+    <div class="stage">
+      <div class="phone">
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i><i style="opacity:.3"></i></span></div>
+
+          <!-- Asking / answered share one layout; only the choice states change. -->
+          <div class="state on" id="s-round">
+            <div class="navbar">
+              <button type="button" aria-label="Close round">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+              <span id="counter">4 of 10</span>
+              <span style="width:28px"></span>
+            </div>
+            <div class="rtrack"><i id="rfill" style="width:40%"></i></div>
+
+            <div class="scroller">
+              <div class="kind">Tell me</div>
+              <div class="qtext">How would you check the tyres have enough tread depth and are safe to use?</div>
+
+              <div class="choices" id="choices">
+                <div class="choice" data-c="a">
+                  <span class="mark"><span class="ring"></span></span>
+                  <span>At least 1.6&nbsp;mm across the central three-quarters, all the way round, with no cuts or bulges</span>
+                </div>
+                <div class="choice" data-c="b">
+                  <span class="mark"><span class="ring"></span></span>
+                  <span>At least 1&nbsp;mm across the full width, and all four tyres the same brand</span>
+                </div>
+                <div class="choice" data-c="c">
+                  <span class="mark"><span class="ring"></span></span>
+                  <span>At least 2.5&nbsp;mm at the outer edges, measured while the tyres are still warm</span>
+                </div>
+                <div class="choice" data-c="d">
+                  <span class="mark"><span class="ring"></span></span>
+                  <span>There is no legal minimum — you check by eye for cuts and top up the pressure</span>
+                </div>
+              </div>
+
+              <div class="saycard" id="say" style="display:none">
+                <div class="say-head">What to say</div>
+                <div class="say">
+                  “I’d check the tread depth is at least <b>1.6&nbsp;mm</b> across the central
+                  three-quarters of the tyre’s width around its entire circumference, and I’d
+                  also check for cuts and bulges.”
+                </div>
+              </div>
+              <div style="height:20px"></div>
+            </div>
+
+            <div class="footer">
+              <div class="cta" id="cta">Check answer</div>
+            </div>
+          </div>
+
+          <!-- Summary -->
+          <div class="state" id="s-end">
+            <div class="navbar"><span style="width:28px"></span><span>Round complete</span><span style="width:28px"></span></div>
+            <div class="scroller">
+              <div class="lgtitle">7 of 10</div>
+              <p class="sub">Better than your last round. Three worth another look before you go again.</p>
+
+              <div class="strip">
+                <i></i><i></i><i class="miss"></i><i></i><i></i><i class="miss"></i><i></i><i></i><i></i><i class="miss"></i>
+              </div>
+
+              <div class="g-head"><span>Worth another look</span><span class="n">3</span></div>
+              <div class="group">
+                <div class="cell">
+                  <div>
+                    <div class="q-topic">Rear fog lights</div>
+                    <div class="q-kind">Show me</div>
+                  </div>
+                  <span class="chev">
+                    <svg width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="#C4BDB4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 1.5L6.5 6.5l-5 5"/></svg>
+                  </span>
+                </div>
+                <div class="cell">
+                  <div>
+                    <div class="q-topic">Power-assisted steering</div>
+                    <div class="q-kind">Tell me</div>
+                  </div>
+                  <span class="chev">
+                    <svg width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="#C4BDB4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 1.5L6.5 6.5l-5 5"/></svg>
+                  </span>
+                </div>
+                <div class="cell">
+                  <div>
+                    <div class="q-topic">Brake fluid</div>
+                    <div class="q-kind">Tell me</div>
+                  </div>
+                  <span class="chev">
+                    <svg width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="#C4BDB4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 1.5L6.5 6.5l-5 5"/></svg>
+                  </span>
+                </div>
+              </div>
+              <div style="height:24px"></div>
+            </div>
+            <div class="footer" style="display:flex;flex-direction:column;gap:2px">
+              <div class="cta">Another round</div>
+              <div class="cta quiet">Done</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="aside">
+        <h3>Two taps, not one</h3>
+        <p class="dim small">
+          Picking an option only selects it. “Check answer” commits. On a 15&nbsp;px list
+          of four long options a mis-tap is easy, and a mis-tap that instantly and
+          permanently marks a question wrong is the kind of thing people close an app
+          over.
+        </p>
+        <h3>Red only at the moment of answering</h3>
+        <p class="dim small">
+          A wrong pick gets <code>danger</code> and an error haptic, because that is
+          genuinely an error and the feedback should land. By the summary it has cooled
+          to clay — three red bars on a results screen reads as a telling-off, and this
+          is the screen you see after every single round.
+        </p>
+        <h3>The model answer is the point</h3>
+        <p class="dim small">
+          The multiple choice is a drill; the examiner will not offer you four options.
+          So every answered question — right or wrong — reveals the DVSA answer verbatim,
+          in quotes, as a sentence to say out loud. It is the last thing on screen before
+          “Next”.
+        </p>
+        <h3>What the round deals</h3>
+        <p class="dim small">
+          Questions you have never seen first, then ones you last got wrong, then the
+          rest — shuffled within each band, ten in total. Option order is shuffled too,
+          seeded per question per round, so the right answer is not always in the same
+          place and a re-render never moves it.
+        </p>
+        <h3>Leaving early</h3>
+        <p class="dim small">
+          The close button ends the round there. Everything already answered is already
+          saved — results are written per question, not at the end.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Where the four options come from</h2>
+      <p class="dim small">
+        The DVSA publishes questions and answers. It does not publish wrong answers,
+        because the real test is verbal.
+      </p>
+    </div>
+    <div class="flag">
+      <h3>This is authored content, not sourced content</h3>
+      <p class="dim small">
+        Three plausible wrong options per question, twenty questions — sixty
+        sentences that I wrote. They are built by bending one real detail out
+        of true: a threshold (1&nbsp;mm instead of 1.6), a condition (warm tyres instead
+        of cold), a symbol (three sloping lines instead of three horizontal ones). That
+        makes them teach the detail that actually gets marked, but it also means a
+        confidently-worded wrong answer is my sentence, not the DVSA’s. They live in
+        <code>scripts/seed/questions.ts</code> and are worth a read-through before release.
+        Two automated guards stand behind them: the right answer may never exceed every
+        wrong one by more than ten characters, and it is never always the one written
+        first — both are ways an option set becomes answerable without being read.
+      </p>
+    </div>
+    <p class="dim small">
+      The options are short — ten to twenty words. The verbatim DVSA answers run to forty
+      or fifty, and four of those stacked on a phone is a wall of text nobody reads. The
+      long answer keeps its job: it is what appears after you commit.
+    </p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>What the data needs</h2>
+      <p class="dim small">
+        Two columns and a reseed. <code>show_me_tell_me</code> already holds the question,
+        the answer, the category and the <code>is_show_me</code> flag.
+      </p>
+    </div>
+    <pre><code>-- Phase 2 deltas
+alter table show_me_tell_me add column if not exists topic text;
+alter table show_me_tell_me add column if not exists choices jsonb default '[]';</code></pre>
+    <pre><code>/** One option under a question. Exactly one per question is correct. */
+export type QuizChoice = { text: string; correct: boolean };
+
+export type QuizQuestion = {
+  id: string;
+  category: "safety" | "inside_car" | "under_bonnet";
+  topic: string;        // "Tyre tread and condition" — the row's first line
+  question: string;     // the DVSA wording, in full
+  answer: string;       // the DVSA model answer, said aloud
+  is_show_me: boolean;
+  choices: QuizChoice[];
+};</code></pre>
+    <ul class="notes small">
+      <li>
+        <b>The bank gets rebalanced, as <code>SETUP.md</code> has been promising.</b> It is
+        currently 12 “inside the car”, 5 “safety” and a single “under the bonnet” row that
+        crams oil, coolant and brake fluid into one question. That row becomes the three
+        real DVSA questions it was standing in for, and the indicator and brake-light checks
+        move to “safety and the outside”, which is where you actually do them — you get out
+        and walk round the car. 18 becomes 20, split 7 / 10 / 3.
+      </li>
+      <li>
+        <code>topic</code> is a column rather than something derived from the question text.
+        Stripping “Tell me how you’d…” off the front and re-casing the rest works for about
+        fourteen of them and produces “Know if there was a problem with your anti-lock
+        braking system” for the rest.
+      </li>
+      <li>
+        Results live in <code>AsyncStorage</code> under <code>cache:progress:quiz</code> —
+        deliberately inside the prefix <code>clearUserCache()</code> already sweeps on sign-out,
+        so the next person to hold the phone does not inherit the last one’s score. That
+        function needed no change; a test asserts the sweep rather than the key string.
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>What gets built</h2>
+      <p class="dim small">The same split the manoeuvres work used: rules in <code>lib</code>, fetching in <code>services</code>, composition in the screen.</p>
+    </div>
+    <div class="tablescroll">
+      <table>
+        <thead>
+          <tr><th>File</th><th>Holds</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">lib/quizView.ts</td><td>Category grouping, the section titles and counts, the “9 of 20 known” summary.</td></tr>
+          <tr><td class="mono">lib/quizRound.ts</td><td>Dealing a round (the unseen → wrong → rest bands), shuffling options from a seed, scoring.</td></tr>
+          <tr><td class="mono">services/quizRepo.ts</td><td><code>listQuestions()</code>, through the existing <code>cachedFetch</code>.</td></tr>
+          <tr><td class="mono">services/quizResults.ts</td><td>Reading and writing per-question results on the device.</td></tr>
+          <tr><td class="mono">ui/ChoiceRow.tsx</td><td>One option and its four states: idle, selected, correct, wrong.</td></tr>
+          <tr><td class="mono">app/(tabs)/quiz.tsx</td><td>Replaces the placeholder. The round card and the browsable list.</td></tr>
+          <tr><td class="mono">app/quiz/round.tsx</td><td>The round, and the summary at the end of it.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="dim small">
+      The summary is a state of the round screen, not a route of its own. A separate route
+      would mean carrying ten answers across a navigation, which is a store — and the
+      round is the only thing that ever reads them.
+    </p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Not in this</h2>
+    </div>
+    <ul class="notes small">
+      <li><b>A Highway Code bank.</b> Ruled out above — a second table and content I would be authoring wholesale rather than quoting.</li>
+      <li><b>A two-question test simulation</b> — one tell me at the kerb, one show me on the move, exactly as the real thing runs. Tempting, and cheap once the round exists, but it is a second mode competing with the one this screen is for.</li>
+      <li><b>Spaced repetition.</b> “Known” means your last answer was right. A learner can explain that rule to themselves; a decay curve they cannot see is a screen that seems to forget things at random.</li>
+      <li><b>Quiz results on the Home dashboard.</b> Needs the Supabase table this design deliberately does without.</li>
+    </ul>
+  </section>
+
+</div>
+
+<script>
+  (function () {
+    var round = document.getElementById("s-round");
+    var end = document.getElementById("s-end");
+    var say = document.getElementById("say");
+    var cta = document.getElementById("cta");
+    var counter = document.getElementById("counter");
+    var rfill = document.getElementById("rfill");
+    var choices = Array.prototype.slice.call(document.querySelectorAll("#choices .choice"));
+    var buttons = Array.prototype.slice.call(document.querySelectorAll(".switch button"));
+
+    var TICK = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.4l3.2 3.2L13 4.8" stroke="#1A875E" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    var CROSS = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="#DC2626" stroke-width="2.1" stroke-linecap="round"/></svg>';
+    var RING = '<span class="ring"></span>';
+
+    function reset() {
+      choices.forEach(function (c) {
+        c.className = "choice";
+        c.querySelector(".mark").innerHTML = RING;
+      });
+      say.style.display = "none";
+    }
+
+    var states = {
+      ask: function () {
+        round.classList.add("on"); end.classList.remove("on");
+        reset();
+        cta.textContent = "Check answer";
+        counter.textContent = "4 of 10";
+        rfill.style.width = "40%";
+      },
+      ok: function () {
+        round.classList.add("on"); end.classList.remove("on");
+        reset();
+        choices[0].classList.add("right");
+        choices[0].querySelector(".mark").innerHTML = TICK;
+        choices[1].classList.add("faded");
+        choices[2].classList.add("faded");
+        choices[3].classList.add("faded");
+        say.style.display = "";
+        cta.textContent = "Next question";
+        counter.textContent = "4 of 10";
+        rfill.style.width = "40%";
+      },
+      no: function () {
+        round.classList.add("on"); end.classList.remove("on");
+        reset();
+        choices[2].classList.add("wrong");
+        choices[2].querySelector(".mark").innerHTML = CROSS;
+        choices[0].classList.add("right");
+        choices[0].querySelector(".mark").innerHTML = TICK;
+        choices[1].classList.add("faded");
+        choices[3].classList.add("faded");
+        say.style.display = "";
+        cta.textContent = "Next question";
+        counter.textContent = "4 of 10";
+        rfill.style.width = "40%";
+      },
+      end: function () {
+        round.classList.remove("on"); end.classList.add("on");
+      }
+    };
+
+    buttons.forEach(function (b) {
+      b.addEventListener("click", function () {
+        buttons.forEach(function (o) { o.setAttribute("aria-pressed", String(o === b)); });
+        states[b.getAttribute("data-go")]();
+      });
+    });
+  })();
+</script>

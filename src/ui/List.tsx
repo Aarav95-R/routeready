@@ -1,5 +1,5 @@
 import { Children, isValidElement, type ReactNode } from "react";
-import { Pressable, Text, View, type ViewProps } from "react-native";
+import { Pressable, Text, View, type LayoutChangeEvent, type ViewProps } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors } from "@/ui/theme";
 import { body, footnote, MAX_DISPLAY_SCALE } from "@/ui/type";
@@ -48,7 +48,23 @@ function Separator() {
   );
 }
 
-export function Group({ children, style, ...rest }: ViewProps & { children: ReactNode }) {
+export function Group({
+  children, style, onRowLayout, ...rest
+}: ViewProps & {
+  children: ReactNode;
+  /**
+   * Where each row sits *inside* this group.
+   *
+   * A row cannot answer this for itself. `onLayout` reports a position
+   * relative to the immediate parent, and the immediate parent of every row
+   * here is the wrapper below — so a row measures its own y as 0, or as 1
+   * once a hairline sits above it. The group owns those wrappers, so the
+   * group is the only thing that can report the offset a caller binding this
+   * list to something else actually needs. Pair it with `onLayout` on the
+   * group to turn it into a position in the scroll content.
+   */
+  onRowLayout?: (index: number, e: LayoutChangeEvent) => void;
+}) {
   const rows = Children.toArray(children).filter(isValidElement);
   return (
     <View
@@ -61,7 +77,7 @@ export function Group({ children, style, ...rest }: ViewProps & { children: Reac
       {rows.map((row, i) => (
         // Index keys are correct here: these are static rows in source order,
         // not a reorderable list.
-        <View key={i}>
+        <View key={i} onLayout={onRowLayout && ((e) => onRowLayout(i, e))}>
           {i > 0 && <Separator />}
           {row}
         </View>

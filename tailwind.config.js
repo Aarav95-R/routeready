@@ -34,18 +34,22 @@ module.exports = {
       colors: {
         primary: INK,
         // Twinned with src/ui/theme.ts — the two must change together.
-        accent: { DEFAULT: "#1A875E", pressed: "#146B4A" },
-        clay: { DEFAULT: "#B8624A", tint: "#F7E6DB" },
+        accent: { DEFAULT: "#1A875E", pressed: "#146B4A", ink: "#146B4A", tint: "#E7F2ED" },
+        clay: {
+          DEFAULT: "#B8624A", tint: "#F7E6DB",
+          // Twinned with src/ui/theme.ts — the clay ground needs its own ink.
+          ink: "#7A3A28", "ink-soft": "#9A5741", track: "#E9C9BB",
+        },
         warning: "#D97706",
         surface: GROUND,
         card: "#FFFFFF",
-        danger: "#DC2626",
+        danger: { DEFAULT: "#DC2626", tint: "#FBE9E9" },
         "fault-runner": "#A7C4B6",
         field: GROUND,
         cell: "#FFFFFF",
         label: INK,
-        "label-secondary": "#6B635B",
-        "label-tertiary": "#8A827A",
+        "label-secondary": "#574F49",
+        "label-tertiary": "#6B635B",
         separator: "#E4DFD8",
         fill: "#EBE7E1",
         slate: stone,

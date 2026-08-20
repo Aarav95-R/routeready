@@ -1,0 +1,483 @@
+<title>Restaging the Quiz Tab</title>
+<style>
+  :root {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --emerald: #1A875E; --clay: #B8624A; --amber: #B45309;
+    --code-bg: #F0F2EC; --frame: #D7D3CB; --pick-ink: #FFFFFF;
+
+    /* Quoted verbatim from src/ui/theme.ts. These never invert: the phone
+       shows the product, and the product has one appearance. */
+    --a-field: #F5F0E8; --a-cell: #FFFFFF; --a-label: #1C1917;
+    --a-label2: #574F49; --a-label3: #6B635B; --a-sep: #E4DFD8;
+    --a-fill: #EBE7E1; --a-accent: #1A875E;
+    --a-clay: #B8624A; --a-clay-tint: #F7E6DB;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+      --line: #26302A; --emerald: #34D399; --clay: #E8927A; --amber: #FBBF24;
+      --code-bg: #1A211C; --frame: #2C352E; --pick-ink: #0C110E;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+    --line: #26302A; --emerald: #34D399; --clay: #E8927A; --amber: #FBBF24;
+    --code-bg: #1A211C; --frame: #2C352E; --pick-ink: #0C110E;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-direction: column; gap: 34px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0;
+  }
+  h1 { font-size: clamp(28px, 5vw, 42px); line-height: 1.06; letter-spacing: -0.028em; font-weight: 680; margin: 10px 0 0; text-wrap: balance; }
+  .lede { margin: 14px 0 0; font-size: 17px; color: var(--muted); max-width: 62ch; }
+  h2 { font-size: 20px; letter-spacing: -0.015em; font-weight: 650; margin: 0; text-wrap: balance; }
+  h3 { font-size: 13.5px; font-weight: 640; margin: 0; }
+  p { margin: 0; max-width: 64ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14px; }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 20px; }
+  .sec-head { display: flex; flex-direction: column; gap: 6px; }
+  code { font-family: ui-monospace, "SF Mono", monospace; font-size: 13px; background: var(--code-bg); padding: 1.5px 5px; border-radius: 4px; }
+  ul.notes { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+  ul.notes li { max-width: 64ch; }
+
+  .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; align-items: start; }
+  .option { display: flex; flex-direction: column; gap: 12px; }
+  .option > .tag {
+    font-family: ui-monospace, "SF Mono", monospace; font-size: 10.5px;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .option > .tag .pick {
+    background: var(--emerald); color: var(--pick-ink); border-radius: 999px;
+    padding: 2px 7px; letter-spacing: 0.08em;
+  }
+
+  /* ---- A slice of the real screen, at the real width -------------------- */
+  .slice {
+    width: 100%; max-width: 322px; background: var(--a-field);
+    border: 1px solid var(--frame); border-radius: 18px; overflow: hidden;
+    padding-bottom: 16px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    letter-spacing: -0.01em; color: var(--a-label);
+  }
+  .lgtitle { font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.9px; padding: 14px 16px 0; }
+  .sub { font-size: 15px; line-height: 20px; color: var(--a-label2); padding: 6px 16px 0; max-width: none; }
+
+  .qcard { margin: 18px 16px 0; background: var(--a-cell); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .track { height: 6px; border-radius: 3px; background: var(--a-fill); overflow: hidden; }
+  .track i { display: block; height: 100%; background: var(--a-clay); border-radius: 3px; }
+  .cta {
+    min-height: 46px; border-radius: 10px; background: var(--a-accent); color: #FFFFFF;
+    display: flex; align-items: center; justify-content: center; gap: 7px; text-align: center;
+    font-size: 17px; font-weight: 600; letter-spacing: -0.41px; padding: 0 12px;
+  }
+  .cardhead { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+  .cardsub { font-size: 15px; line-height: 20px; color: var(--a-label2); }
+  .rowsplit { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .cnt { font-size: 13px; line-height: 18px; color: var(--a-label3); font-variant-numeric: tabular-nums; }
+
+  /* The header-block progress line (A) */
+  .countline { padding: 12px 16px 0; display: flex; flex-direction: column; gap: 7px; }
+  .countline .n { font-size: 13px; line-height: 18px; color: var(--a-label3); font-variant-numeric: tabular-nums; }
+  .countline .n b { color: var(--a-label2); font-weight: 600; }
+
+  /* Direction A: the green plank */
+  .slab {
+    margin: 16px 16px 0; background: var(--a-accent); border-radius: 12px;
+    padding: 15px 16px; color: #FFFFFF; display: flex; align-items: center; gap: 12px;
+  }
+  .slab .txt { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+  .slab .t { font-size: 22px; line-height: 27px; font-weight: 700; letter-spacing: -0.46px; }
+  .slab .d { font-size: 15px; line-height: 20px; color: rgba(255,255,255,0.82); }
+  .slab .chev { font-size: 19px; color: rgba(255,255,255,0.72); }
+
+  /* Direction B: the clay hero */
+  .hero {
+    margin: 18px 16px 0; background: var(--a-clay-tint); border-radius: 14px;
+    padding: 18px 16px 16px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .hero .big { font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.46px; color: #7A3A28; }
+  .hero .big em { font-style: normal; font-weight: 600; color: #9A5741; }
+  .hero .track { background: rgba(184,98,74,0.22); }
+
+  /* Direction C: the flush segmented control */
+  .segwrap { padding: 16px 16px 0; }
+  .seg { display: flex; border-bottom: 1px solid var(--a-sep); gap: 22px; }
+  .seg span { font-size: 15px; line-height: 20px; font-weight: 600; color: var(--a-label3); padding: 0 0 9px; }
+  .seg span.on { color: var(--a-label); box-shadow: inset 0 -2px 0 0 var(--a-accent); }
+  .cpane { padding: 26px 16px 0; display: flex; flex-direction: column; gap: 14px; align-items: center; text-align: center; }
+  .cpane .ring {
+    width: 96px; height: 96px; border-radius: 50%;
+    background: conic-gradient(var(--a-clay) 0 162deg, var(--a-fill) 162deg 360deg);
+    display: grid; place-items: center;
+  }
+  .cpane .ring i {
+    width: 78px; height: 78px; border-radius: 50%; background: var(--a-field);
+    display: grid; place-items: center; font-style: normal;
+    font-size: 22px; font-weight: 700; letter-spacing: -0.46px; font-variant-numeric: tabular-nums;
+  }
+  .cpane .lab { font-size: 13px; line-height: 18px; color: var(--a-label3); }
+  .cpane .cta { align-self: stretch; }
+
+  /* Grouped list */
+  .g-head {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+    color: var(--a-label3); padding: 20px 36px 7px; display: flex; justify-content: space-between; gap: 10px;
+  }
+  .g-head.tight { padding-top: 14px; }
+  .group { margin: 0 16px; background: var(--a-cell); border-radius: 10px; overflow: hidden; }
+  .cell { min-height: 44px; padding: 11px 16px; display: flex; align-items: center; gap: 13px; }
+  .cell + .cell { border-top: 1px solid var(--a-sep); }
+  .cell .grow { flex: 1; }
+  .q-topic { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+  .q-kind { font-size: 13px; line-height: 18px; color: var(--a-label3); margin-top: 2px; }
+  .mark-ok { color: var(--a-accent); font-size: 15px; font-weight: 700; }
+  .mark-dot { width: 7px; height: 7px; border-radius: 4px; background: var(--a-clay); }
+  .chevd { color: var(--a-label3); font-size: 13px; }
+
+  /* Why lines */
+  .why { display: flex; flex-direction: column; gap: 7px; }
+  .why p { font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+  .why .good::before { content: "Keeps "; font-weight: 640; color: var(--emerald); }
+  .why .bad::before { content: "Costs "; font-weight: 640; color: var(--amber); }
+
+  .flag { border-left: 2px solid var(--amber); padding-left: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .flag h3 { color: var(--amber); }
+
+  /* Swatches */
+  .swatches { display: flex; flex-wrap: wrap; gap: 14px; }
+  .sw { display: flex; flex-direction: column; gap: 6px; width: 132px; }
+  .sw .chip { height: 46px; border-radius: 9px; border: 1px solid var(--frame); }
+  .sw .nm { font-size: 12.5px; font-weight: 620; }
+  .sw .hx { font-family: ui-monospace, "SF Mono", monospace; font-size: 11px; color: var(--muted); }
+
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); font-weight: 640; }
+  td.was { color: var(--muted); }
+
+  :focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Design &middot; 18 August 2026 &middot; Quiz tab &middot; B chosen, built</p>
+    <h1>Restaging the Quiz Tab</h1>
+    <p class="lede">
+      The tab holds two tools &mdash; a round to drill with, a bank to read &mdash; and
+      currently gives them the same weight. Three ways to put the round first and warm
+      the screen up, drawn at the width they will be read at.
+    </p>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <h2>What the tab looks like now</h2>
+      <p class="dim small">
+        Title, a white card, then twenty rows in three groups. Everything is the same
+        white on the same stone, and the one thing you are meant to do is a button four
+        elements deep inside a panel.
+      </p>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <span class="tag">Today</span>
+        <div class="slice">
+          <div class="lgtitle">Quiz</div>
+          <p class="sub">One &ldquo;tell me&rdquo; before you drive, one &ldquo;show me&rdquo; once you&rsquo;re moving. Getting either wrong is a minor fault.</p>
+          <div class="qcard">
+            <div class="rowsplit"><span class="cardhead">Practise</span><span class="cnt">9 of 20 known</span></div>
+            <div class="track"><i style="width:45%"></i></div>
+            <p class="cardsub">Ten questions, four answers to pick from. The words to say out loud come after each one.</p>
+            <div class="cta">Start the quiz</div>
+          </div>
+          <div class="g-head"><span>All 20 questions</span></div>
+          <div class="g-head tight"><span>Safety and the outside</span><span>7</span></div>
+          <div class="group">
+            <div class="cell">
+              <div class="grow"><div class="q-topic">Tyre tread and condition</div><div class="q-kind">Tell me</div></div>
+              <span class="mark-ok">&#10003;</span><span class="chevd">&#9662;</span>
+            </div>
+            <div class="cell">
+              <div class="grow"><div class="q-topic">Brakes before setting off</div><div class="q-kind">Show me</div></div>
+              <span class="mark-dot"></span><span class="chevd">&#9662;</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px;max-width:48ch">
+        <h3>Three things going wrong</h3>
+        <ul class="notes small dim">
+          <li>
+            <b>The action is buried inside a container.</b> A green button on a white
+            card on a stone field is three surfaces deep. Nothing on the screen is
+            louder than it &mdash; but nothing is quieter either, so it has to be found
+            rather than seen.
+          </li>
+          <li>
+            <b>The card argues with the list for the same job.</b> Both are white
+            rounded rectangles with headings and hairlines. A first-time reader gets no
+            signal that one is a thing to do and the other is a thing to look up.
+          </li>
+          <li>
+            <b>Warm ground, cold furniture.</b> The field is warm stone, and then every
+            object placed on it is pure white with grey type. The one warm colour the
+            palette owns &mdash; clay &mdash; appears as a 6pt bar and a few 7pt dots.
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Three restagings</h2>
+      <p class="dim small">
+        All three keep the twenty rows, the tick, the clay dot and the count. They
+        differ in what the top of the screen <em>is</em>.
+      </p>
+    </div>
+
+    <div class="options">
+
+      <div class="option">
+        <span class="tag">A &middot; The green plank &middot; not taken</span>
+        <div class="slice">
+          <div class="lgtitle">Quiz</div>
+          <p class="sub">Two questions at the kerb, every test. Here are all twenty, and a round to drill them.</p>
+          <div class="countline">
+            <span class="n"><b>9</b> of 20 known</span>
+            <div class="track"><i style="width:45%"></i></div>
+          </div>
+          <div class="slab">
+            <div class="txt">
+              <span class="t">Start a round</span>
+              <span class="d">Ten questions &middot; about two minutes</span>
+            </div>
+            <span class="chev">&#8250;</span>
+          </div>
+          <div class="g-head"><span>Look them up</span><span>20</span></div>
+          <div class="g-head tight"><span>Safety and the outside</span><span>7</span></div>
+          <div class="group">
+            <div class="cell">
+              <div class="grow"><div class="q-topic">Tyre tread and condition</div><div class="q-kind">Tell me</div></div>
+              <span class="mark-ok">&#10003;</span><span class="chevd">&#9662;</span>
+            </div>
+            <div class="cell">
+              <div class="grow"><div class="q-topic">Brakes before setting off</div><div class="q-kind">Show me</div></div>
+              <span class="mark-dot"></span><span class="chevd">&#9662;</span>
+            </div>
+          </div>
+        </div>
+        <div class="why">
+          <p class="good">the only saturated surface on the tab for the only action on the tab. Nothing competes for the eye, because nothing else is coloured.</p>
+          <p class="good">the count where it belongs &mdash; in the header block, as a fact about you &mdash; rather than as a statistic the button stands on.</p>
+          <p class="bad">the plank is heavier than an iOS filled button and sits above the fold on every phone. A learner who mainly wants to read sees the drill first, every time.</p>
+        </div>
+      </div>
+
+      <div class="option">
+        <span class="tag"><span class="pick">Built</span> B &middot; The clay hero</span>
+        <div class="slice">
+          <div class="lgtitle">Quiz</div>
+          <p class="sub">Two questions at the kerb, every test. Here are all twenty, and a round to drill them.</p>
+          <div class="hero">
+            <div class="big">9 done <em>&middot; 11 to go</em></div>
+            <div class="track"><i style="width:45%"></i></div>
+            <p class="cardsub">A round is ten of them, multiple choice. The words to say out loud come after each answer.</p>
+            <div class="cta">Start a round</div>
+          </div>
+          <div class="g-head"><span>Look them up</span><span>20</span></div>
+          <div class="g-head tight"><span>Safety and the outside</span><span>7</span></div>
+          <div class="group">
+            <div class="cell">
+              <div class="grow"><div class="q-topic">Tyre tread and condition</div><div class="q-kind">Tell me</div></div>
+              <span class="mark-ok">&#10003;</span><span class="chevd">&#9662;</span>
+            </div>
+            <div class="cell">
+              <div class="grow"><div class="q-topic">Brakes before setting off</div><div class="q-kind">Show me</div></div>
+              <span class="mark-dot"></span><span class="chevd">&#9662;</span>
+            </div>
+          </div>
+        </div>
+        <div class="why">
+          <p class="good">the warmest surface in the app on the screen that is about you rather than about the road. The green button reads louder against clay tint than it ever did against white.</p>
+          <p class="good">room for the sentence explaining what a round is, which A has to compress into four words.</p>
+          <p class="bad">still a card among cards &mdash; the shape that fails today. It is now a tinted card, which is a smaller change than it looks.</p>
+        </div>
+      </div>
+
+      <div class="option">
+        <span class="tag">C &middot; Two panes &middot; not taken</span>
+        <div class="slice">
+          <div class="lgtitle">Quiz</div>
+          <div class="segwrap">
+            <div class="seg"><span class="on">Practise</span><span>All 20 questions</span></div>
+          </div>
+          <div class="cpane">
+            <div class="ring"><i>9<span style="font-size:13px;font-weight:600;color:var(--a-label3)">/20</span></i></div>
+            <p class="lab">Eleven still to get right.</p>
+            <div class="cta">Start a round</div>
+            <p class="lab">Ten questions &middot; about two minutes</p>
+          </div>
+          <div class="g-head" style="padding-top:26px"><span>Last round</span></div>
+          <div class="group">
+            <div class="cell">
+              <div class="grow"><div class="q-topic">7 out of 10</div><div class="q-kind">Yesterday</div></div>
+              <span class="chevd">&#8250;</span>
+            </div>
+          </div>
+        </div>
+        <div class="why">
+          <p class="good">the strongest possible answer to &ldquo;where do I start&rdquo; &mdash; the whole first screen is the start.</p>
+          <p class="good">a flush segmented control, the pattern already agreed for this app, doing real navigational work.</p>
+          <p class="bad">the reference list goes behind a tap. Looking one answer up at the kerb becomes two gestures instead of a scroll, and that is what this tab gets used for most.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Where the warmth actually comes from</h2>
+      <p class="dim small">
+        Not from adding a colour. Every value below is already in
+        <code>src/ui/theme.ts</code> &mdash; what changes is how much of the screen they
+        are allowed to cover.
+      </p>
+    </div>
+
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:#F5F0E8"></div><span class="nm">Field</span><span class="hx">#F5F0E8</span></div>
+      <div class="sw"><div class="chip" style="background:#1A875E"></div><span class="nm">Accent, the plank</span><span class="hx">#1A875E</span></div>
+      <div class="sw"><div class="chip" style="background:#B8624A"></div><span class="nm">Clay, you</span><span class="hx">#B8624A</span></div>
+      <div class="sw"><div class="chip" style="background:#F7E6DB"></div><span class="nm">Clay tint</span><span class="hx">#F7E6DB</span></div>
+      <div class="sw"><div class="chip" style="background:#FFFFFF"></div><span class="nm">Cell</span><span class="hx">#FFFFFF</span></div>
+    </div>
+
+    <ul class="notes small dim">
+      <li>
+        <b>One saturated object, not one saturated button.</b> A 46pt button is about
+        8% of the first screen. The plank is closer to 20%, and it is the only place
+        the accent appears on the tab &mdash; so the screen reads as warm rather than as
+        white with a green detail.
+      </li>
+      <li>
+        <b>The progress bar comes out of the card.</b> Under the title, full width, it
+        stops being decoration on a control and becomes the line that says how you are
+        doing. That is the clay role, stated plainly.
+      </li>
+      <li>
+        <b>Copy does as much work as colour.</b> &ldquo;Practise&rdquo; is a category;
+        &ldquo;Start a round &mdash; ten questions, about two minutes&rdquo; is an
+        invitation with the cost printed on it. &ldquo;Look them up&rdquo; says what the
+        list below is for, which nothing currently does.
+      </li>
+    </ul>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th style="width:22%">Where</th><th style="width:39%">Now</th><th style="width:39%">Proposed (A)</th></tr></thead>
+        <tbody>
+          <tr><td>Subhead</td><td class="was">One &ldquo;tell me&rdquo; before you drive, one &ldquo;show me&rdquo; once you&rsquo;re moving. Getting either wrong is a minor fault.</td><td>Two questions at the kerb, every test. Here are all twenty, and a round to drill them.</td></tr>
+          <tr><td>Card heading</td><td class="was">Practise</td><td>Removed. The plank speaks for itself.</td></tr>
+          <tr><td>Action</td><td class="was">Start the quiz</td><td>Start a round &mdash; ten questions, about two minutes</td></tr>
+          <tr><td>List header</td><td class="was">All 20 questions</td><td>Look them up &middot; 20</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>One tension worth naming</h2></div>
+    <div class="flag">
+      <h3>The plank is green, and what the screen reports is yours</h3>
+      <p class="dim small">
+        The palette splits the two deliberately: green is the road &mdash; go, route,
+        correct &mdash; and clay is you. A green plank keeps that rule, because starting
+        a round is a <em>go</em>. But it does put the two warm colours ten points apart
+        on one screen for the first time in the app.
+      </p>
+      <p class="dim small">
+        A keeps them in separate registers so they do not fight: clay is a 6pt line of
+        information under the title, green is a solid object you press. B does the
+        opposite and nests the green inside the clay &mdash; that is the thing to look
+        at hardest in B&rsquo;s mockup above.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>What shipped, and where it departs from the mockup</h2>
+      <p class="dim small">
+        B, built. Three things came out differently once it met the code, each
+        deliberate.
+      </p>
+    </div>
+    <ul class="notes small dim">
+      <li>
+        <b>The button still says &ldquo;Start the quiz&rdquo;, not &ldquo;Start a
+        round&rdquo;.</b> The mockup had the latter, but the tab already carries a
+        test named <em>the button names the thing it starts, not a word only this app
+        uses</em> &mdash; &ldquo;round&rdquo; is jargon this app invented. That earlier
+        decision wins over a fresh mockup, and the sentence inside the hero was
+        reworded off the same word.
+      </li>
+      <li>
+        <b>The clay ground needed three colours the palette did not have.</b> This is
+        the first surface in the app that is neither the cell nor the field, and bare
+        clay measures 3.54 against its own tint &mdash; fine for the 6pt bar, not fine
+        for the sentence beside it. So <code>clayInk</code>, <code>clayInkSoft</code>
+        and <code>clayTrack</code> were added as roles, with the contrast floor written
+        into <code>theme.test.ts</code> the same way the accent&rsquo;s already is.
+        Reusing <code>clay</code> as ink would have shipped unreadable type on the one
+        screen that uses it.
+      </li>
+      <li>
+        <b>The status line is two nodes, not one string.</b> &ldquo;9 done&rdquo; takes
+        the heavier ink because it is the half that is about you; &ldquo;11 to go&rdquo;
+        sits back. Nested text concatenates, so a separator inside the same string
+        becomes part of the words each half is read as &mdash; which is a screen reader
+        problem before it is a test problem.
+      </li>
+    </ul>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th style="width:38%">File</th><th style="width:62%">What changed</th></tr></thead>
+        <tbody>
+          <tr><td><code>app/(tabs)/quiz.tsx</code></td><td>The white card became the clay hero; the reference header now names its job.</td></tr>
+          <tr><td><code>src/lib/quizView.ts</code></td><td><code>practiseSummary</code> &mdash; the rule that the line leads with done, and never renders a bare score.</td></tr>
+          <tr><td><code>src/ui/theme.ts</code>, <code>tailwind.config.js</code></td><td>Three clay roles, added to both twins.</td></tr>
+          <tr><td>Three test files</td><td>10 new tests, including the contrast floor for the new ground.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="dim small">
+      731 tests pass across 77 suites, lint clean. The cost flagged against B above is
+      real and now shipped: the hero is still a card among cards. What keeps it from
+      failing the way the old one did is that it is the only tinted surface on the tab
+      &mdash; every other rectangle on the screen is white.
+    </p>
+  </section>
+
+</div>
+

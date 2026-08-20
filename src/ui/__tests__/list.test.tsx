@@ -68,3 +68,20 @@ test("a pressable cell reports its press and shows a chevron", () => {
   fireEvent.press(screen.getByTestId("c"));
   expect(onPress).toHaveBeenCalled();
 });
+
+test("a group can report where each of its rows sits inside it", () => {
+  // A row measures itself against the wrapper the group puts around it, which
+  // is 0 for the first row and 1 for every row under a hairline — useless to
+  // a caller binding the list to something else. The group owns those
+  // wrappers, so it is the only thing that can answer the question.
+  const seen: [number, number][] = [];
+  render(
+    <Group onRowLayout={(i, e) => seen.push([i, e.nativeEvent.layout.y])}>
+      <Cell testID="r0" label="One" />
+      <Cell testID="r1" label="Two" />
+    </Group>
+  );
+
+  fireEvent(screen.getByTestId("r1"), "layout", { nativeEvent: { layout: { y: 45 } } });
+  expect(seen).toEqual([[1, 45]]);
+});

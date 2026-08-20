@@ -100,3 +100,17 @@ create policy "Own favourites" on favourites
   for all to authenticated
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- Phase 2 deltas — the quiz.
+--
+-- `topic` is a column rather than something derived from the question text.
+-- Every question opens with the same six words, so the list needs a subject to
+-- lead each row with; stripping "Tell me how you'd…" and re-casing the rest
+-- works for about two thirds of them and produces "Know if there was a problem
+-- with your anti-lock braking system" for the others.
+--
+-- `choices` holds [{ "text": "...", "correct": true|false }] — four per
+-- question, exactly one correct. The DVSA publishes no wrong answers, because
+-- the real test is verbal; these are written for this app.
+alter table show_me_tell_me add column if not exists topic text;
+alter table show_me_tell_me add column if not exists choices jsonb default '[]';

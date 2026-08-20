@@ -63,11 +63,20 @@ test("only display styles carry negative tracking", () => {
 });
 
 test("the new colour roles exist and are distinct", () => {
+  // The two text roles moved a step darker: the old tertiary, #8A827A, measured
+  // 3.78 against a cell and 3.33 against the field, under the 4.5 WCAG asks for
+  // at these sizes, while carrying the second line of every row and every
+  // caption in the app. Secondary moved down with it to keep three levels.
+  //
+  // This assertion is a change detector by design — it exists so a role cannot
+  // be retuned by accident. What makes the values *correct* rather than merely
+  // unchanged is measured in theme.test.ts, which asserts the contrast a role
+  // has to clear rather than the hex it happens to be.
   const roles = [
     colors.field, colors.cell, colors.label, colors.labelSecondary,
     colors.labelTertiary, colors.separator, colors.fill,
   ];
-  expect(roles).toEqual(["#F5F0E8", "#FFFFFF", "#1C1917", "#6B635B", "#8A827A", "#E4DFD8", "#EBE7E1"]);
+  expect(roles).toEqual(["#F5F0E8", "#FFFFFF", "#1C1917", "#574F49", "#6B635B", "#E4DFD8", "#EBE7E1"]);
   expect(new Set(roles).size).toBe(7);
 });
 

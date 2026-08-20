@@ -1,0 +1,346 @@
+<title>Starting a Round</title>
+<style>
+  :root {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --emerald: #1A875E; --clay: #B8624A; --amber: #B45309;
+    --code-bg: #F0F2EC; --frame: #D7D3CB; --shell: #EFEDE8;
+
+    /* Quoted verbatim from src/ui/theme.ts. These never invert: the phone
+       shows the product, and the product has one appearance. */
+    --a-field: #F5F0E8; --a-cell: #FFFFFF; --a-label: #1C1917;
+    --a-label2: #574F49; --a-label3: #6B635B; --a-sep: #E4DFD8;
+    --a-fill: #EBE7E1; --a-accent: #1A875E; --a-clay: #B8624A;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+      --line: #26302A; --emerald: #34D399; --clay: #E8927A; --amber: #FBBF24;
+      --code-bg: #1A211C; --frame: #2C352E; --shell: #1A211C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+    --line: #26302A; --emerald: #34D399; --clay: #E8927A; --amber: #FBBF24;
+    --code-bg: #1A211C; --frame: #2C352E; --shell: #1A211C;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-direction: column; gap: 34px; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0;
+  }
+  h1 { font-size: clamp(28px, 5vw, 42px); line-height: 1.06; letter-spacing: -0.028em; font-weight: 680; margin: 10px 0 0; text-wrap: balance; }
+  .lede { margin: 14px 0 0; font-size: 17px; color: var(--muted); max-width: 62ch; }
+  h2 { font-size: 20px; letter-spacing: -0.015em; font-weight: 650; margin: 0; text-wrap: balance; }
+  h3 { font-size: 13.5px; font-weight: 640; margin: 0; }
+  p { margin: 0; max-width: 64ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14px; }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 18px; }
+  .sec-head { display: flex; flex-direction: column; gap: 6px; }
+  code { font-family: ui-monospace, "SF Mono", monospace; font-size: 13px; background: var(--code-bg); padding: 1.5px 5px; border-radius: 4px; }
+  ul.notes { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+  ul.notes li { max-width: 64ch; }
+
+  /* ── Option grid ─────────────────────────────────────────────────────── */
+  .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 26px; align-items: start; }
+  .option { display: flex; flex-direction: column; gap: 12px; }
+  .option > .tag {
+    font-family: ui-monospace, "SF Mono", monospace; font-size: 10.5px;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .option > .tag .pick {
+    background: var(--emerald); color: #fff; border-radius: 999px;
+    padding: 2px 7px; letter-spacing: 0.08em;
+  }
+
+  /* A slice of the real screen, at the real width. */
+  .slice {
+    width: 100%; max-width: 322px; background: var(--a-field);
+    border: 1px solid var(--frame); border-radius: 18px; overflow: hidden;
+    padding-bottom: 14px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    letter-spacing: -0.01em; color: var(--a-label);
+  }
+  .lgtitle { font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -0.9px; padding: 14px 16px 0; }
+  .sub { font-size: 15px; line-height: 20px; color: var(--a-label2); padding: 6px 16px 0; max-width: none; }
+
+  .qcard { margin: 18px 16px 0; background: var(--a-cell); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .know { font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.46px; font-variant-numeric: tabular-nums; }
+  .know em { font-style: normal; color: var(--a-label3); font-weight: 600; }
+  .track { height: 6px; border-radius: 3px; background: var(--a-fill); overflow: hidden; }
+  .track i { display: block; height: 100%; background: var(--a-clay); border-radius: 3px; }
+  .cta {
+    min-height: 46px; border-radius: 10px; background: var(--a-accent); color: #FFFFFF;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    font-size: 17px; font-weight: 600; letter-spacing: -0.41px; padding: 0 12px;
+  }
+  .cardhead { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+  .cardsub { font-size: 15px; line-height: 20px; color: var(--a-label2); }
+  .cardcap { font-size: 13px; line-height: 18px; color: var(--a-label3); text-align: center; }
+  .rowsplit { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+
+  /* Option C's tappable row */
+  .hair { height: 1px; background: var(--a-sep); margin: 2px 0; }
+  .actionrow { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+  .actionrow .t { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; color: var(--a-accent); }
+  .actionrow .d { font-size: 13px; line-height: 18px; color: var(--a-label3); margin-top: 1px; }
+
+  .g-head {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+    color: var(--a-label3); padding: 18px 36px 7px; display: flex; justify-content: space-between;
+  }
+  .group { margin: 0 16px; background: var(--a-cell); border-radius: 10px; overflow: hidden; }
+  .cell { min-height: 44px; padding: 11px 16px; display: flex; align-items: center; gap: 13px; }
+  .cell + .cell { border-top: 1px solid var(--a-sep); margin-left: 16px; padding-left: 0; }
+  .q-topic { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+  .q-kind { font-size: 13px; line-height: 18px; color: var(--a-label3); margin-top: 2px; }
+
+  .why { display: flex; flex-direction: column; gap: 7px; }
+  .why p { font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+  .why .good::before { content: "Keeps "; font-weight: 640; color: var(--emerald); }
+  .why .bad::before { content: "Costs "; font-weight: 640; color: var(--amber); }
+
+  .flag { border-left: 2px solid var(--amber); padding-left: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .flag h3 { color: var(--amber); }
+  :focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Design · 18 August 2026 · Amendment · Built</p>
+    <h1>Starting a Round</h1>
+    <p class="lede">
+      The Quiz tab shipped with an entry point that never says what it starts. Three
+      ways to fix that, at the width they will actually be read at.
+    </p>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <h2>What the card says now</h2>
+      <p class="dim small">
+        A number, a bar, and a button. Everything a learner would want to know before
+        tapping &mdash; that it is multiple choice, that it is ten questions, that it will
+        not take long &mdash; is missing.
+      </p>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <span class="tag">Today</span>
+        <div class="slice">
+          <div class="lgtitle">Quiz</div>
+          <p class="sub">One &ldquo;tell me&rdquo; before you drive, one &ldquo;show me&rdquo; once you&rsquo;re moving. Getting either wrong is a minor fault.</p>
+          <div class="qcard">
+            <div class="know">9 <em>of 20 known</em></div>
+            <div class="track"><i style="width:45%"></i></div>
+            <div class="cta">Start a round</div>
+          </div>
+          <div class="g-head"><span>Safety and the outside</span><span>7</span></div>
+          <div class="group">
+            <div class="cell">
+              <div><div class="q-topic">Tyre tread and condition</div><div class="q-kind">Tell me</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="aside" style="display:flex;flex-direction:column;gap:14px;max-width:46ch">
+        <h3>Three things it fails to say</h3>
+        <ul class="notes small dim">
+          <li>
+            <b>&ldquo;A round&rdquo; of what.</b> The word carries no meaning until you have
+            already tapped it once. It is the only unexplained noun on the screen.
+          </li>
+          <li>
+            <b>That it is multiple choice.</b> Nothing anywhere on the tab says so. A
+            learner who reads the rows below reasonably expects to be asked to recite.
+          </li>
+          <li>
+            <b>How big a commitment it is.</b> Ten questions is about two minutes. Not
+            saying so makes it feel like an open-ended thing to start on a bus.
+          </li>
+        </ul>
+        <h3>And one thing the whole screen fails to say</h3>
+        <p class="dim small">
+          That the card and the list are two different tools &mdash; one to drill with, one
+          to read. Right now the list just begins, with no line telling you what it is.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Three ways to fix it</h2>
+      <p class="dim small">All three keep the count and the clay bar. They differ in where the explaining goes.</p>
+    </div>
+
+    <div class="options">
+
+      <!-- A -->
+      <div class="option">
+        <span class="tag"><span class="pick">Recommended</span> A · Explained card</span>
+        <div class="slice">
+          <div class="lgtitle">Quiz</div>
+          <p class="sub">One &ldquo;tell me&rdquo; before you drive, one &ldquo;show me&rdquo; once you&rsquo;re moving. Getting either wrong is a minor fault.</p>
+          <div class="qcard">
+            <div class="rowsplit">
+              <span class="cardhead">Practise</span>
+              <span class="q-kind" style="margin:0">9 of 20 known</span>
+            </div>
+            <div class="track"><i style="width:45%"></i></div>
+            <p class="cardsub">
+              Ten questions, four answers to pick from. The words to say out loud come
+              after each one.
+            </p>
+            <div class="cta">Start a round</div>
+          </div>
+          <div class="g-head"><span>All 20 questions</span><span></span></div>
+          <div class="group">
+            <div class="cell">
+              <div><div class="q-topic">Tyre tread and condition</div><div class="q-kind">Tell me</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="why">
+          <p class="good">the button short, and puts the explaining where there is room for it. Names the format, the length and the payoff in one sentence.</p>
+          <p class="bad">three lines of vertical space, and demotes the count from the card&rsquo;s headline to a value on the right.</p>
+        </div>
+      </div>
+
+      <!-- B -->
+      <div class="option">
+        <span class="tag">B · Explicit button</span>
+        <div class="slice">
+          <div class="lgtitle">Quiz</div>
+          <p class="sub">One &ldquo;tell me&rdquo; before you drive, one &ldquo;show me&rdquo; once you&rsquo;re moving. Getting either wrong is a minor fault.</p>
+          <div class="qcard">
+            <div class="know">9 <em>of 20 known</em></div>
+            <div class="track"><i style="width:45%"></i></div>
+            <div class="cta">Start a 10-question quiz</div>
+            <p class="cardcap">Multiple choice, four answers each</p>
+          </div>
+          <div class="g-head"><span>All 20 questions</span><span></span></div>
+          <div class="group">
+            <div class="cell">
+              <div><div class="q-topic">Tyre tread and condition</div><div class="q-kind">Tell me</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="why">
+          <p class="good">the count as the card&rsquo;s headline, and puts the most important fact on the control itself, where it is read last before tapping.</p>
+          <p class="bad">a button that wraps to two lines at larger text sizes, and a caption under a primary action &mdash; a pattern iOS uses for warnings, not for explanations.</p>
+        </div>
+      </div>
+
+      <!-- C -->
+      <div class="option">
+        <span class="tag">C · Two-line row</span>
+        <div class="slice">
+          <div class="lgtitle">Quiz</div>
+          <p class="sub">One &ldquo;tell me&rdquo; before you drive, one &ldquo;show me&rdquo; once you&rsquo;re moving. Getting either wrong is a minor fault.</p>
+          <div class="qcard" style="padding-bottom:6px">
+            <div class="know">9 <em>of 20 known</em></div>
+            <div class="track"><i style="width:45%"></i></div>
+            <div class="hair"></div>
+            <div class="actionrow">
+              <div style="flex:1">
+                <div class="t">Start a round</div>
+                <div class="d">Ten questions, multiple choice</div>
+              </div>
+              <svg width="8" height="13" viewBox="0 0 8 13" fill="none" stroke="#C4BDB4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 1.5L6.5 6.5l-5 5"/></svg>
+            </div>
+          </div>
+          <div class="g-head"><span>All 20 questions</span><span></span></div>
+          <div class="group">
+            <div class="cell">
+              <div><div class="q-topic">Tyre tread and condition</div><div class="q-kind">Tell me</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="why">
+          <p class="good">the most vertical space, and reads as thoroughly native &mdash; a disclosure row is exactly how Settings offers a sub-screen.</p>
+          <p class="bad">the emphasis. This is the one thing the tab exists to get you to do, and a text row asks for it about as loudly as a list item.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Built: A, with the button given more presence</h2>
+      <p class="dim small">
+        Shipped as drawn, with two changes made during the build.
+      </p>
+    </div>
+    <ul class="notes small dim">
+      <li>
+        <b>The button is 52pt, not 46, and carries a play glyph.</b> The card explains
+        clearly enough at 46, but the ask was for the start to be unmissable, and height
+        plus an icon is where that comes from without shouting in colour.
+      </li>
+      <li>
+        <b>The label is &ldquo;Start the quiz&rdquo;, not &ldquo;Start a round&rdquo;.</b>
+        &ldquo;Round&rdquo; is a word only this app uses. It stays in the summary, where you
+        have already done one and it means something. Deliberately not &ldquo;start the
+        test&rdquo;: in this app &ldquo;test&rdquo; is the thing at the test centre, and one
+        noun should not mean both.
+      </li>
+    </ul>
+    <div class="sec-head" style="margin-top:6px">
+      <h3 style="font-size:15px">Why A over the other two</h3>
+    </div>
+    <p class="dim small">
+      B and C both try to make one control carry the whole explanation, and a control is
+      the wrong place for three facts. B&rsquo;s button is the clearest single line of the
+      three, but &ldquo;Start a 10-question quiz&rdquo; already wraps on a smaller phone and will
+      wrap harder for anyone using larger text &mdash; and this app caps display type at 110%
+      precisely because that setting gets used. C is the most iOS-literate answer and the
+      wrong one: this is the tab&rsquo;s primary action, and a chevron row is what you reach for
+      when something is secondary.
+    </p>
+    <p class="dim small">
+      A separates the two jobs. The sentence explains, the button acts, and neither has to
+      compromise. It also has room to say the thing the other two cannot fit &mdash; that the
+      words to say out loud come after each question &mdash; which is the actual reason to use
+      the drill rather than just reading the list.
+    </p>
+    <div class="flag">
+      <h3>Text got darker across the whole app at the same time</h3>
+      <p class="dim small">
+        Checked while making the card clearer: <code>labelTertiary</code> was
+        <code>#8A827A</code>, which measures <b>3.78</b> against a cell and <b>3.33</b>
+        against the field &mdash; under the 4.5 WCAG asks for at these sizes. It carries the
+        second line of every row, every group header and every caption, so most of the
+        app&rsquo;s small type was below the threshold. Tertiary is now <code>#6B635B</code>
+        (5.90 / 5.20) and secondary moved down to <code>#574F49</code> (8.02 / 7.07) to keep
+        three distinct levels. Both values were already in the palette. This changes every
+        screen, not just this one, and <code>theme.test.ts</code> now holds the floor.
+      </p>
+    </div>
+
+    <div class="flag">
+      <h3>One change beyond the card, in all three</h3>
+      <p class="dim small">
+        The list gains a lead-in header &mdash; <b>All 20 questions</b> &mdash; above the first
+        category. Without it the tab reads as one feature that happens to have a button on
+        top. With it, the split the design was built around is finally stated on screen:
+        the card is the drill, the list is the reference.
+      </p>
+    </div>
+  </section>
+
+</div>
