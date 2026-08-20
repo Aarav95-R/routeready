@@ -2,7 +2,8 @@ import { Alert } from "react-native";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 const mockBack = jest.fn();
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn(), back: mockBack }) }));
+const mockPush = jest.fn();
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, back: mockBack }) }));
 jest.mock("expo-constants", () => ({ __esModule: true, default: { expoConfig: { version: "1.0.0" } } }));
 
 import { useSession } from "@/stores/sessionStore";
@@ -23,6 +24,7 @@ const confirmButton = (spy: jest.SpyInstance) => {
 
 beforeEach(() => {
   mockBack.mockClear();
+  mockPush.mockClear();
   signedInAs("sumeet.raheja@yahoo.com");
   useDevPreview.setState({ firstRun: false });
 });
@@ -147,4 +149,23 @@ test("a development build can turn the first-run screen back on", () => {
   render(<Settings />);
   fireEvent.press(screen.getByTestId("preview-first-run"));
   expect(useDevPreview.getState().firstRun).toBe(true);
+});
+
+// Deletion lives on its own screen, not behind an alert raised from here. The
+// consequences need reading, and an alert is not a place anybody reads.
+test("the way to delete the account is on this screen", () => {
+  render(<Settings />);
+  expect(screen.getByText("Delete account")).toBeTruthy();
+});
+
+test("deleting opens its own screen rather than acting from here", () => {
+  const spy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+  render(<Settings />);
+
+  fireEvent.press(screen.getByText("Delete account"));
+
+  expect(mockPush).toHaveBeenCalledWith("/delete-account");
+  expect(spy).not.toHaveBeenCalled();
+  expect(useSession.getState().session).not.toBeNull();
+  spy.mockRestore();
 });

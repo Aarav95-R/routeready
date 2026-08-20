@@ -45,3 +45,6 @@ app-example
 
 # seed generator's Overpass/OSRM response cache — safe to delete, refetches
 scripts/seed/.cache/
+
+# Supabase CLI local link state (machine-specific, recreated by `supabase link`)
+supabase/.temp/

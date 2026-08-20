@@ -35,6 +35,23 @@ export async function clearUserCache(): Promise<void> {
   if (mine.length > 0) await AsyncStorage.multiRemove([...mine]);
 }
 
+/**
+ * Drop the unsent work, without trying to send it.
+ *
+ * The counterpart to `clearUserCache` leaving the outbox alone, and called
+ * only from account deletion. Once the auth.users row is gone a queued entry
+ * can never be inserted — progress rows are keyed to a user that no longer
+ * exists — so the only thing keeping it would achieve is leaving a deleted
+ * person's mock test on the phone, retried on every reconnect.
+ *
+ * Separate from `clearUserCache` rather than folded into it: sign-out wants
+ * one of these and deletion wants both, and a flag argument would put that
+ * decision at the call site of a function whose whole job is to not need one.
+ */
+export async function clearOutbox(): Promise<void> {
+  await AsyncStorage.removeItem("queue:progress_outbox");
+}
+
 export async function enqueue(key: "progress_outbox", item: unknown): Promise<void> {
   const raw = await AsyncStorage.getItem(`queue:${key}`);
   const q: unknown[] = raw ? JSON.parse(raw) : [];

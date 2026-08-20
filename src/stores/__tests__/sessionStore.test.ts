@@ -9,6 +9,7 @@ jest.mock("@/lib/supabase", () => ({
       resetPasswordForEmail: jest.fn(),
       signOut: jest.fn().mockResolvedValue({ error: null }),
     },
+    functions: { invoke: jest.fn() },
   },
 }));
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -136,4 +137,120 @@ test("selectUserId is the account id, and an empty string when there is nobody",
   expect(selectUserId(useSession.getState())).toBe("");
   useSession.setState({ session: signedIn });
   expect(selectUserId(useSession.getState())).toBe("u1");
+});
+
+// ── Account deletion ───────────────────────────────────────────────────────
+//
+// Every test here drives real AsyncStorage rather than spying on the teardown
+// functions, because the claim being made is about what is left on the phone,
+// not about which functions were called.
+
+const signedInUser = { user: { id: "u1", email: "a@b.com" } } as never;
+
+async function seedALifeOnThisPhone() {
+  await AsyncStorage.setItem("cache:progress:c1", JSON.stringify({ r1: [{ score: 82 }] }));
+  await AsyncStorage.setItem("cache:progress:quiz", JSON.stringify({ answers: {} }));
+  await AsyncStorage.setItem("queue:progress_outbox", JSON.stringify([{ route_id: "r1" }]));
+  await AsyncStorage.setItem("welcome:u1", "1");
+  await AsyncStorage.setItem("cache:centres", JSON.stringify([{ id: "c1" }]));
+}
+
+beforeEach(async () => {
+  await AsyncStorage.clear();
+  (supabase.functions.invoke as jest.Mock).mockReset();
+  useSession.setState({ session: signedInUser, initialized: true });
+});
+
+test("deleting the account signs the person out and reports no error", async () => {
+  (supabase.functions.invoke as jest.Mock).mockResolvedValue({ data: { deleted: true }, error: null });
+
+  expect(await useSession.getState().deleteAccount()).toBeNull();
+
+  expect(supabase.functions.invoke).toHaveBeenCalledWith("delete-account", expect.anything());
+  expect(useSession.getState().session).toBeNull();
+});
+
+// The whole authorisation model. The Edge Function reads the account to delete
+// from the caller's token; sending an id would invite a server that trusted it.
+test("the request carries no account id — the token is the only thing that decides", async () => {
+  (supabase.functions.invoke as jest.Mock).mockResolvedValue({ data: { deleted: true }, error: null });
+
+  await useSession.getState().deleteAccount();
+
+  const [, options] = (supabase.functions.invoke as jest.Mock).mock.calls[0];
+  expect(JSON.stringify(options ?? {})).not.toContain("u1");
+});
+
+// Sign-out spares the outbox and the welcome flag on purpose. Deletion is the
+// case where sparing them means leaving a deleted person's data on the phone.
+test("deletion takes everything of theirs off the phone, including what sign-out spares", async () => {
+  await seedALifeOnThisPhone();
+  (supabase.functions.invoke as jest.Mock).mockResolvedValue({ data: { deleted: true }, error: null });
+
+  await useSession.getState().deleteAccount();
+
+  const keys = await AsyncStorage.getAllKeys();
+  expect(keys).not.toContain("cache:progress:c1");
+  expect(keys).not.toContain("cache:progress:quiz");
+  expect(keys).not.toContain("queue:progress_outbox");
+  expect(keys).not.toContain("welcome:u1");
+});
+
+test("the country's data is not personal, and stays put", async () => {
+  await seedALifeOnThisPhone();
+  (supabase.functions.invoke as jest.Mock).mockResolvedValue({ data: { deleted: true }, error: null });
+
+  await useSession.getState().deleteAccount();
+
+  expect(await AsyncStorage.getAllKeys()).toContain("cache:centres");
+});
+
+// The asymmetry the whole ordering is built on. Nothing has been destroyed
+// yet, so a failed call must leave the account exactly as it was.
+test("a server failure destroys nothing and leaves the person signed in", async () => {
+  await seedALifeOnThisPhone();
+  (supabase.functions.invoke as jest.Mock).mockResolvedValue({
+    data: null, error: { message: "The account could not be deleted." },
+  });
+
+  const message = await useSession.getState().deleteAccount();
+
+  expect(message).not.toBeNull();
+  expect(useSession.getState().session).not.toBeNull();
+  const keys = await AsyncStorage.getAllKeys();
+  expect(keys).toContain("cache:progress:c1");
+  expect(keys).toContain("queue:progress_outbox");
+  expect(keys).toContain("welcome:u1");
+});
+
+test("being offline is reported as a connection problem, not a failure to delete", async () => {
+  (supabase.functions.invoke as jest.Mock).mockResolvedValue({
+    data: null, error: { message: "Failed to send a request to the Edge Function" },
+  });
+
+  expect(await useSession.getState().deleteAccount()).toMatch(/connection/i);
+  expect(useSession.getState().session).not.toBeNull();
+});
+
+test("a raw server string never reaches the person", async () => {
+  (supabase.functions.invoke as jest.Mock).mockResolvedValue({
+    data: null, error: { message: "FunctionsHttpError: non-2xx status code" },
+  });
+
+  const message = await useSession.getState().deleteAccount();
+
+  expect(message).not.toContain("FunctionsHttpError");
+});
+
+// Past the server call the account is gone. A disk that will not clear is not
+// a reason to strand somebody inside an account that no longer exists.
+test("a failed local teardown still signs the person out", async () => {
+  await seedALifeOnThisPhone();
+  (supabase.functions.invoke as jest.Mock).mockResolvedValue({ data: { deleted: true }, error: null });
+  const spy = jest.spyOn(AsyncStorage, "multiRemove").mockRejectedValue(new Error("disk"));
+
+  expect(await useSession.getState().deleteAccount()).toBeNull();
+  expect(useSession.getState().session).toBeNull();
+
+  spy.mockRestore();
 });

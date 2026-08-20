@@ -2,7 +2,9 @@ import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { authError } from "@/lib/authError";
-import { clearUserCache } from "@/services/cache";
+import { clearOutbox, clearUserCache } from "@/services/cache";
+import { forgetWelcome } from "@/services/welcome";
+import { deleteAccountError } from "@/lib/deleteError";
 
 /**
  * Every action that can fail returns a sentence written for the person, or
@@ -20,6 +22,7 @@ type SessionState = {
   sendPasswordReset: (email: string) => Promise<string | null>;
   setName: (name: string) => Promise<string | null>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<string | null>;
 };
 
 /** Where an emailed link lands. Handled by the deep-link listener in app/_layout.tsx. */
@@ -49,7 +52,7 @@ export function selectUserId(s: SessionState): string {
   return s.session?.user?.id ?? "";
 }
 
-export const useSession = create<SessionState>((set) => ({
+export const useSession = create<SessionState>((set, get) => ({
   session: null,
   initialized: false,
   init: async () => {
@@ -109,5 +112,39 @@ export const useSession = create<SessionState>((set) => ({
     try { await supabase.auth.signOut(); } catch { /* local sign-out below is the part that matters */ }
     await clearUserCache();
     set({ session: null });
+  },
+
+  /**
+   * Delete the account, for good.
+   *
+   * The order is server first, local second, and the reason is that the two
+   * failures are not symmetrical. A failed call has destroyed nothing, so the
+   * account must be left exactly as it was and the person left signed in to
+   * it. A successful call has destroyed everything, so nothing after it may
+   * throw its way out and strand somebody inside an account that no longer
+   * exists — hence the swallowed teardown and the unconditional `set`.
+   *
+   * No account id is sent. The Edge Function reads whose account to delete
+   * from the caller's token and from nowhere else; a body carrying an id is
+   * how "delete my account" becomes "delete anyone's account". The id read
+   * here is only ever used against this phone's own storage.
+   *
+   * Deliberately not queued when offline. Every other write in this app has an
+   * outbox behind it; a deletion that fires later, from a screen nobody is
+   * looking at, is not something anybody asked for.
+   */
+  deleteAccount: async () => {
+    const userId = get().session?.user?.id ?? "";
+
+    const { error } = await supabase.functions.invoke("delete-account", { method: "POST" });
+    if (error) return deleteAccountError(error.message);
+
+    // Past this line the account is gone and this is only tidying.
+    for (const sweep of [clearUserCache, clearOutbox, () => forgetWelcome(userId)]) {
+      try { await sweep(); } catch { /* a full disk is not a reason to stay signed in */ }
+    }
+    try { await supabase.auth.signOut(); } catch { /* the session below is the part that matters */ }
+    set({ session: null });
+    return null;
   },
 }));

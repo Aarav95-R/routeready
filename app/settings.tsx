@@ -186,6 +186,24 @@ export default function Settings() {
             <Text maxFontSizeMultiplier={DISPLAY_SCALE} className="text-[19px] font-semibold text-danger">Sign out</Text>
           </Pressable>
         </Animated.View>
+        {/* Its own group, below Sign out rather than beside it. Sign out is a
+            door you can walk back through; this is not, and a shared card
+            would draw them as a pair of equals. The consequences live on the
+            screen this pushes to — an alert is not a place anybody reads. */}
+        <Animated.View entering={enterFrom(3)}>
+          <Pressable
+            onPress={() => router.push("/delete-account")}
+            accessibilityRole="button"
+            className="mx-5 mt-3 flex-row items-center rounded-[19px] bg-card px-5 py-[17px] active:opacity-70"
+            style={{ shadowColor: "#221F1C", shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}
+          >
+            <Text maxFontSizeMultiplier={DISPLAY_SCALE} className="text-[18px] font-medium text-danger">
+              Delete account
+            </Text>
+            <Ionicons name="chevron-forward" size={17} color="#E3A9A9" style={{ marginLeft: "auto" }} />
+          </Pressable>
+        </Animated.View>
+
       </ScrollView>
     </SafeAreaView>
   );

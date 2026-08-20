@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { cachedFetch, clearUserCache, drainQueue, enqueue } from "../cache";
+import { cachedFetch, clearOutbox, clearUserCache, drainQueue, enqueue } from "../cache";
 
 beforeEach(() => AsyncStorage.clear());
 
@@ -41,6 +41,29 @@ test("work waiting to be sent survives a sign-out", async () => {
   await enqueue("progress_outbox", { route_id: "r1", user_id: "u1" });
   await clearUserCache();
   expect(await drainQueue("progress_outbox", async () => {})).toBe(1);
+});
+
+// The exact opposite of the sign-out case above, and the reason clearOutbox
+// exists at all. A queued row carries a user_id that no longer has a row in
+// auth.users, so it can never be inserted again — keeping it would leave a
+// deleted person's mock test sitting on the phone, retrying forever.
+test("deleting the account takes the unsent work with it", async () => {
+  await enqueue("progress_outbox", { route_id: "r1", user_id: "u1" });
+
+  await clearOutbox();
+
+  expect(await drainQueue("progress_outbox", async () => {})).toBe(0);
+});
+
+// Sign-out sweeps the cache and spares the outbox; deletion has to do both,
+// and it calls them separately. Neither may quietly do the other's job.
+test("clearing the outbox leaves the public reference data alone", async () => {
+  await cachedFetch("centres", async () => [{ id: "c1" }]);
+  await enqueue("progress_outbox", { route_id: "r1" });
+
+  await clearOutbox();
+
+  expect(await AsyncStorage.getItem("cache:centres")).not.toBeNull();
 });
 
 test("outbox enqueues and drains FIFO, keeping failures", async () => {

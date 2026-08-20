@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { hasSeenWelcome, markWelcomeSeen } from "../welcome";
+import { forgetWelcome, hasSeenWelcome, markWelcomeSeen } from "../welcome";
 
 beforeEach(() => AsyncStorage.clear());
 
@@ -48,4 +48,43 @@ test("an unwritable disk does not take the screen down with it", async () => {
   const spy = jest.spyOn(AsyncStorage, "setItem").mockRejectedValueOnce(new Error("disk"));
   await expect(markWelcomeSeen("u1")).resolves.toBeUndefined();
   spy.mockRestore();
+});
+
+// The flag is deliberately left in place on sign-out, so that somebody coming
+// back to their own account is not welcomed twice. Deletion is the one exit
+// there is no coming back from, and the id it is keyed by is about to stop
+// existing.
+test("deleting the account forgets that it was ever welcomed", async () => {
+  await markWelcomeSeen("u1");
+
+  await forgetWelcome("u1");
+
+  // On key presence rather than on the read value: the AsyncStorage jest mock
+  // answers a removed key with undefined where the real one answers null, and
+  // the claim being made here is simply that the row is off the disk.
+  expect(await AsyncStorage.getAllKeys()).not.toContain("welcome:u1");
+});
+
+test("forgetting one account leaves the other person on this phone alone", async () => {
+  await markWelcomeSeen("u1");
+  await markWelcomeSeen("u2");
+
+  await forgetWelcome("u1");
+
+  expect(await hasSeenWelcome("u2")).toBe(true);
+});
+
+// Same argument as markWelcomeSeen: this runs during a teardown that has
+// already succeeded on the server. A disk that will not write must not throw
+// its way out of a deletion that has already happened.
+test("an unwritable disk does not throw out of a deletion", async () => {
+  const spy = jest.spyOn(AsyncStorage, "removeItem").mockRejectedValueOnce(new Error("disk"));
+  await expect(forgetWelcome("u1")).resolves.toBeUndefined();
+  spy.mockRestore();
+});
+
+test("with no account there is nothing to forget", async () => {
+  await markWelcomeSeen("u1");
+  await forgetWelcome("");
+  expect(await hasSeenWelcome("u1")).toBe(true);
 });

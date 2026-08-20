@@ -47,3 +47,26 @@ export async function markWelcomeSeen(userId: string): Promise<void> {
     /* see above */
   }
 }
+
+/**
+ * Forget that this account was ever welcomed.
+ *
+ * The comment on `key` explains why sign-out leaves the flag alone: somebody
+ * returning to their own account should not be welcomed a second time. Deletion
+ * is the exit with no return, and the id this is keyed by is about to stop
+ * existing — leaving the row behind would mean a stranger who later signs up
+ * and happens to be issued the same id inherits it.
+ *
+ * Swallows a failure for the same reason `markWelcomeSeen` does, and a
+ * stronger one: by the time this runs the server has already deleted the
+ * account, so throwing would abandon the local teardown half-done over one
+ * boolean.
+ */
+export async function forgetWelcome(userId: string): Promise<void> {
+  if (!userId) return;
+  try {
+    await AsyncStorage.removeItem(key(userId));
+  } catch {
+    /* see above */
+  }
+}
