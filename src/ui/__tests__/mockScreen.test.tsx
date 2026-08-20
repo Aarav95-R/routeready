@@ -88,6 +88,26 @@ const mount = async () => {
   await waitFor(() => expect(screen.getByText("Route 3 · Sandpit Lane")).toBeTruthy());
 };
 
+/**
+ * Mount, wait until the car is actually on the start line, then begin.
+ *
+ * The preview card only offers "Start" once the last known position has
+ * arrived and put the driver there; until then it offers "Guide me to the
+ * start". mount() waits on the route name, which lands first, so reading the
+ * button straight off the tree is a race - and one that only loses under
+ * full-suite parallelism, which is why three tests here passed in isolation
+ * and failed about one full run in five together.
+ *
+ * The practice suite hit exactly this and fixed it with a waitFor of its own;
+ * this is the same fix, and the two should stay in step.
+ */
+const beginAtStart = async () => {
+  setLastKnownPosition(A.lat, A.lng);
+  await mount();
+  await waitFor(() => expect(screen.getByText("Start")).toBeTruthy());
+  await act(async () => { fireEvent.press(screen.getByText("Start")); });
+};
+
 test("arriving at the start asks, and marks nothing until it is answered", async () => {
   setLastKnownPosition(51.4980, -0.100);
   await mount();
@@ -117,10 +137,7 @@ test("the test begins only once the driver says so", async () => {
 // A loop's finish is its start, so a radius-only check would score the test
 // before the car had moved.
 test("standing on the start line does not end the test", async () => {
-  setLastKnownPosition(A.lat, A.lng);
-  await mount();
-
-  await act(async () => { fireEvent.press(screen.getByText("Start")); });
+  await beginAtStart();
   await drive([A, A, A]);
 
   expect(mockReplace).not.toHaveBeenCalled();
@@ -128,10 +145,7 @@ test("standing on the start line does not end the test", async () => {
 });
 
 test("closing the loop scores the test and shows the result, with no tap", async () => {
-  setLastKnownPosition(A.lat, A.lng);
-  await mount();
-
-  await act(async () => { fireEvent.press(screen.getByText("Start")); });
+  await beginAtStart();
   await drive(LOOP);
 
   expect(useMockTest.getState().phase).toBe("finished");
@@ -143,10 +157,7 @@ test("closing the loop scores the test and shows the result, with no tap", async
 // a second: without a latch this scores the test again and stacks the result
 // screen on itself.
 test("sitting at the finish scores the test exactly once", async () => {
-  setLastKnownPosition(A.lat, A.lng);
-  await mount();
-
-  await act(async () => { fireEvent.press(screen.getByText("Start")); });
+  await beginAtStart();
   await drive([...LOOP, A, A, A, A]);
 
   expect(mockReplace).toHaveBeenCalledTimes(1);
@@ -173,10 +184,7 @@ test("the screen is held awake for the length of the drive", async () => {
 // Asserted on the exact key set rather than on the two absent names, so that
 // a future field carrying a position cannot be added without this failing.
 test("leaving the route records no GPS position, because none is ever read", async () => {
-  setLastKnownPosition(A.lat, A.lng);
-  await mount();
-  await waitFor(() => expect(screen.getByText("Start")).toBeTruthy());
-  await act(async () => { fireEvent.press(screen.getByText("Start")); });
+  await beginAtStart();
 
   // Along the first side, three fixes well clear of it, then back on.
   await drive(side(A, B, 6));
