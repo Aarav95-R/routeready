@@ -66,12 +66,3 @@ export function deriveObservationZones(coords: LatLng[]): ObservationZone[] {
       kind: i % 2 === 0 ? "roundabout" : "junction",
     }));
 }
-
-export function derivePassHistory(passRate: number, seedIdx: number): number[] {
-  const out: number[] = [];
-  for (let q = 0; q < 8; q++) {
-    const wobble = Math.sin(seedIdx * 3.7 + q * 1.3) * 4;
-    out.push(Math.round((passRate + wobble) * 10) / 10);
-  }
-  return out;
-}

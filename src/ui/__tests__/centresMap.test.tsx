@@ -10,7 +10,7 @@ import { CentresMap, CentresMapHandle } from "../CentresMap";
 
 const centre = (id: string, lat: number, lng: number): Centre => ({
   id, name: id, address: "", lat, lng, pass_rate: 40,
-  pass_rate_history: [], test_types: ["manual"], region: "Greater London",
+  test_types: ["manual"], region: "Greater London",
 });
 
 const identity: CentreIdentity = { hue: "#BE123C", tint: "#FFF1F2", initials: "MH", seed: 1 };

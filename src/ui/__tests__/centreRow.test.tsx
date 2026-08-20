@@ -6,7 +6,7 @@ import { CENTRE_ROW_H, CentreRow } from "../CentreRow";
 
 const centre: Centre = {
   id: "c1", name: "Mill Hill (London)", address: "71 Watford Way",
-  lat: 51.6087, lng: -0.2412, pass_rate: 43.5, pass_rate_history: [],
+  lat: 51.6087, lng: -0.2412, pass_rate: 43.5,
   test_types: ["manual", "auto"], region: "Greater London",
 };
 

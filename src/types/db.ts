@@ -15,7 +15,10 @@ export type NavStep = {
 
 export type Centre = {
   id: string; name: string; address: string; lat: number; lng: number;
-  pass_rate: number | null; pass_rate_history: number[]; test_types: string[]; region: string | null;
+  pass_rate: number | null; test_types: string[]; region: string | null;
+  // No pass_rate_history. The column still exists on the table and still holds
+  // the sine-wave values the old seed wrote; the app has never rendered it, and
+  // leaving it off the type is what stops a future screen from starting to.
 };
 export type RoutePhaseName =
   | "settle-in" | "junction-work" | "faster-road" | "independent" | "manoeuvre" | "return";

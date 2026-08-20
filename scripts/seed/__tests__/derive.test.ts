@@ -1,4 +1,4 @@
-import { deriveDifficulty, derivePassHistory, deriveSpeedProfile, detectTurnPoints } from "../derive";
+import { deriveDifficulty, deriveSpeedProfile, detectTurnPoints } from "../derive";
 
 // L-shaped path: sharp 90° right turn at vertex 2
 const elbow = [
@@ -25,11 +25,4 @@ test("deriveSpeedProfile groups contiguous bands", () => {
     { startIdx: 0, endIdx: 2, limitMph: 30 },
     { startIdx: 3, endIdx: 5, limitMph: 60 },
   ]);
-});
-
-test("derivePassHistory is deterministic, 8 entries, near pass_rate", () => {
-  const h1 = derivePassHistory(45, 3);
-  expect(h1).toHaveLength(8);
-  expect(h1).toEqual(derivePassHistory(45, 3));
-  h1.forEach((v) => { expect(v).toBeGreaterThan(35); expect(v).toBeLessThan(55); });
 });

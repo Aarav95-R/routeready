@@ -6,7 +6,7 @@
 import { Client } from "pg";
 import { fetchRoute } from "./osrm";
 import { buildNavSteps } from "./navsteps";
-import { deriveDifficulty, deriveHazards, deriveObservationZones, derivePassHistory, deriveSpeedProfile } from "./derive";
+import { deriveDifficulty, deriveHazards, deriveObservationZones, deriveSpeedProfile } from "./derive";
 import type { LatLng } from "../../src/lib/geo";
 
 const CENTRE = {
@@ -52,8 +52,8 @@ async function main() {
     "begin;",
     "alter table routes add column if not exists steps jsonb default '[]';",
     `delete from test_centres where name = '${esc(CENTRE.name)}';`,
-    `insert into test_centres (name, address, lat, lng, pass_rate, pass_rate_history, test_types, region) values ` +
-      `('${esc(CENTRE.name)}', '${esc(CENTRE.address)}', ${CENTRE.lat}, ${CENTRE.lng}, 50, ${j(derivePassHistory(50, 1))}, '{manual,auto}', '${esc(CENTRE.region)}');`,
+    `insert into test_centres (name, address, lat, lng, pass_rate, test_types, region) values ` +
+      `('${esc(CENTRE.name)}', '${esc(CENTRE.address)}', ${CENTRE.lat}, ${CENTRE.lng}, 50, '{manual,auto}', '${esc(CENTRE.region)}');`,
     `insert into routes (centre_id, name, geometry, estimated_minutes, distance_km, difficulty, speed_profile, observation_zones, steps) ` +
       `select id, 'Hemel test loop', ${j(geometry)}, ${Math.round(r.durationS / 60)}, ${(r.distanceM / 1000).toFixed(2)}, ` +
       `${deriveDifficulty(r.distanceM / 1000, hazards.length * 2)}, ${j(deriveSpeedProfile(r.speedsMps))}, ` +

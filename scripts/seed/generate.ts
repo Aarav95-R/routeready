@@ -1,7 +1,7 @@
 import { writeFileSync } from "node:fs";
 import centres from "./centres.json";
 import { fetchRoute } from "./osrm";
-import { derivePassHistory, deriveDifficulty, deriveHazards, deriveObservationZones, deriveSpeedProfile } from "./derive";
+import { deriveDifficulty, deriveHazards, deriveObservationZones, deriveSpeedProfile } from "./derive";
 import { buildNavSteps } from "./navsteps";
 import { fetchFeatures } from "./overpass";
 import { SHOW_ME_TELL_ME_SQL } from "./questions";
@@ -117,9 +117,13 @@ async function main() {
   for (let ci = 0; ci < centres.length; ci++) {
     const c = centres[ci];
     lines.push(
-      `insert into test_centres (id, name, address, lat, lng, pass_rate, pass_rate_history, test_types, region) values ` +
+      // No pass_rate_history. It used to be eight quarters generated from a sine
+      // wave around pass_rate — invented numbers, written to a shipping database
+      // and never rendered. Real DVSA quarterly data can fill the column later;
+      // until it does, the honest value is nothing at all.
+      `insert into test_centres (id, name, address, lat, lng, pass_rate, test_types, region) values ` +
       `(gen_random_uuid(), '${esc(c.name)}', '${esc(c.address)}', ${c.lat}, ${c.lng}, ${c.pass_rate}, ` +
-      `${j(derivePassHistory(c.pass_rate, ci))}, '{${c.test_types.join(",")}}', '${esc(c.region)}');`
+      `'{${c.test_types.join(",")}}', '${esc(c.region)}');`
     );
     // One Overpass call per centre, cached. A centre OSM knows nothing about
     // still gets its ten routes: planTestRoute falls back to compass points for

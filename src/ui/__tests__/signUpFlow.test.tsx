@@ -10,8 +10,8 @@ jest.mock("@/services/centresRepo", () => ({
   listCentres: jest.fn().mockResolvedValue({
     stale: false,
     data: [
-      { id: "c-1", name: "Mitcham", address: "London CR4", lat: 0, lng: 0, pass_rate: null, pass_rate_history: [], test_types: [], region: null },
-      { id: "c-2", name: "Croydon", address: "London CR0", lat: 0, lng: 0, pass_rate: null, pass_rate_history: [], test_types: [], region: null },
+      { id: "c-1", name: "Mitcham", address: "London CR4", lat: 0, lng: 0, pass_rate: null, test_types: [], region: null },
+      { id: "c-2", name: "Croydon", address: "London CR0", lat: 0, lng: 0, pass_rate: null, test_types: [], region: null },
     ],
   }),
 }));

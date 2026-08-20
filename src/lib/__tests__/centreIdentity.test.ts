@@ -17,7 +17,7 @@ const contrast = (a: string, b: string) => {
 
 const centre = (id: string, name = id): Centre => ({
   id, name, address: "", lat: 51.6, lng: -0.24,
-  pass_rate: 40, pass_rate_history: [], test_types: ["manual"], region: "Greater London",
+  pass_rate: 40, test_types: ["manual"], region: "Greater London",
 });
 
 test("every hue is legible as white monogram on the pin", () => {

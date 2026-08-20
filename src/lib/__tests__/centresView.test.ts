@@ -6,7 +6,7 @@ const MILL_HILL = { lat: 51.6087, lng: -0.2412 };
 // Roughly one mile of latitude per 0.0145 degrees, so `n` below is ~n miles out.
 const at = (id: string, milesNorth: number, over: Partial<Centre> = {}): Centre => ({
   id, name: id, address: "", lat: MILL_HILL.lat + milesNorth * 0.0145, lng: MILL_HILL.lng,
-  pass_rate: 40, pass_rate_history: [], test_types: ["manual", "auto"], region: "Greater London",
+  pass_rate: 40, test_types: ["manual", "auto"], region: "Greater London",
   ...over,
 });
 

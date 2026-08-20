@@ -5,7 +5,7 @@ import { ActiveCentreMarker } from "../ActiveCentreMarker";
 
 const centre: Centre = {
   id: "c1", name: "Barnet", address: "Longmore Avenue",
-  lat: 51.6368, lng: -0.166, pass_rate: 49, pass_rate_history: [],
+  lat: 51.6368, lng: -0.166, pass_rate: 49,
   test_types: ["manual", "auto"], region: "Greater London",
 };
 
