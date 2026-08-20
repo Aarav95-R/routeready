@@ -55,7 +55,7 @@ function copyFor(step: NextStep): Copy {
         title: "Start here",
         claim: "Your first drive",
         because:
-          "Pick a centre near you and follow one of its real examiner routes. Nothing is scored until you finish, and you can stop whenever you like.",
+          "Pick a centre near you and follow one of its test-style routes — test length, on the roads around the centre. Nothing is scored until you finish, and you can stop whenever you like.",
         action: FIND_A_CENTRE,
         meta: ["About 40 minutes", "Ten routes per centre"],
         drawing: true,

@@ -14,7 +14,7 @@ import { body, caption, footnote, MAX_DISPLAY_SCALE } from "@/ui/type";
  */
 
 const STEPS = [
-  { title: "Pick a centre", detail: "Ten real examiner routes at each one." },
+  { title: "Pick a centre", detail: "Ten test-style routes around each one." },
   { title: "Drive the route", detail: "Spoken directions, so you can keep your eyes up." },
   { title: "See what to work on", detail: "One thing at a time, starting with what costs you most." },
 ];
