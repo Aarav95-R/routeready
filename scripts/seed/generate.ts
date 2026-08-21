@@ -6,9 +6,10 @@ import { buildNavSteps } from "./navsteps";
 import { fetchFeatures } from "./overpass";
 import { SHOW_ME_TELL_ME_SQL } from "./questions";
 import { nameFromSteps, type Feature } from "./routePlan";
-import { MAX_TRIES, nextScale, PACE, phaseBounds, planTestRoute, SCALE_HI, SCALE_LO } from "./testPhases";
+import { inferPhases, PACE } from "./testPhases";
+import { searchRoute } from "./search";
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const esc = (s: string) => s.replace(/'/g, "''");
 const j = (v: unknown) => `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
 
@@ -145,20 +146,30 @@ async function main() {
         // Bisect the radius until the drive lands in the test-length band.
         // Every fetch is cached on disk, so a re-run after a failure part way
         // through costs one call rather than the whole search again.
-        let scale = 1, lo = SCALE_LO, hi = SCALE_HI;
-        let plan = planTestRoute({ lat: c.lat, lng: c.lng }, features, ri, scale);
-        let r = await fetchRoute(plan.waypoints);
-        for (let t = 0; t < MAX_TRIES; t++) {
-          const step = nextScale(r.durationS, r.distanceM, scale, lo, hi);
-          if (step.done) break;
-          scale = step.scale; lo = step.lo; hi = step.hi;
-          await sleep(700); // be polite to the public OSRM server
-          plan = planTestRoute({ lat: c.lat, lng: c.lng }, features, ri, scale);
-          r = await fetchRoute(plan.waypoints);
+        // The bisection, the retry on a different bearing, and the honest
+        // answer when neither works, all live in ./search - so that
+        // check-planner.ts measures the search that actually ships.
+        const found = await searchRoute(
+          { lat: c.lat, lng: c.lng }, features, ri, fetchRoute, sleep,
+        );
+        const r = found.route;
+
+        // A loop that never reached the band is not written out. A 30 km
+        // drive labelled forty minutes is the exact thing this module was
+        // rebuilt to stop saying, and one of those is worse than nine routes.
+        if (!found.converged) {
+          failures.push(
+            `${c.name} route ${ri + 1}: no loop in band ` +
+            `(best ${(r.distanceM / 1000).toFixed(1)} km after ${found.fetches} fetches)`,
+          );
+          continue;
         }
         const geometry = { type: "LineString", coordinates: r.coords.map((p) => [p.lng, p.lat]) };
         const hazards = deriveHazards(r.coords);
-        const phases = phaseBounds(r.legEdgeCounts, plan.phases, r.coords.length);
+        // Read off the line that came back rather than sliced from the legs we
+        // asked for: with three anchors there is no leg per phase to slice by,
+        // and what the drive contains is the honest question anyway.
+        const phases = inferPhases(r.coords, features);
         // Named after the fact, from the roads it drove — see nameFromSteps.
         const derived = nameFromSteps(r.steps, usedNames);
         for (const road of (derived ?? "").split(" and ")) if (road) usedNames.add(road);
@@ -178,7 +189,11 @@ async function main() {
             `from routes where name = '${esc(route.name)}' and centre_id = (select id from test_centres where name = '${esc(c.name)}');`
           );
         }
-        console.log(`  ok: ${route.name} (${minutes} min, ${(r.distanceM / 1000).toFixed(1)} km, scale ${scale.toFixed(2)}, ${plan.phases.map((x) => x.name).join("/")})`);
+        console.log(
+          `  ok: ${route.name} (${minutes} min, ${(r.distanceM / 1000).toFixed(1)} km, ` +
+          `scale ${found.scale.toFixed(2)}${found.retried ? ", retried" : ""}, ` +
+          `${phases.map((x) => x.name).join("/")})`
+        );
       } catch (e) {
         // Not a warning. This file is truncate-and-reload, so a route that is
         // skipped here is a route that disappears from the app on the next

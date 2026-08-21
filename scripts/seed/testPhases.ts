@@ -178,6 +178,71 @@ function pick(
  * multiplies the radius and is what generate.ts searches over to hit the
  * target drive time.
  */
+/**
+ * The three phases a loop is routed *through*, and where round the centre
+ * each one sits.
+ *
+ * These three because they are the ones a drive would otherwise miss by
+ * chance, and because they sit at reach 0.9-1.0 and so set the loop's size.
+ * `settle-in` and `return` live at 0.5-0.55 - on the way out of the centre and
+ * on the way back into it - so anchoring them would spend two of the four legs
+ * going nowhere. `manoeuvre` is optional and often absent entirely.
+ *
+ * **The offsets are the anchors' own, not the phases'.** Reusing
+ * PhaseSpec.offset put all three inside a 136-degree arc, because those
+ * offsets were drawn to fan six phases round a circle and these are three of
+ * the middle four. Three points in a 136-degree arc is a wedge, not a
+ * circuit: the drive goes out, crosses a short arc and comes back. Tottenham
+ * came in at a 10.6 km median against a 13-19 km target with the bisection
+ * exhausting its tries trying to grow the loop, while Hendon passed - there
+ * the severance detours inflated the same wedge back into the band by luck.
+ *
+ * Spread across the circle, and deliberately *not* evenly. Successive routes
+ * are pushed round by the golden angle, 137.5 degrees; three even anchors fan
+ * at 120, and 137.5 is 17.5 past one whole step - so an even split lands them
+ * back on the same ring of features in a different order and a centre's ten
+ * routes collapse into a handful. Same argument as PhaseSpec.offset's, one
+ * fan smaller. Monotonic, so the loop is a circuit and not a zigzag.
+ */
+export const ANCHORS: readonly { phase: PhaseName; offset: number }[] = [
+  { phase: "junction-work", offset: 40 },
+  { phase: "faster-road", offset: 145 },
+  { phase: "independent", offset: 255 },
+];
+
+/** The anchored phases, in order. */
+export const ANCHOR_PHASES: readonly PhaseName[] = ANCHORS.map((a) => a.phase);
+
+/**
+ * How far an anchor may be dragged off its ring point to land on a real
+ * feature, as a fraction of the route radius.
+ *
+ * A tolerance rather than "nearest of the right kind at any distance": an
+ * unbounded snap is what used to pull a phase kilometres off its bearing, which
+ * adds back exactly the overshoot `pick`'s distance penalty exists to prevent.
+ */
+const SNAP_FRACTION = 0.35;
+
+/**
+ * One loop out of a centre, at a given size.
+ *
+ * Routed through three anchors with the centre at each end - five waypoints,
+ * four legs. It used to be one waypoint per phase, which is up to eight
+ * waypoints and seven legs, and that is the whole of the Hendon problem: where
+ * the network is severed, each hop between two nearby waypoints costs
+ * kilometres of detour to the next legal crossing, so seven legs came back as a
+ * 22 km drive however small the radius got. The search sat pinned at the bottom
+ * of the bracket for all ten routes and never converged. Severance cost is per
+ * hop, so fewer hops is the only lever that moves it.
+ *
+ * What the six phases were for has not gone away - it moved to `inferPhases`,
+ * which reads them off the line that comes back rather than asserting them
+ * beforehand. That is closer to how an examiner works anyway: the phases are
+ * what the drive contains, not a set of pins it teleports between.
+ *
+ * `routeIndex` spreads a centre's ten routes round the compass; `scale`
+ * multiplies the radius and is what generate.ts searches over for length.
+ */
 export function planTestRoute(
   centre: LatLng, features: Feature[], routeIndex: number, scale: number,
 ): TestRoutePlan {
@@ -189,27 +254,29 @@ export function planTestRoute(
   const phases: PlannedPhase[] = [];
   const waypoints: LatLng[] = [centre];
 
-  PHASES.forEach((spec) => {
-    // Fan the phases round the spine so the loop goes out and comes back
-    // rather than doubling back along one road.
-    const bearing = (((spine + dir * spec.offset) % 360) + 360) % 360;
+  for (const anchor of ANCHORS) {
+    const spec = PHASES.find((x) => x.name === anchor.phase)!;
+    // The anchor's own offset, which spans the circle - see ANCHORS.
+    const bearing = (((spine + dir * anchor.offset) % 360) + 360) % 360;
+    const ring = ringPoint(centre, bearing, wantKmOf(spec, radiusKm));
+
+    // A real feature when one is close to where the anchor wanted to be, and
+    // the ring point otherwise. Unlike the old planner an absent feature never
+    // drops the waypoint: four legs is the shape the length search is
+    // calibrated against, and a route with three would be a different animal.
     const found = pick(centre, features, spec, bearing, radiusKm, used);
-    if (found) {
+    const close = found !== null && haversineM(ring, found) <= radiusKm * SNAP_FRACTION * 1000;
+
+    if (found && close) {
       used.add(found);
       const at = { lat: found.lat, lng: found.lng };
       phases.push({ name: spec.name, kind: found.kind, at });
       waypoints.push(at);
-      return;
+    } else {
+      phases.push({ name: spec.name, kind: "ring", at: ring });
+      waypoints.push(ring);
     }
-    // Nothing of the right kind nearby. An optional phase is simply not part
-    // of this centre's test — reaching 20 km to find a dual carriageway is
-    // exactly how the old planner produced a 49 km route. A required phase
-    // gets a compass point so the loop still exists.
-    if (spec.optional) return;
-    const at = ringPoint(centre, bearing, wantKmOf(spec, radiusKm));
-    phases.push({ name: spec.name, kind: "ring", at });
-    waypoints.push(at);
-  });
+  }
 
   waypoints.push(centre);
   return { waypoints, phases };
@@ -280,6 +347,19 @@ export const TARGET_MIN_M = 13_000; //  8.1 miles
 export const TARGET_MAX_M = 19_000; // 11.8 miles
 
 /**
+ * The point at which a drive stops being slow and starts being wrong.
+ *
+ * Not a target - the duration band above is no longer one. This is the sanity
+ * floor underneath it: sixteen kilometres is a test-length drive and two hours
+ * of it is not, and a route reporting that has found something pathological
+ * rather than merely congested.
+ *
+ * 75 real minutes, which is comfortably above the 46 that dense north London
+ * genuinely takes to cover ten kilometres, and comfortably below anything that
+ * could be called a practice loop.
+ */
+export const IMPLAUSIBLE_S = (75 * 60) / PACE;
+/**
  * One step of a bisection on the radius scale.
  *
  * Bisection rather than a proportional guess, because drive time is not linear
@@ -291,46 +371,121 @@ export const TARGET_MAX_M = 19_000; // 11.8 miles
 export function nextScale(
   durationS: number, distanceM: number, scale: number, lo: number, hi: number,
 ): { scale: number; lo: number; hi: number; done: boolean } {
-  // Distance leads. Duration is only allowed to reject a route that is the
-  // right length but somehow takes far too long — a loop that spends its
-  // sixteen kilometres on a motorway is not a driving test either.
-  const tooFar = distanceM > TARGET_MAX_M || durationS > TARGET_MAX_S;
-  const tooNear = distanceM < TARGET_MIN_M;
-  if (!tooFar && !tooNear) return { scale, lo, hi, done: true };
+  // Distance decides, on its own. This used to OR the two bands together, and
+  // the two can both be true at once: dense north London runs at about 21 km/h
+  // free-flow, so a Tottenham loop of 10.6 km is under the 13 km floor and over
+  // the 42-minute ceiling at the same moment. With both flags set the old rule
+  // fell through to shrink - the one move that can never fix a route for being
+  // too short - and all ten of that centre's routes walked downhill away from
+  // the band, spending every fetch they had.
+  //
+  // Which resolves an argument the code was already having with its own
+  // comment. Distance is a property of the route; duration is a guess about the
+  // traffic on a day that has not happened yet. So distance is the constraint,
+  // and duration is reported rather than enforced.
+  const tooLong = distanceM > TARGET_MAX_M;
+  const tooShort = distanceM < TARGET_MIN_M;
+
+  // The one thing duration still gets a say in, and only for a route whose
+  // length is already right: a drive can be slow, but it cannot be broken.
+  const implausible = !tooLong && !tooShort && durationS > IMPLAUSIBLE_S;
+
+  if (!tooLong && !tooShort && !implausible) return { scale, lo, hi, done: true };
   // Too short: this scale becomes the new floor, and we try halfway up.
-  if (tooNear && !tooFar) return { scale: (scale + hi) / 2, lo: scale, hi, done: false };
-  // Too long: this scale becomes the new ceiling.
+  if (tooShort) return { scale: (scale + hi) / 2, lo: scale, hi, done: false };
+  // Too long, or the right length and pathological. Either way, smaller.
   return { scale: (lo + scale) / 2, lo, hi: scale, done: false };
 }
 
 /**
- * Where each phase landed on the finished polyline.
+ * How close a feature has to run to the line to count as being on the drive.
  *
- * Derived from the leg lengths rather than by searching the geometry for each
- * waypoint: OSRM snaps a waypoint to the nearest road, so the coordinate we
- * asked for is usually not in the returned geometry at all, and searching for
- * it finds either nothing or the wrong vertex.
- *
- * A route planned through N waypoints comes back as N-1 legs whose geometries
- * are concatenated, and each leg has one more node than it has edges — but the
- * legs share their join nodes, so the running index advances by the edge count
- * and the last phase is closed at the final vertex.
+ * Overpass gives a feature one coordinate - the centre of a roundabout, a node
+ * on a residential way - and the driven line passes round it or along it rather
+ * than through it. 120 m is wide enough to catch a roundabout the route
+ * genuinely goes round, and tight enough that a parallel road one street over
+ * is not claimed as part of this drive.
  */
-export function phaseBounds(
-  legEdgeCounts: number[], phases: PlannedPhase[], totalCoords: number,
+const NEAR_M = 120;
+
+/**
+ * The first vertex at or after `from` that runs close to something this phase
+ * wants, or null.
+ *
+ * Kind order from `wants` is kept - a dual carriageway is a better
+ * "faster road" than an A road - but only as a tie-break at the same vertex,
+ * because along a line the thing that comes first is what the driver meets
+ * first, and no preference should reorder the drive.
+ */
+function firstOnLine(
+  coords: LatLng[], features: Feature[], spec: PhaseSpec, from: number,
+): { idx: number; kind: FeatureKind } | null {
+  let best: { idx: number; kind: FeatureKind; rank: number } | null = null;
+
+  for (const f of features) {
+    const rank = spec.wants.indexOf(f.kind);
+    if (rank === -1) continue;
+    for (let i = from; i < coords.length; i++) {
+      if (haversineM(coords[i], f) > NEAR_M) continue;
+      if (best === null || i < best.idx || (i === best.idx && rank < best.rank)) {
+        best = { idx: i, kind: f.kind, rank };
+      }
+      break; // the first approach to this feature is the one that counts
+    }
+  }
+  return best === null ? null : { idx: best.idx, kind: best.kind };
+}
+
+/**
+ * Which phases the finished drive actually contains, and where.
+ *
+ * This replaces slicing the line by leg length. That answered "where did we
+ * ask the route to go", which stopped being answerable the moment a route
+ * stopped having one leg per phase - and was never quite the right question:
+ * a phase is a thing the road does, so it should be read off the road.
+ *
+ * The walk is forward-only and in canonical order, which is what makes the
+ * spans ordered and non-overlapping without having to sort anything: a phase
+ * may only claim a vertex at or after the one the previous phase ended on. A
+ * test does not do its junction work before it has settled in.
+ *
+ * An optional phase with nothing near the line is simply not part of this
+ * drive. A required one falls back to a proportional slice of what is left,
+ * because a route reporting fewer required phases than a driving test has is
+ * describing something that is not a driving test.
+ */
+export function inferPhases(
+  coords: LatLng[], features: Feature[],
 ): { name: PhaseName; kind: string; startIdx: number; endIdx: number }[] {
   const out: { name: PhaseName; kind: string; startIdx: number; endIdx: number }[] = [];
-  let idx = 0;
-  for (let i = 0; i < phases.length; i++) {
-    const edges = legEdgeCounts[i] ?? 0;
-    const startIdx = Math.min(idx, Math.max(0, totalCoords - 1));
-    // The final phase runs to the end of the line whatever the leg counts say,
-    // so no route can end with a phase that stops short of its own finish.
-    const endIdx = i === phases.length - 1
-      ? Math.max(0, totalCoords - 1)
-      : Math.min(idx + edges, Math.max(0, totalCoords - 1));
-    out.push({ name: phases[i].name, kind: phases[i].kind, startIdx, endIdx });
-    idx += edges;
+  if (coords.length === 0) return out;
+  const last = coords.length - 1;
+
+  let cursor = 0;
+  let requiredLeft = PHASES.filter((x) => !x.optional).length;
+
+  for (const spec of PHASES) {
+    const hit = firstOnLine(coords, features, spec, cursor);
+
+    if (hit === null) {
+      if (spec.optional) continue;
+      // Share what is left of the line between the required phases still to
+      // be reported, so a featureless route is divided rather than collapsing
+      // onto its own final vertex.
+      const span = Math.max(1, Math.round((last - cursor) / Math.max(1, requiredLeft)));
+      const endIdx = Math.min(last, cursor + span);
+      out.push({ name: spec.name, kind: "ring", startIdx: cursor, endIdx });
+      cursor = endIdx;
+      requiredLeft--;
+      continue;
+    }
+
+    out.push({ name: spec.name, kind: hit.kind, startIdx: cursor, endIdx: hit.idx });
+    cursor = hit.idx;
+    if (!spec.optional) requiredLeft--;
   }
+
+  // However the walk went, the drive ends where the line ends.
+  if (out.length > 0) out[out.length - 1].endIdx = last;
   return out;
 }
