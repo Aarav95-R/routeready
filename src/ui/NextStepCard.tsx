@@ -57,7 +57,12 @@ function copyFor(step: NextStep): Copy {
         because:
           "Pick a centre near you and follow one of its test-style routes — test length, on the roads around the centre. Nothing is scored until you finish, and you can stop whenever you like.",
         action: FIND_A_CENTRE,
-        meta: ["About 40 minutes", "Ten routes per centre"],
+        // Neither half of this was true once the generator started refusing
+        // routes it could not make test-length. Not every centre yields ten -
+        // Erith has four bearings that cross the Thames with no loop of the
+        // right length on any of them - and the drives now run to 55 minutes
+        // with a median of 44, so "about 40" undersold the one being offered.
+        meta: ["About 45 minutes", "Several routes per centre"],
         drawing: true,
       };
     case "baseline":

@@ -14,7 +14,10 @@ import { body, caption, footnote, MAX_DISPLAY_SCALE } from "@/ui/type";
  */
 
 const STEPS = [
-  { title: "Pick a centre", detail: "Ten test-style routes around each one." },
+  // Not "ten": a centre on a river ships fewer, because four of its bearings
+  // have no loop of test length on them at any size. A promise made on the
+  // first screen has to hold for every centre behind it.
+  { title: "Pick a centre", detail: "Test-style routes around each one." },
   { title: "Drive the route", detail: "Spoken directions, so you can keep your eyes up." },
   { title: "See what to work on", detail: "One thing at a time, starting with what costs you most." },
 ];

@@ -128,3 +128,51 @@ test("the retry stride does not land back on another route's bearing", async () 
   // them and produce two identical loops at the same centre.
   expect(RETRY_STRIDE).toBeGreaterThanOrEqual(10);
 });
+
+// ── Telling geography apart from a bad afternoon ─────────────────────────
+//
+// Erith has four bearings that cross the Thames and no radius that answers
+// on any of them. That is a fact about Erith, and the generator now writes
+// the centre with fewer routes rather than refusing the whole seed over it.
+//
+// Which makes the other failure dangerous. If the router is simply
+// unreachable - a rate limit, a dropped connection, an outage halfway
+// through forty centres - every rung errors too, and if that looked the same
+// as geography the run would quietly write a seed with holes in it and call
+// it done. So the two are different answers, and only one of them is
+// allowed to shrink a centre.
+
+test("a bearing with no answer at any size is geography, and says so", async () => {
+  const r = router(() => 30_000);
+
+  const found = await searchRoute(CENTRE, NO_FEATURES, 0, r.fetch);
+
+  expect(found.converged).toBe(false);
+  expect(found.failure).toBe("no-scale-works");
+});
+
+test("a router that answers nothing at all is an outage, not a narrow centre", async () => {
+  const dead = async () => { throw new Error("ECONNRESET"); };
+
+  const found = await searchRoute(CENTRE, NO_FEATURES, 0, dead);
+
+  expect(found.converged).toBe(false);
+  expect(found.failure).toBe("router-unreachable");
+});
+
+// One rung refused is not an outage. Two Chingford routes came back 400
+// because a compass anchor landed in a reservoir, and the other seven rungs
+// were fine - that centre now gets its full ten.
+test("a single refused rung does not condemn the whole search", async () => {
+  let n = 0;
+  const flaky = async (w: LatLng[]) => {
+    n++;
+    if (n === 1) throw new Error("HTTP 400");
+    return { distanceM: 16_000, durationS: 16_000 / 8, coords: w, legEdgeCounts: [], speedsMps: [], steps: [] } as never;
+  };
+
+  const found = await searchRoute(CENTRE, NO_FEATURES, 0, flaky);
+
+  expect(found.converged).toBe(true);
+  expect(found.failure).toBeNull();
+});

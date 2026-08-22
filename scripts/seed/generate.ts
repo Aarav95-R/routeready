@@ -114,7 +114,11 @@ async function main() {
     "alter table routes add column if not exists steps jsonb default '[]';",
     "alter table routes add column if not exists phases jsonb default '[]';",
   ];
+  // Two different things, deliberately kept apart. `failures` stops the run;
+  // `skipped` is a centre being smaller than ten routes because of where it
+  // is, which is a fact worth reporting and not a reason to write nothing.
   const failures: string[] = [];
+  const skipped: string[] = [];
   for (let ci = 0; ci < centres.length; ci++) {
     const c = centres[ci];
     lines.push(
@@ -143,24 +147,34 @@ async function main() {
 
     for (let ri = 0; ri < ROUTES_PER_CENTRE; ri++) {
       try {
-        // Bisect the radius until the drive lands in the test-length band.
-        // Every fetch is cached on disk, so a re-run after a failure part way
-        // through costs one call rather than the whole search again.
-        // The bisection, the retry on a different bearing, and the honest
-        // answer when neither works, all live in ./search - so that
-        // check-planner.ts measures the search that actually ships.
+        // The ladder, the retry on a different bearing, and the honest answer
+        // when neither works, all live in ./search - so that check-planner.ts
+        // measures the search that actually ships. Every fetch is cached on
+        // disk, so a re-run after a failure part way through costs one call
+        // rather than the whole search again.
         const found = await searchRoute(
           { lat: c.lat, lng: c.lng }, features, ri, fetchRoute, sleep,
         );
+
+        // Nothing was measured at all, which is the router rather than the
+        // road network. Carrying on would write a seed with holes in it and
+        // call that done - so the run stops and says why.
+        if (found.failure === "router-unreachable") {
+          failures.push(`${c.name} route ${ri + 1}: the router answered nothing`);
+          continue;
+        }
+
         const r = found.route;
 
-        // A loop that never reached the band is not written out. A 30 km
-        // drive labelled forty minutes is the exact thing this module was
-        // rebuilt to stop saying, and one of those is worse than nine routes.
+        // No radius answers on this bearing, and none on the retry either.
+        // At Erith that is the Thames: four of its ten bearings cross water,
+        // and a loop either stays on one bank at 4 km or pays 50 km for the
+        // bridge. The centre gets fewer routes, which is the truth about it -
+        // a 30 km drive labelled forty minutes would not be.
         if (!found.converged) {
-          failures.push(
+          skipped.push(
             `${c.name} route ${ri + 1}: no loop in band ` +
-            `(best ${(r.distanceM / 1000).toFixed(1)} km after ${found.fetches} fetches)`,
+            `(closest ${(r.distanceM / 1000).toFixed(1)} km, ${found.fetches} fetches)`,
           );
           continue;
         }
@@ -207,10 +221,21 @@ async function main() {
 
   if (failures.length) {
     console.error(
-      `\n${failures.length} route(s) could not be fetched. supabase/seed.sql was NOT written,\n` +
-      `because writing it would silently drop them from the seed:\n  ${failures.join("\n  ")}`
+      `\n${failures.length} route(s) could not be fetched at all. supabase/seed.sql was NOT\n` +
+      `written, because a router that stops answering halfway through forty centres\n` +
+      `looks exactly like a seed with holes in it:\n  ${failures.join("\n  ")}`
     );
     process.exit(1);
+  }
+
+  // Not a failure, and not silent either. A centre that offers six routes
+  // instead of ten is the honest shape of where it sits, and the number is
+  // worth seeing every run rather than discovering in the app.
+  if (skipped.length) {
+    console.warn(
+      `\n${skipped.length} route(s) had no loop in the band on any bearing, so their\n` +
+      `centres are written with fewer than ten:\n  ${skipped.join("\n  ")}`
+    );
   }
 
   lines.push(SHOW_ME_TELL_ME_SQL, MANOEUVRES_SQL, "commit;");

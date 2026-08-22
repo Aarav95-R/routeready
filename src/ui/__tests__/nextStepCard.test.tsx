@@ -19,7 +19,7 @@ test("a new account is asked for a first test, and sent where one starts", () =>
 test("the first card opens on a route rather than on prose", () => {
   show({ kind: "first" });
   expect(screen.getByTestId("route-thumb")).toBeTruthy();
-  expect(screen.getByText(/About 40 minutes/)).toBeTruthy();
+  expect(screen.getByTestId("first-meta")).toBeTruthy();
 });
 
 // Nerves are the constraint on this screen. The first thing the app says about
@@ -88,4 +88,27 @@ test("the sentence never claims a number of faults", () => {
     runners: [],
   });
   expect(screen.queryByText(/4 faults/)).toBeNull();
+});
+
+// Both halves of this card's meta stopped being true when the generator did.
+//
+// Not every centre yields ten routes: Erith has four bearings that cross the
+// Thames with no loop of test length on any of them, so it ships four. And
+// the durations the generator now accepts run to 55 minutes, with a median
+// of 44 - so "about 40 minutes" understated the drive a learner was being
+// invited on.
+//
+// Asserted as "does not claim" rather than on the replacement wording, so
+// the copy can be rewritten without rewriting the test, and the false
+// version still cannot come back.
+test("the first card does not promise ten routes at every centre", () => {
+  show({ kind: "first" });
+
+  expect(screen.queryByText(/Ten routes per centre/)).toBeNull();
+});
+
+test("the first card does not understate how long a drive takes", () => {
+  show({ kind: "first" });
+
+  expect(screen.queryByText(/About 40 minutes/)).toBeNull();
 });

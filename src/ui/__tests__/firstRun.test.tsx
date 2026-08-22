@@ -27,3 +27,12 @@ test("the sheet says how much of it is not being shown", () => {
   const hidden = EXAMINER_CATEGORIES.length - 4;
   expect(screen.getByText(new RegExp(`${hidden} more`))).toBeTruthy();
 });
+
+// Erith ships four routes, not ten - four of its bearings cross the Thames
+// and no loop of test length exists on any of them. A promise the app makes
+// on its very first screen has to be true of every centre behind it.
+test("the introduction does not promise ten routes at every centre", () => {
+  render(<HowItWorks />);
+
+  expect(screen.queryByText(/Ten test-style routes/)).toBeNull();
+});
