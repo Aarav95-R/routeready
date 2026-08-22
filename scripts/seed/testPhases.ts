@@ -313,13 +313,6 @@ export const PACE = 1.5;
 export const TARGET_MIN_S = (36 * 60) / PACE;
 export const TARGET_MAX_S = (42 * 60) / PACE;
 
-/**
- * How many OSRM fetches one route may spend finding its length. Four halvings
- * take the 0.4-2.5 bracket down to about 0.13 wide, which is finer than the
- * road network's own granularity — past that the search is chasing noise, and
- * at 400 routes each extra try is another 400 calls to a public server.
- */
-export const MAX_TRIES = 6;
 
 /**
  * The bracket the radius search runs inside.
@@ -347,54 +340,56 @@ export const TARGET_MIN_M = 13_000; //  8.1 miles
 export const TARGET_MAX_M = 19_000; // 11.8 miles
 
 /**
- * The point at which a drive stops being slow and starts being wrong.
+ * The rungs the search tries, smallest first.
  *
- * Not a target - the duration band above is no longer one. This is the sanity
- * floor underneath it: sixteen kilometres is a test-length drive and two hours
- * of it is not, and a route reporting that has found something pathological
- * rather than merely congested.
+ * This replaced a bisection, which was not mistuned so much as the wrong
+ * shape of search entirely. Measured across the centres that would not
+ * converge, distance is neither a continuous nor a monotonic function of
+ * scale:
  *
- * 75 real minutes, which is comfortably above the 46 that dense north London
- * genuinely takes to cover ten kilometres, and comfortably below anything that
- * could be called a practice loop.
+ *   Erith route 1     0.25 -> 4.1 km    0.5 -> 54.8 km
+ *   Loughton route 2  0.5  -> 27.6 km   0.75 -> 16.2 km
+ *
+ * Crossing a river or a motorway is binary. A loop either stays this side of
+ * it or pays the entire detour to the bridge, and there is nothing in
+ * between. At Erith the 13-19 km band lies wholly inside that jump, so no
+ * scale answers at all and halving forever will not find one. At Loughton a
+ * perfectly good 16.2 km sits at 0.75 and the bisection walked away from it,
+ * reporting 6.5 km, because it assumed a monotonic curve it did not have.
+ *
+ * A fixed ladder cannot walk away from a rung it has already stood on, and
+ * cannot converge into a gap. Eight rungs, each within a factor of two of the
+ * last so a smoothly growing loop cannot step over the band, spanning the
+ * bracket that used to be bisected. The search stops at the first rung that
+ * qualifies, so a typical route still costs two or three fetches.
  */
-export const IMPLAUSIBLE_S = (75 * 60) / PACE;
+export const SCALE_LADDER: readonly number[] = [0.15, 0.25, 0.4, 0.6, 0.85, 1.2, 1.7, 2.4];
+
 /**
- * One step of a bisection on the radius scale.
+ * The longest a practice loop may be, in OSRM seconds.
  *
- * Bisection rather than a proportional guess, because drive time is not linear
- * in radius: doubling the radius can leave the duration flat if the extra
- * reach finds a bypass, or triple it if it finds a town centre. Bisection does
- * not care about the shape of the curve, and it cannot overshoot outside the
- * bracket.
+ * Distance decides what a route *is* - that argument was settled when
+ * Tottenham deadlocked between the two bands. This is a ceiling on top of it
+ * rather than a second target: nothing is ever resized to hit a duration.
+ *
+ * 55 real minutes. The first full run put the ninetieth percentile at 53 and
+ * the longest at 72, and a 72-minute drive is an honest number that no
+ * learner picks off a list of practice routes. A slow centre can still offer
+ * one at 50; what it cannot do is offer an hour and a quarter.
  */
-export function nextScale(
-  durationS: number, distanceM: number, scale: number, lo: number, hi: number,
-): { scale: number; lo: number; hi: number; done: boolean } {
-  // Distance decides, on its own. This used to OR the two bands together, and
-  // the two can both be true at once: dense north London runs at about 21 km/h
-  // free-flow, so a Tottenham loop of 10.6 km is under the 13 km floor and over
-  // the 42-minute ceiling at the same moment. With both flags set the old rule
-  // fell through to shrink - the one move that can never fix a route for being
-  // too short - and all ten of that centre's routes walked downhill away from
-  // the band, spending every fetch they had.
-  //
-  // Which resolves an argument the code was already having with its own
-  // comment. Distance is a property of the route; duration is a guess about the
-  // traffic on a day that has not happened yet. So distance is the constraint,
-  // and duration is reported rather than enforced.
-  const tooLong = distanceM > TARGET_MAX_M;
-  const tooShort = distanceM < TARGET_MIN_M;
+export const MAX_ACCEPTED_S = (55 * 60) / PACE;
 
-  // The one thing duration still gets a say in, and only for a route whose
-  // length is already right: a drive can be slow, but it cannot be broken.
-  const implausible = !tooLong && !tooShort && durationS > IMPLAUSIBLE_S;
-
-  if (!tooLong && !tooShort && !implausible) return { scale, lo, hi, done: true };
-  // Too short: this scale becomes the new floor, and we try halfway up.
-  if (tooShort) return { scale: (scale + hi) / 2, lo: scale, hi, done: false };
-  // Too long, or the right length and pathological. Either way, smaller.
-  return { scale: (lo + scale) / 2, lo, hi: scale, done: false };
+/**
+ * Is this a route worth putting in front of a learner?
+ *
+ * The whole acceptance rule, in one place, so that the generator and
+ * scripts/check-planner.ts cannot drift into two different answers about what
+ * counts as a good route.
+ */
+export function acceptable(distanceM: number, durationS: number): boolean {
+  return distanceM >= TARGET_MIN_M
+    && distanceM <= TARGET_MAX_M
+    && durationS <= MAX_ACCEPTED_S;
 }
 
 /**

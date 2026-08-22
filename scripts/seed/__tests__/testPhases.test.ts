@@ -1,4 +1,4 @@
-import { ANCHOR_PHASES, ANCHORS, inferPhases, MAX_TRIES, nextScale, PACE, PHASES, planTestRoute, IMPLAUSIBLE_S, TARGET_MAX_M, TARGET_MAX_S, TARGET_MIN_M, TARGET_MIN_S } from "../testPhases";
+import { ANCHOR_PHASES, ANCHORS, inferPhases, PACE, PHASES, planTestRoute, acceptable, MAX_ACCEPTED_S, SCALE_LADDER, TARGET_MAX_M, TARGET_MAX_S, TARGET_MIN_M, TARGET_MIN_S } from "../testPhases";
 import type { Feature } from "../routePlan";
 
 const CENTRE = { lat: 51.748, lng: -0.336 };
@@ -153,139 +153,8 @@ test("the same inputs always give the same plan", () => {
 
 // ── tuning a loop to test length ────────────────────────────────────────────
 
-describe("nextScale", () => {
-  const mid = (TARGET_MIN_S + TARGET_MAX_S) / 2;
-
-  test("a drive already the right length is done, and the scale is left alone", () => {
-    const r = nextScale(mid, 16000, 1.3, 0.4, 2.5);
-    expect(r.done).toBe(true);
-    expect(r.scale).toBe(1.3);
-  });
-
-  test("both ends of the band count as inside it", () => {
-    expect(nextScale(TARGET_MIN_S, 16000, 1, 0.4, 2.5).done).toBe(true);
-    expect(nextScale(TARGET_MAX_S, 16000, 1, 0.4, 2.5).done).toBe(true);
-  });
-
-  test("a drive that is too short grows the loop and raises the floor", () => {
-    const r = nextScale(TARGET_MIN_S / 2, 8000, 1, 0.4, 2.5);
-    expect(r.done).toBe(false);
-    expect(r.scale).toBeGreaterThan(1);
-    expect(r.lo).toBe(1);
-    expect(r.hi).toBe(2.5);
-  });
-
-  test("a drive that is too long shrinks the loop and lowers the ceiling", () => {
-    const r = nextScale(TARGET_MAX_S * 2, 40000, 1, 0.4, 2.5);
-    expect(r.done).toBe(false);
-    expect(r.scale).toBeLessThan(1);
-    expect(r.hi).toBe(1);
-    expect(r.lo).toBe(0.4);
-  });
-
-  test("the bracket only ever narrows", () => {
-    let s = { scale: 1, lo: 0.4, hi: 2.5, done: false };
-    let width = s.hi - s.lo;
-    for (let i = 0; i < 6 && !s.done; i++) {
-      // Pretend drive time rises with scale, hitting the band around 1.6.
-      s = nextScale(s.scale * 1500, s.scale * 12000, s.scale, s.lo, s.hi);
-      expect(s.hi - s.lo).toBeLessThanOrEqual(width);
-      width = s.hi - s.lo;
-    }
-  });
-
-  test("a loop whose length rises with scale converges inside the fetch budget", () => {
-    // distance = scale * 12 km reaches the 13-19 km band at scale ~1.08-1.58.
-    let s = { scale: 1, lo: 0.4, hi: 2.5, done: false };
-    let tries = 0;
-    while (!s.done && tries < MAX_TRIES) {
-      s = nextScale(s.scale * 1200, s.scale * 12000, s.scale, s.lo, s.hi);
-      tries++;
-    }
-    expect(s.done).toBe(true);
-    expect(s.scale * 12000).toBeGreaterThanOrEqual(TARGET_MIN_M);
-    expect(s.scale * 12000).toBeLessThanOrEqual(TARGET_MAX_M);
-  });
-
-  test("the time band is the real test's length once the pace multiplier is applied", () => {
-    expect(Math.round((TARGET_MIN_S * PACE) / 60)).toBe(36);
-    expect(Math.round((TARGET_MAX_S * PACE) / 60)).toBe(42);
-  });
-});
 
 
-describe("the distance band", () => {
-  const good = (TARGET_MIN_S + TARGET_MAX_S) / 2;
-
-  test("a loop over the band is shrunk even when the clock is happy", () => {
-    const r = nextScale(good, TARGET_MAX_M + 5000, 1, 0.4, 2.5);
-    expect(r.done).toBe(false);
-    expect(r.scale).toBeLessThan(1);
-    expect(r.hi).toBe(1);
-  });
-
-  test("a short-but-enormous loop is shrunk, not grown", () => {
-    // Free-flow duration says "too short", distance says "far too long".
-    // Growing it here is how a 29 km route gets called a 37 minute drive.
-    const r = nextScale(TARGET_MIN_S / 2, TARGET_MAX_M * 2, 1, 0.4, 2.5);
-    expect(r.scale).toBeLessThan(1);
-  });
-
-  test("both ends of the distance band are acceptable", () => {
-    expect(nextScale(good, TARGET_MAX_M, 1, 0.4, 2.5).done).toBe(true);
-    expect(nextScale(good, TARGET_MIN_M, 1, 0.4, 2.5).done).toBe(true);
-  });
-
-  test("the band is the eight to twelve miles a real test covers", () => {
-    expect(TARGET_MIN_M / 1609).toBeCloseTo(8.1, 1);
-    expect(TARGET_MAX_M / 1609).toBeCloseTo(11.8, 1);
-  });
-
-  test("a loop that is the right length but absurdly slow is still rejected", () => {
-    // Sixteen kilometres is a test-length drive; two hours of it is not.
-    const r = nextScale(TARGET_MAX_S * 3, 16000, 1, 0.4, 2.5);
-    expect(r.done).toBe(false);
-    expect(r.scale).toBeLessThan(1);
-  });
-
-  // Tottenham, measured: ten routes, none in band, every one of them short
-  // and every one of them shrinking. Dense north London runs at about 21 km/h
-  // free-flow, so a 10.6 km loop there reports 46 minutes - under the 13 km
-  // floor and over the 42-minute ceiling at the same time.
-  //
-  // The old rule ORed the two, so both flags set meant shrink, and shrinking
-  // is the one move that can never fix a route for being too short. Seven
-  // fetches spent walking downhill away from the band.
-  //
-  // Distance leads, which is what the comment above nextScale always said:
-  // the length of a drive is a property of the route, and its duration is a
-  // guess about the traffic on a day that has not happened.
-  test("a slow area grows its loop rather than shrinking away from the band", () => {
-    // 10.6 km at Tottenham's pace: too short, and over the clock.
-    const slowAndShort = nextScale(TARGET_MAX_S * 1.1, 10_600, 0.55, 0.4, 2.5);
-
-    expect(slowAndShort.scale).toBeGreaterThan(0.55);
-    expect(slowAndShort.done).toBe(false);
-  });
-
-  // The sanity floor that survives. A drive can be slow; it cannot be broken.
-  test("the implausible ceiling is far above a slow drive, and far below a broken one", () => {
-    const realMinutes = (s2: number) => (s2 * PACE) / 60;
-
-    expect(realMinutes(IMPLAUSIBLE_S)).toBeGreaterThan(46);   // Tottenham is fine
-    expect(realMinutes(IMPLAUSIBLE_S)).toBeLessThan(120);     // two hours is not
-  });
-
-  // A route already the right length is not resized for being merely slow.
-  test("a test-length loop is accepted even where the roads are slow", () => {
-    expect(nextScale(TARGET_MAX_S * 1.2, 16_000, 1, 0.4, 2.5).done).toBe(true);
-  });
-  test("distance leads: a short loop grows even when the clock already likes it", () => {
-    const r = nextScale((TARGET_MIN_S + TARGET_MAX_S) / 2, TARGET_MIN_M - 3000, 1, 0.4, 2.5);
-    expect(r.done).toBe(false);
-    expect(r.scale).toBeGreaterThan(1);
-  });
-});
 
 // ── Anchors ───────────────────────────────────────────────────────────────
 //
@@ -453,4 +322,88 @@ test("the anchors run one way round the circle", () => {
 
 test("the anchors are still the three phases a drive would otherwise miss", () => {
   expect(ANCHORS.map((a) => a.phase)).toEqual(ANCHOR_PHASES);
+});
+
+// ── The scale ladder ──────────────────────────────────────────────────────
+//
+// Bisection is gone, and it was not tuned wrong - it was the wrong shape of
+// search. Measured across the centres that would not converge, distance is
+// not a smooth function of scale and is not even monotonic in it:
+//
+//   Erith route 1     scale 0.25 -> 4.1 km,  scale 0.5 -> 54.8 km
+//   Loughton route 2  scale 0.5 -> 27.6 km,  scale 0.75 -> 16.2 km
+//
+// Crossing a river or a motorway is binary: a loop either stays this side or
+// pays the whole detour to the bridge. At Erith the 13-19 km band lies
+// entirely inside that jump, so no scale answers and no amount of halving
+// finds one. At Loughton a perfectly good answer sits at 0.75 and bisection
+// walked away from it, reporting 6.5 km.
+//
+// A fixed ladder is robust to both: it cannot walk away from an answer it
+// has already stepped on, and it cannot converge onto a gap.
+
+test("the ladder covers the bracket it is searching", () => {
+  expect(SCALE_LADDER[0]).toBeLessThanOrEqual(0.2);
+  expect(SCALE_LADDER[SCALE_LADDER.length - 1]).toBeGreaterThanOrEqual(2);
+});
+
+test("the ladder climbs, so the first rung in band is the smallest loop that works", () => {
+  expect([...SCALE_LADDER]).toEqual([...SCALE_LADDER].sort((a, b) => a - b));
+});
+
+// A full run is forty centres of ten routes against a public server. Every
+// rung is a fetch for a route that has not already landed.
+test("the ladder is short enough to afford", () => {
+  expect(SCALE_LADDER.length).toBeLessThanOrEqual(9);
+});
+
+// The rungs are close enough together that a loop growing smoothly cannot
+// step straight over the band. Erith's cliff steps over it whatever the
+// spacing, which is the point - that route has no answer, and the ladder
+// finds that out instead of spending seven fetches proving it.
+test("consecutive rungs never more than double", () => {
+  for (let i = 1; i < SCALE_LADDER.length; i++) {
+    expect(SCALE_LADDER[i] / SCALE_LADDER[i - 1]).toBeLessThanOrEqual(2);
+  }
+});
+
+// ── What counts as a route worth driving ─────────────────────────────────
+
+test("a test-length loop at a sensible pace is accepted", () => {
+  expect(acceptable(16_000, (40 * 60) / PACE)).toBe(true);
+});
+
+test("both ends of the distance band are inside it", () => {
+  const fine = (35 * 60) / PACE;
+  expect(acceptable(TARGET_MIN_M, fine)).toBe(true);
+  expect(acceptable(TARGET_MAX_M, fine)).toBe(true);
+});
+
+test("a loop outside the distance band is refused however long it takes", () => {
+  const fine = (40 * 60) / PACE;
+  expect(acceptable(TARGET_MIN_M - 1, fine)).toBe(false);
+  expect(acceptable(TARGET_MAX_M + 1, fine)).toBe(false);
+});
+
+// The full run put the ninetieth percentile at 53 minutes and the longest at
+// 72. A 72-minute drive is an honest number and not a practice route anybody
+// picks off a list, so length alone is no longer enough to qualify.
+test("a test-length loop that takes over an hour is refused", () => {
+  expect(acceptable(16_000, (72 * 60) / PACE)).toBe(false);
+});
+
+test("the ceiling is the hour it is meant to be, not the forty-two minute target", () => {
+  const realMinutes = (MAX_ACCEPTED_S * PACE) / 60;
+
+  expect(realMinutes).toBeGreaterThan(50);   // a slow centre is still usable
+  expect(realMinutes).toBeLessThanOrEqual(56);
+});
+
+// The band still leads. Duration is a ceiling on top of it, not a second
+// target to steer towards - which is the argument settled when Tottenham
+// deadlocked between the two.
+test("a drive comfortably inside the ceiling is judged on its length alone", () => {
+  const brisk = (30 * 60) / PACE;
+  expect(acceptable(9_000, brisk)).toBe(false);
+  expect(acceptable(16_000, brisk)).toBe(true);
 });

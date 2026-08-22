@@ -45,7 +45,10 @@ const firstBearing = (waypoints: LatLng[]) => {
   return (deg + 360) % 360;
 };
 
-test("a loop already the right length is accepted without a second fetch", async () => {
+// The ladder climbs from its smallest rung, so where several sizes would do
+// the shortest wins - a learner asked for a practice loop, not the longest one
+// that fits.
+test("the smallest rung that works is the one taken", async () => {
   const r = router(() => 16_000);
 
   const found = await searchRoute(CENTRE, NO_FEATURES, 0, r.fetch);
@@ -55,7 +58,7 @@ test("a loop already the right length is accepted without a second fetch", async
   expect(found.fetches).toBe(1);
 });
 
-test("a loop whose length follows its radius is found by bisection", async () => {
+test("a loop whose length follows its radius is found on the ladder", async () => {
   const r = router((w) => spreadKm(w) * 6_000);
 
   const found = await searchRoute(CENTRE, NO_FEATURES, 0, r.fetch);

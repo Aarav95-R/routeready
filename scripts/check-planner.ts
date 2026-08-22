@@ -20,7 +20,7 @@ import centres from "./seed/centres.json";
 import { fetchRoute } from "./seed/osrm";
 import { fetchFeatures } from "./seed/overpass";
 import { searchRoute } from "./seed/search";
-import { inferPhases, PACE, TARGET_MAX_M, TARGET_MIN_M } from "./seed/testPhases";
+import { acceptable, inferPhases, PACE } from "./seed/testPhases";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -45,7 +45,9 @@ async function measure(row: CentreRow) {
 
     const km = r.distanceM / 1000;
     const mins = Math.round((r.durationS / 60) * PACE);
-    const ok = r.distanceM >= TARGET_MIN_M && r.distanceM <= TARGET_MAX_M;
+    // The shipping rule, not a second copy of it - distance band and the
+    // 55-minute ceiling together.
+    const ok = acceptable(r.distanceM, r.durationS);
     const phases = inferPhases(r.coords, features);
     const real = phases.filter((p) => p.kind !== "ring").length;
 

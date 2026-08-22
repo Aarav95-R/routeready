@@ -2,18 +2,17 @@ import type { LatLng } from "../../src/lib/geo";
 import type { OsrmRoute } from "./osrm";
 import type { Feature } from "./routePlan";
 import {
-  MAX_TRIES, nextScale, planTestRoute, SCALE_HI, SCALE_LO,
-  TARGET_MAX_M, TARGET_MIN_M, type TestRoutePlan,
+  acceptable, planTestRoute, SCALE_LADDER, TARGET_MAX_M, type TestRoutePlan,
 } from "./testPhases";
 
 /**
  * Finding one loop that is actually the length of a driving test.
  *
- * Pulled out of generate.ts so that the check script measures the same search
- * the generator runs. Two copies of a bisection is two answers to "does this
- * centre converge", and only one of them would be the one that ships.
+ * Pulled out of generate.ts so that scripts/check-planner.ts measures the same
+ * search that ships. Two copies of this is two answers to "does this centre
+ * converge", and only one of them would be the one in the app.
  *
- * The router is injected rather than imported so this can be tested against a
+ * The router is injected rather than imported, so this can be tested against a
  * road network that is a function rather than a country.
  */
 
@@ -22,8 +21,8 @@ import {
  *
  * A centre has ten routes at indices 0-9, so a stride inside that range would
  * land the retry on another route's bearing and give the centre two identical
- * loops. Ten is the first value that cannot, and the golden-angle spine means
- * it is a genuinely different direction rather than a near miss.
+ * loops. Ten is the first value that cannot, and the golden-angle spine makes
+ * it a genuinely different direction rather than a near miss.
  */
 export const RETRY_STRIDE = 10;
 
@@ -31,7 +30,7 @@ export type Search = {
   route: OsrmRoute;
   plan: TestRoutePlan;
   scale: number;
-  /** False when even the retry could not find a loop of the right length. */
+  /** False when no rung on either bearing produced a route worth driving. */
   converged: boolean;
   retried: boolean;
   fetches: number;
@@ -39,43 +38,64 @@ export type Search = {
 
 type FetchRoute = (waypoints: LatLng[]) => Promise<OsrmRoute>;
 
-const inBand = (m: number) => m >= TARGET_MIN_M && m <= TARGET_MAX_M;
+type Attempt = { route: OsrmRoute; plan: TestRoutePlan; scale: number; fetches: number; found: boolean };
 
-/** One bearing, bisected until it lands in the band or runs out of fetches. */
-async function searchOneBearing(
-  centre: LatLng, features: Feature[], routeIndex: number, fetchRoute: FetchRoute,
-  sleep: (ms: number) => Promise<void>,
-): Promise<{ route: OsrmRoute; plan: TestRoutePlan; scale: number; fetches: number }> {
-  let scale = 1, lo = SCALE_LO, hi = SCALE_HI;
-  let plan = planTestRoute(centre, features, routeIndex, scale);
-  let route = await fetchRoute(plan.waypoints);
-  let fetches = 1;
+/**
+ * Climb the ladder on one bearing, stopping at the first rung worth keeping.
+ *
+ * Smallest rung first, so where several would qualify the shortest wins - a
+ * learner asked for a practice loop, not the longest one that fits.
+ *
+ * A rung that the router refuses outright is skipped rather than fatal. Two
+ * Chingford routes came back 400 because a compass-point anchor landed 136 m
+ * and 237 m from the nearest road, in a reservoir and in Epping Forest; that
+ * says nothing about the other seven rungs.
+ */
+async function climb(
+  centre: LatLng, features: Feature[], routeIndex: number,
+  fetchRoute: FetchRoute, sleep: (ms: number) => Promise<void>,
+): Promise<Attempt> {
+  let best: Attempt | null = null;
+  let fetches = 0;
 
-  for (let t = 0; t < MAX_TRIES; t++) {
-    const step = nextScale(route.durationS, route.distanceM, scale, lo, hi);
-    if (step.done) break;
-    scale = step.scale; lo = step.lo; hi = step.hi;
-    await sleep(700);
-    plan = planTestRoute(centre, features, routeIndex, scale);
-    route = await fetchRoute(plan.waypoints);
-    fetches++;
+  for (const scale of SCALE_LADDER) {
+    const plan = planTestRoute(centre, features, routeIndex, scale);
+    let route: OsrmRoute;
+    try {
+      route = await fetchRoute(plan.waypoints);
+    } catch {
+      continue; // see above: an unroutable anchor is this rung's problem alone
+    } finally {
+      fetches++;
+      await sleep(700);
+    }
+
+    if (acceptable(route.distanceM, route.durationS)) {
+      return { route, plan, scale, fetches, found: true };
+    }
+    // Kept only so a centre that fails everywhere can still say how close it
+    // came, which is the difference between a bug report and a shrug.
+    const miss = Math.abs(route.distanceM - TARGET_MAX_M);
+    if (best === null || miss < Math.abs(best.route.distanceM - TARGET_MAX_M)) {
+      best = { route, plan, scale, fetches, found: false };
+    }
   }
-  return { route, plan, scale, fetches };
+
+  if (best === null) throw new Error("every rung was refused by the router");
+  return { ...best, fetches, found: false };
 }
 
 /**
- * A loop of the right length out of this centre, or an honest failure.
+ * A loop worth driving out of this centre, or an honest failure.
  *
- * Bisection assumes the radius controls the length, and around a severed road
- * network some bearings break that assumption outright: Mill Hill's ninth
- * route and Hendon's third both came back at 30 km with the radius shrunk
- * threefold, because the drive is dominated by the detour to the next legal
- * crossing rather than by how far apart the waypoints are. There is no scale
- * that fixes those, so the fix is a different direction, not a smaller one.
+ * Some bearings have no answer at any size. Around Erith the Thames means a
+ * loop either stays on one bank at 4 km or crosses and pays 50 km for the
+ * bridge, and the 13-19 km band lies entirely in between. Nothing about the
+ * radius fixes that, so the fix is a different direction rather than a smaller
+ * one: one retry, a whole stride away.
  *
- * One retry, on a bearing a whole stride away. If that fails too the caller is
- * told, because writing a 30 km loop out as a forty-minute practice route is
- * the exact thing this module exists to stop.
+ * If that fails too the caller is told, because writing a 30 km loop out as a
+ * forty-minute practice route is the exact thing this module exists to stop.
  */
 export async function searchRoute(
   centre: LatLng,
@@ -84,21 +104,12 @@ export async function searchRoute(
   fetchRoute: FetchRoute,
   sleep: (ms: number) => Promise<void> = () => Promise.resolve(),
 ): Promise<Search> {
-  const first = await searchOneBearing(centre, features, routeIndex, fetchRoute, sleep);
-  if (inBand(first.route.distanceM)) {
-    return { ...first, converged: true, retried: false };
-  }
+  const first = await climb(centre, features, routeIndex, fetchRoute, sleep);
+  if (first.found) return { ...first, converged: true, retried: false };
 
-  await sleep(700);
-  const second = await searchOneBearing(
-    centre, features, routeIndex + RETRY_STRIDE, fetchRoute, sleep,
-  );
+  const second = await climb(centre, features, routeIndex + RETRY_STRIDE, fetchRoute, sleep);
   const fetches = first.fetches + second.fetches;
+  const best = second.found ? second : first;
 
-  // Whichever missed by less, so a centre that cannot converge at all still
-  // gets its closest attempt rather than its most recent one.
-  const best = Math.abs(second.route.distanceM - TARGET_MAX_M)
-    < Math.abs(first.route.distanceM - TARGET_MAX_M) ? second : first;
-
-  return { ...best, fetches, converged: inBand(best.route.distanceM), retried: true };
+  return { ...best, fetches, converged: best.found, retried: true };
 }
