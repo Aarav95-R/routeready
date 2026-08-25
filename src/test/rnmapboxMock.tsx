@@ -10,9 +10,17 @@ import { View } from "react-native";
 // they can tell an override of one of the style's own layers from a layer of
 // ours added on top of it — a distinction with no visible difference here but
 // a large one on the device, since an added layer goes to the top of the stack.
+// The two positions are forwarded because Mapbox's terms require the logo and
+// attribution to stay visible, and "visible" on a screen with a sheet over the
+// bottom half is a claim about coordinates, not about a boolean.
 const stub = (kind: string) => {
-  const Stub = forwardRef<unknown, any>(({ children, id, shape, filter, existing }, ref) =>
-    createElement(View as any, { ref, testID: `${kind}:${id ?? ""}`, shape, filter, existing }, children)
+  const Stub = forwardRef<unknown, any>(
+    ({ children, id, shape, filter, existing, logoPosition, attributionPosition }, ref) =>
+      createElement(
+        View as any,
+        { ref, testID: `${kind}:${id ?? ""}`, shape, filter, existing, logoPosition, attributionPosition },
+        children,
+      )
   );
   Stub.displayName = kind;
   return Stub;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { NativeScrollEvent, NativeSyntheticEvent, Pressable, StyleProp, Text, TextInput, View, ViewStyle } from "react-native";
+import { NativeScrollEvent, NativeSyntheticEvent, Pressable, StyleProp, Text, TextInput, useWindowDimensions, View, ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Location from "expo-location";
@@ -54,11 +54,16 @@ const SECTION_HEADER_H = 32;
 // Exactly one detent — the map is half the point of this screen and must not
 // be scrollable away. See the comment on <BottomSheet> for why a second one
 // breaks scrolling rather than merely adding a position.
-const SHEET_SNAP_POINTS = ["52%"];
+const SHEET_FRACTION = 0.52;
+const SHEET_SNAP_POINTS = [`${SHEET_FRACTION * 100}%`];
 
 export default function Centres() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Mapbox requires its logo and attribution to stay visible, and the sheet
+  // covers the bottom 52% of this screen, so they are lifted clear of it.
+  const { height: windowH } = useWindowDimensions();
+  const logoBottom = windowH * SHEET_FRACTION + 8;
   const online = useNetwork((s) => s.online);
   const map = useRef<CentresMapHandle>(null);
 
@@ -288,7 +293,7 @@ export default function Centres() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <CentresMap ref={map} pins={pins} frame={frame} identities={identities} me={me} activeId={activeId} />
+      <CentresMap ref={map} pins={pins} frame={frame} identities={identities} me={me} activeId={activeId} logoBottom={logoBottom} />
 
       <View style={{ position: "absolute", top: insets.top + 6, left: 16, right: 16, flexDirection: "row", gap: 8 }}>
         <View style={pillStyle}>

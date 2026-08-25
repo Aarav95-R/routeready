@@ -27,6 +27,7 @@ const setup = (over: Partial<React.ComponentProps<typeof CentresMap>> = {}) =>
       identities={identities}
       me={{ lat: 51.601, lng: -0.235 }}
       activeId={null}
+      logoBottom={400}
       {...over}
     />
   );
@@ -131,6 +132,7 @@ test("a changed pin set after the first reveal renders at once, without restarti
       identities={new Map([...identities, ["c", identity]])}
       me={{ lat: 51.601, lng: -0.235 }}
       activeId={null}
+      logoBottom={400}
     />
   );
 
@@ -176,7 +178,8 @@ test("a frame losing a point refits the camera to what is left", () => {
 
   rerender(
     <CentresMap pins={pins} frame={pins} identities={identities}
-      me={{ lat: 51.601, lng: -0.235 }} activeId={null} />
+      me={{ lat: 51.601, lng: -0.235 }} activeId={null}
+      logoBottom={400} />
   );
 
   expect(fitCalls()).toHaveLength(2);
@@ -195,7 +198,8 @@ test("reordering the frame without changing the set does not refit", () => {
 
   rerender(
     <CentresMap pins={pins} frame={[...pins].reverse()} identities={identities}
-      me={{ lat: 51.601, lng: -0.235 }} activeId={null} />
+      me={{ lat: 51.601, lng: -0.235 }} activeId={null}
+      logoBottom={400} />
   );
 
   expect(fitCalls()).toHaveLength(1);
@@ -244,4 +248,24 @@ test("the marker's distance comes from the driver's own position", () => {
   // (51.55,-0.24) to a's (51.60,-0.24) is ~5.6km, ~3.5 miles.
   expect(screen.getByTestId("active-marker-distance")).toHaveTextContent("3.5 mi away");
   jest.useRealTimers();
+});
+
+// ── Mapbox attribution ────────────────────────────────────────────────────
+//
+// This map shipped with `logoEnabled={false}` and `attributionEnabled={false}`
+// on it, which is a plain breach of Mapbox's terms: the logo and the
+// attribution notice have to stay visible wherever a Mapbox map is shown.
+// NavMap has always got this right and says so in a comment. This one did not.
+//
+// Switching them back on is not sufficient on its own, because the sheet
+// covers the bottom 52% of this screen and the default position puts both of
+// them underneath it. So the assertion is about where they are, not whether a
+// boolean is set.
+
+test("the Mapbox logo and attribution clear the sheet rather than hiding under it", () => {
+  setup({ logoBottom: 400 });
+  const map = screen.getByTestId("map:");
+
+  expect(map.props.logoPosition).toEqual({ bottom: 400, left: 8 });
+  expect(map.props.attributionPosition).toEqual({ bottom: 400, right: 8 });
 });

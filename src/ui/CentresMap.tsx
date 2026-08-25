@@ -50,10 +50,19 @@ export type CentresMapProps = {
   identities: Map<string, CentreIdentity>;
   me: LatLng | null;
   activeId: string | null;
+  /**
+   * How far up to lift Mapbox's logo and attribution notice, in points.
+   *
+   * Mapbox's terms require both to stay visible, and this screen's sheet
+   * covers the bottom half of the map, so the default position would satisfy
+   * the prop and not the term. The caller owns the sheet height, so the
+   * caller passes it — the same arrangement NavMap has with practice.tsx.
+   */
+  logoBottom: number;
 };
 
 export const CentresMap = forwardRef<CentresMapHandle, CentresMapProps>(
-  function CentresMap({ pins, frame, identities, me, activeId }, ref) {
+  function CentresMap({ pins, frame, identities, me, activeId, logoBottom }, ref) {
     const camera = useRef<Camera>(null);
 
     // Pins and rings arrive in sequence rather than all at once. The reveal is
@@ -180,8 +189,12 @@ export const CentresMap = forwardRef<CentresMapHandle, CentresMapProps>(
         style={{ flex: 1 }}
         styleURL={OVERVIEW_STYLE}
         scaleBarEnabled={false}
-        logoEnabled={false}
-        attributionEnabled={false}
+        // Not disabled, unlike the scale bar. Mapbox's terms require the logo
+        // and the attribution notice to stay visible wherever a Mapbox map is
+        // shown, and this screen is one. They are lifted clear of the sheet
+        // rather than switched off.
+        logoPosition={{ bottom: logoBottom, left: 8 }}
+        attributionPosition={{ bottom: logoBottom, right: 8 }}
       >
         {/* The same map the driver gets once a route starts: warm ground, wide
             white roads, desaturated parks and water. It also covers what this
