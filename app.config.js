@@ -29,7 +29,9 @@ module.exports = {
   android: {
     adaptiveIcon: {
       foregroundImage: "./assets/images/adaptive-icon.png",
-      backgroundColor: "#ffffff",
+      // The mark is drawn on nothing so the launcher can mask it; this is the
+      // ground it sits on, and it is the app's, not white.
+      backgroundColor: "#F5F0E8",
     },
   },
   web: {
@@ -45,7 +47,9 @@ module.exports = {
         image: "./assets/images/splash-icon.png",
         imageWidth: 200,
         resizeMode: "contain",
-        backgroundColor: "#ffffff",
+        // Matches colors.field, so the splash does not flash white into a
+        // warm-stone app on every cold start.
+        backgroundColor: "#F5F0E8",
       },
     ],
     "expo-secure-store",
