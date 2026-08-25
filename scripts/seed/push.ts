@@ -21,7 +21,7 @@
 // is not a thing worth finding out afterwards.
 import { readFileSync } from "node:fs";
 import { Client, type ClientConfig } from "pg";
-import { confirmDestructive } from "./confirm";
+import { confirmDestructive, confirmUserData, USER_DATA_TABLES } from "./confirm";
 
 
 // Before the connection is even opened: a refusal that has already connected
@@ -50,6 +50,24 @@ const config: ClientConfig = conn
 async function main() {
   const client = new Client(config);
   await client.connect();
+
+  // Counted before anything is destroyed, because "how much progress was
+  // there" is not a question anybody gets to ask afterwards. The host was
+  // confirmed on argv; this is the other half of the blast radius.
+  const counts = await client.query(
+    "select " + USER_DATA_TABLES.map((t) => `(select count(*) from ${t}) as ${t}`).join(", ") + ";"
+  );
+  // pg returns bigint counts as strings, and "0" is truthy.
+  const userRows = Object.fromEntries(
+    Object.entries(counts.rows[0]).map(([k, v]) => [k, Number(v)])
+  );
+  const userDataRefusal = confirmUserData(userRows, process.argv.slice(2));
+  if (userDataRefusal !== null) {
+    console.error(userDataRefusal);
+    await client.end();
+    process.exit(1);
+  }
+
   console.log("Connected. Clearing any existing seed data…");
   await client.query("truncate test_centres, manoeuvres, show_me_tell_me restart identity cascade;");
   // The generator writes one statement per line, and the file is now ~8 MB.
