@@ -36,7 +36,7 @@ jest.mock("@/services/routesRepo", () => ({ getRoute: (...a: unknown[]) => mockG
 const mockFetchDirections = jest.fn();
 jest.mock("@/services/directions", () => ({ fetchDirections: (...a: unknown[]) => mockFetchDirections(...a) }));
 
-import { emitFix, resetLocationMock, setLastKnownPosition } from "../../test/locationMock";
+import { emitFix, failPositionWatch, resetLocationMock, setLastKnownPosition } from "../../test/locationMock";
 import { buildNavSteps } from "@/lib/navsteps";
 import Practice from "../../../app/route/[id]/practice";
 
@@ -80,7 +80,7 @@ const approach = {
 
 const drive = async (path: LatLng[]) => {
   for (const p of path) {
-    await act(async () => { emitFix(p.lat, p.lng, 10); });
+    await act(async () => { emitFix(p.lat, p.lng, { speedMps: 0 }); });
   }
 };
 
@@ -99,26 +99,45 @@ const mount = async () => {
   );
 };
 
-test("arriving at the start asks rather than setting off on its own", async () => {
+test("live preview arrival asks rather than setting off on its own", async () => {
   setLastKnownPosition(51.4980, -0.100);
   await mount();
 
-  await act(async () => { fireEvent.press(screen.getByText("Guide me to the start")); });
-  await drive(APPROACH_LL);
+  await drive([A, A, A]);
 
-  expect(screen.getByText("You're at the start line")).toBeTruthy();
-  expect(screen.getByText("Begin practice drive")).toBeTruthy();
+  expect(screen.getByText("Ready to begin?")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Begin route" })).toBeTruthy();
+});
+
+test("inaccurate preview fixes cannot open the start prompt", async () => {
+  setLastKnownPosition(51.4980, -0.100);
+  await mount();
+
+  for (let i = 0; i < 3; i++) {
+    await act(async () => { emitFix(A.lat, A.lng, { accuracyM: 40 }); });
+  }
+  expect(screen.queryByText("Ready to begin?")).toBeNull();
+
+  await drive([A, A, A]);
+  expect(screen.getByText("Ready to begin?")).toBeTruthy();
+});
+
+test("a failed location watch stops navigation and offers a way out", async () => {
+  await mount();
+  await act(async () => { failPositionWatch("location unavailable"); });
+
+  expect(screen.getByText("Location access is needed to guide you along the route.")).toBeTruthy();
+  expect(screen.getByText("Back")).toBeTruthy();
 });
 
 test("the drive begins only once the driver says so", async () => {
   setLastKnownPosition(51.4980, -0.100);
   await mount();
 
-  await act(async () => { fireEvent.press(screen.getByText("Guide me to the start")); });
-  await drive(APPROACH_LL);
-  await act(async () => { fireEvent.press(screen.getByText("Begin practice drive")); });
+  await drive([A, A, A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Begin route" })); });
 
-  expect(screen.queryByText("You're at the start line")).toBeNull();
+  expect(screen.queryByText("Ready to begin?")).toBeNull();
   expect(screen.getByText("Remaining")).toBeTruthy();
 });
 
@@ -127,21 +146,37 @@ test("the drive begins only once the driver says so", async () => {
 test("standing on the start line does not finish the route", async () => {
   setLastKnownPosition(A.lat, A.lng);
   await mount();
-  await waitFor(() => expect(screen.getByText("Start")).toBeTruthy());
-  await act(async () => { fireEvent.press(screen.getByText("Start")); });
+  await drive([A, A, A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Begin route" })); });
   await drive([A, A, A]);
 
   expect(screen.queryByText("Route complete")).toBeNull();
 });
 
-test("driving the loop back round to the start finishes the route", async () => {
+test("driving the loop prompts for an explicit end before showing completion", async () => {
   setLastKnownPosition(A.lat, A.lng);
   await mount();
-  await waitFor(() => expect(screen.getByText("Start")).toBeTruthy());
-  await act(async () => { fireEvent.press(screen.getByText("Start")); });
-  await drive(LOOP);
+  await drive([A, A, A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Begin route" })); });
+  await drive([...LOOP, A, A]);
 
   expect(screen.getByText("Route complete")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "End route" })).toBeTruthy();
+  expect(screen.queryByText("Done")).toBeNull();
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "End route" })); });
+  expect(screen.getByText("Done")).toBeTruthy();
+});
+
+test("keep driving suppresses the finish prompt until leaving and re-entering", async () => {
+  await beginAtStart();
+  await drive([...LOOP, A, A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Keep driving" })); });
+  await drive([A, A, A]);
+  expect(screen.queryByRole("button", { name: "End route" })).toBeNull();
+
+  await drive([B, A, A, A]);
+  expect(screen.getByRole("button", { name: "End route" })).toBeTruthy();
 });
 
 // Arrival used to be decided by walking the step index, which only moves when
@@ -166,11 +201,11 @@ test("a manoeuvre the driver never gets close to does not strand the drive", asy
   setLastKnownPosition(A.lat, A.lng);
   await mount();
 
-  await waitFor(() => expect(screen.getByText("Start")).toBeTruthy());
-  await act(async () => { fireEvent.press(screen.getByText("Start")); });
-  await drive(LOOP);
+  await drive([A, A, A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Begin route" })); });
+  await drive([...LOOP, A, A]);
 
-  expect(screen.getByText("Route complete")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "End route" })).toBeTruthy();
 });
 
 // ── Off-route recovery ──────────────────────────────────────────────────────
@@ -197,8 +232,8 @@ const beginAtStart = async () => {
   // on the start line; until then it offers "Guide me to the start". mount()
   // waits on the route name, which lands first, so reading immediately is a
   // race — and one that only loses under full-suite parallelism.
-  await waitFor(() => expect(screen.getByText("Start")).toBeTruthy());
-  await act(async () => { fireEvent.press(screen.getByText("Start")); });
+  await drive([A, A, A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Begin route" })); });
 };
 
 const spoken = () => (require("expo-speech").speak as jest.Mock).mock.calls.map((c: unknown[]) => c[0] as string);
@@ -216,6 +251,14 @@ test("three fixes clear of the line put the banner into its amber state", async 
   await drive([...ON_AB, ...OFF_AB]);
 
   expect(screen.getByText("Off route")).toBeTruthy();
+});
+
+test("a failed recovery request keeps a bearing-based return instruction", async () => {
+  await beginAtStart();
+  mockFetchDirections.mockRejectedValueOnce(new Error("offline"));
+  await drive([...ON_AB, ...OFF_AB]);
+
+  await waitFor(() => expect(screen.getByText("Head back toward route")).toBeTruthy());
 });
 
 test("leaving the route is announced exactly once, however long the driver stays off it", async () => {

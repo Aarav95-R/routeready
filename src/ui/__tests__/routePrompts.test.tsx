@@ -65,6 +65,7 @@ test("finish prompt keeps driving or ends only through explicit buttons", () => 
 
 test("drive chrome keeps guidance and controls in two stable surfaces", () => {
   const recenter = jest.fn();
+  const stop = jest.fn();
   render(
     <DriveChrome
       eyebrow="Practice route"
@@ -75,13 +76,16 @@ test("drive chrome keeps guidance and controls in two stable surfaces", () => {
       remainingLabel="5.2 km"
       following={false}
       onRecenter={recenter}
+      onStop={stop}
     />,
   );
 
   expect(screen.getByTestId("drive-guidance-deck")).toBeTruthy();
   expect(screen.getByTestId("drive-bottom-rail")).toBeTruthy();
   fireEvent.press(screen.getByRole("button", { name: "Recenter map" }));
+  fireEvent.press(screen.getByRole("button", { name: "Stop route" }));
   expect(recenter).toHaveBeenCalledTimes(1);
+  expect(stop).toHaveBeenCalledTimes(1);
 });
 
 test("recovery chrome uses a single amber status without changing its geometry", () => {

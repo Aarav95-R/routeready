@@ -13,6 +13,7 @@ export type DriveChromeProps = {
   remainingLabel: string;
   following: boolean;
   onRecenter: () => void;
+  onStop?: () => void;
   tone?: "go" | "off";
 };
 
@@ -25,6 +26,7 @@ export function DriveChrome({
   remainingLabel,
   following,
   onRecenter,
+  onStop,
   tone = "go",
 }: DriveChromeProps) {
   const insets = useSafeAreaInsets();
@@ -103,6 +105,16 @@ export function DriveChrome({
           <Text className="text-[10px] font-bold uppercase text-slate-500">Speed</Text>
           <Text className="text-[16px] font-semibold text-primary">{Math.max(0, Math.round(speedMph))} mph</Text>
         </View>
+        {onStop && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Stop route"
+            onPress={onStop}
+            className="ml-3 h-10 w-10 items-center justify-center rounded-lg bg-red-50 active:bg-red-100"
+          >
+            <Ionicons name="stop" size={18} color={colors.danger} />
+          </Pressable>
+        )}
       </View>
     </>
   );

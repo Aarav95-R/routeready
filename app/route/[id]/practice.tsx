@@ -11,16 +11,17 @@ import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
-import { advance, ANNOUNCE_M, ARRIVE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM, routeComplete } from "@/lib/navigation";
+import { advance, ANNOUNCE_M, ARRIVE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, rebaseRouteCursor, remainingM, routeProgress } from "@/lib/navigation";
 import { bearingDeg, cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath } from "@/lib/geo";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
 import { chooseRejoin, departureLine, initialOffRoute, REJOINED_LINE, SKIP_WARN_M, stepOffRoute, type OffRouteState, type Rejoin } from "@/lib/offRoute";
 import { stitchLegs } from "@/lib/navsteps";
+import { createRouteLifecycle, qualifyLocationFix, routeLifecycleReducer, type RouteFix } from "@/lib/routeLifecycle";
 import type { Hazard, NavStep, Route } from "@/types/db";
-import { ArrivalCard } from "@/ui/ArrivalCard";
-import { ManeuverBanner } from "@/ui/ManeuverBanner";
+import { DriveChrome } from "@/ui/DriveChrome";
 import { RoutePreviewCard } from "@/ui/RoutePreviewCard";
-import { colors } from "@/ui/theme";
+import { RouteFinishPrompt } from "@/ui/RouteFinishPrompt";
+import { RouteStartPrompt } from "@/ui/RouteStartPrompt";
 import { FACES } from "@/ui/type";
 import { NavMap, NavMapHandle } from "@/ui/NavMap";
 
@@ -38,7 +39,7 @@ import { NavMap, NavMapHandle } from "@/ui/NavMap";
 // callback, so the drive began itself while the phone was still in the
 // driver's hand. Nothing is narrated or counted in this phase — the watch
 // keeps running only so the map stays alive under the card.
-type Phase = "preview" | "approach" | "at-start" | "route" | "finished";
+type Phase = "preview" | "approach" | "at-start" | "route" | "finish-prompt" | "finished";
 
 export default function Practice() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -123,6 +124,7 @@ export default function Practice() {
   // and a departure stays true until the driver is back on the line, so
   // without this one wrong turn queues a call per fix.
   const fetchingReturnRef = useRef(false);
+  const lifecycleRef = useRef(createRouteLifecycle());
 
   useEffect(() => {
     getRoute(id).then((r) => { setRoute(r.data.route); setHazards(r.data.hazards); }).catch(() => {});
@@ -209,6 +211,13 @@ export default function Practice() {
   }, []);
 
   const beginRoute = useCallback(() => {
+    const lastFixAt = lifecycleRef.current.lastAcceptedFix?.timestamp ?? Date.now();
+    const lifecycle = routeLifecycleReducer(lifecycleRef.current, {
+      type: "BEGIN_REQUESTED",
+      at: Math.max(Date.now(), lastFixAt),
+    });
+    lifecycleRef.current = lifecycle;
+    if (lifecycle.phase !== "active") return;
     phaseRef.current = "route";
     fallbackRef.current = false;
     setPhase("route");
@@ -219,12 +228,78 @@ export default function Practice() {
     Speech.speak("Beginning the route.", { language: "en-GB" });
   }, [resetOffRoute]);
 
-  const finishRoute = useCallback(() => {
+  const endRoute = useCallback(() => {
+    lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+      type: "END_REQUESTED",
+      at: Date.now(),
+    });
+    if (lifecycleRef.current.phase !== "complete") return;
     stopWatching();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     phaseRef.current = "finished";
     setPhase("finished");
   }, [stopWatching]);
+
+  const keepDriving = useCallback(() => {
+    lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, { type: "KEEP_DRIVING" });
+    phaseRef.current = "route";
+    setPhase("route");
+  }, []);
+
+  useEffect(() => {
+    if (!routeLL.length) return;
+    let active = true;
+    let previewSub: Location.LocationSubscription | null = null;
+
+    void (async () => {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (!active || status !== "granted" || phaseRef.current !== "preview") return;
+      previewSub = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, distanceInterval: 2, timeInterval: 1_000 },
+        (loc) => {
+          if (phaseRef.current !== "preview") return;
+          const start = startRef.current;
+          if (!start) return;
+          const raw = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+          setPreviewLoc(raw);
+          const value: RouteFix = {
+            lat: raw.lat,
+            lng: raw.lng,
+            timestamp: loc.timestamp,
+            accuracyM: loc.coords.accuracy ?? Infinity,
+            speedMph: mpsToMph(Math.max(0, loc.coords.speed ?? 0)),
+            routeDistanceM: haversineM(raw, start),
+            startDistanceM: haversineM(raw, start),
+            finishDistanceM: haversineM(raw, routeLLRef.current.at(-1) ?? start),
+            routeProgress: 0,
+            trailIdx: 0,
+          };
+          const receivedAt = Math.max(Date.now(), value.timestamp);
+          lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+            type: "FIX_RECEIVED",
+            fix: value,
+            receivedAt,
+          });
+          if (lifecycleRef.current.phase === "start-prompt") reachStart();
+        },
+        () => {
+          lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+            type: "LOCATION_FAILED",
+            reason: "watch-failed",
+          });
+          setPermissionDenied(true);
+        },
+      );
+      if (!active) previewSub.remove();
+      else subRef.current = previewSub;
+    })();
+
+    return () => {
+      active = false;
+      previewSub?.remove();
+      if (subRef.current === previewSub) subRef.current = null;
+    };
+  }, [reachStart, routeLL.length]);
 
   // Re-lock the camera onto the driver after they've panned the map.
   const recenter = () => {
@@ -246,6 +321,14 @@ export default function Practice() {
       const dirs = await fetchDirections(from, rejoin.point);
       returnLegRef.current = dirs;
       setReturnLeg(dirs);
+      const requestId = lifecycleRef.current.recoveryRequestId;
+      if (requestId) {
+        lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+          type: "RECOVERY_READY",
+          requestId,
+          rejoinIdx: rejoin.idx,
+        });
+      }
     } catch {
       // No directions available. The banner still says "off route" and the
       // route stays drawn, which is more use at the wheel than an error the
@@ -257,7 +340,8 @@ export default function Practice() {
     }
   }, []);
 
-  const onPosition = useCallback((c: Location.LocationObjectCoords) => {
+  const onPosition = useCallback((loc: Location.LocationObject) => {
+    const c = loc.coords;
     const raw = { lat: c.latitude, lng: c.longitude };
     const mph = Math.round(mpsToMph(Math.max(0, c.speed ?? 0)));
     setSpeedMph(mph);
@@ -269,6 +353,23 @@ export default function Practice() {
     const cum = ph === "route" ? routeCumRef.current : approachCumRef.current;
     const isFallback = ph === "approach" && fallbackRef.current && !!start;
     const seeded = mapBearingSeededRef.current;
+
+    const qualityProbe: RouteFix = {
+      lat: raw.lat,
+      lng: raw.lng,
+      timestamp: loc.timestamp,
+      accuracyM: c.accuracy ?? Infinity,
+      speedMph: mph,
+      routeDistanceM: 0,
+      startDistanceM: start ? haversineM(raw, start) : Infinity,
+      finishDistanceM: start ? haversineM(raw, routeLLRef.current.at(-1) ?? start) : Infinity,
+      routeProgress: 0,
+      trailIdx: trailRef.current,
+    };
+    if (!qualifyLocationFix(lifecycleRef.current, qualityProbe, Math.max(Date.now(), loc.timestamp))) {
+      setPos(raw);
+      return;
+    }
 
     const fixInput = {
       mph,
@@ -315,6 +416,7 @@ export default function Practice() {
         returnLegDistM: legSnap?.distM ?? null,
         trailIdx: result.trailIdx,
         returnLegReady: returnLegRef.current !== null,
+        timestampMs: loc.timestamp,
       });
       offRef.current = state;
       setOffPhase(state.phase);
@@ -337,6 +439,20 @@ export default function Practice() {
       }
 
       if (event === "rejoined") {
+        const cursor = rebaseRouteCursor(
+          {
+            trailIdx: trailRef.current,
+            progressFloorIdx: lifecycleRef.current.progressFloorIdx,
+            stepIdx: indexRef.current,
+          },
+          rejoinRef.current?.idx ?? result.trailIdx,
+          steps,
+          coords,
+        );
+        trailRef.current = cursor.trailIdx;
+        indexRef.current = cursor.stepIdx;
+        setTrailIdx(cursor.trailIdx);
+        setStepIndex(cursor.stepIdx);
         rejoinRef.current = null;
         returnLegRef.current = null;
         setReturnLeg(null);
@@ -353,13 +469,54 @@ export default function Practice() {
       return;
     }
 
+    if (ph === "approach" && start) {
+      const startFix: RouteFix = {
+        ...qualityProbe,
+        routeDistanceM: haversineM(p, start),
+        startDistanceM: haversineM(p, start),
+        finishDistanceM: haversineM(p, start),
+      };
+      lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+        type: "FIX_RECEIVED",
+        fix: startFix,
+        receivedAt: Math.max(Date.now(), loc.timestamp),
+      });
+      if (lifecycleRef.current.phase === "start-prompt") {
+        reachStart();
+        return;
+      }
+    }
+
+    if (ph === "route") {
+      const routeSnap = snapToPath(coords, raw, trailRef.current);
+      const finish = coords.at(-1);
+      const routeFix: RouteFix = {
+        ...qualityProbe,
+        routeDistanceM: routeSnap?.distM ?? Infinity,
+        startDistanceM: start ? haversineM(p, start) : Infinity,
+        finishDistanceM: finish ? haversineM(p, finish) : Infinity,
+        routeProgress: routeProgress(cum, result.trailIdx),
+        trailIdx: result.trailIdx,
+      };
+      lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+        type: "FIX_RECEIVED",
+        fix: routeFix,
+        receivedAt: Math.max(Date.now(), loc.timestamp),
+      });
+      if (lifecycleRef.current.phase === "finish-prompt") {
+        phaseRef.current = "finish-prompt";
+        setPhase("finish-prompt");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return;
+      }
+    }
+
     // The end of a leg, decided from the trail index rather than the step
     // index — see routeComplete. Latched, because it stays true once true and
     // this callback runs several times a second.
-    if (!isFallback && !completedRef.current && routeComplete(coords, cum, p, result.trailIdx)) {
+    if (!isFallback && ph === "approach" && !completedRef.current && lifecycleRef.current.phase === "start-prompt") {
       completedRef.current = true;
-      if (ph === "approach") reachStart();
-      else finishRoute();
+      reachStart();
       return;
     }
 
@@ -409,7 +566,7 @@ export default function Practice() {
       }
     }
 
-  }, [reachStart, finishRoute, fetchReturnLeg]);
+  }, [reachStart, fetchReturnLeg]);
 
   const zoomToMe = async () => {
     try {
@@ -428,6 +585,8 @@ export default function Practice() {
   // because it was one. Naming it here means the callers depend on the thing
   // they actually call, and nothing about when they are rebuilt changes.
   const startWatch = useCallback(async () => {
+    subRef.current?.remove();
+    subRef.current = null;
     // The compass drives the icon, and only the icon. It fires as the phone
     // turns, including standing still, which is the whole point: the map is
     // pinned to the direction of travel and cannot answer a phone being
@@ -449,9 +608,21 @@ export default function Practice() {
     });
     subRef.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 1, timeInterval: 500 },
-      (loc) => onPosition(loc.coords)
+      onPosition,
+      () => {
+        lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+          type: "LOCATION_FAILED",
+          reason: "watch-failed",
+        });
+        setPermissionDenied(true);
+      },
     );
   }, [onPosition]);
+
+  useEffect(() => {
+    if (phase !== "route" || headingSubRef.current) return;
+    void startWatch();
+  }, [phase, startWatch]);
 
   const ensurePermission = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -462,7 +633,12 @@ export default function Practice() {
   const startDirectly = useCallback(async () => {
     if (!(await ensurePermission())) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    phaseRef.current = "route"; setPhase("route");
+    approachRef.current = null;
+    setApproach(null);
+    fallbackRef.current = true;
+    setFallback(true);
+    phaseRef.current = "approach";
+    setPhase("approach");
     resetLeg(1);
     await zoomToMe();
     await startWatch();
@@ -569,18 +745,17 @@ export default function Practice() {
             className="absolute bottom-0 left-0 right-0 bg-card px-4 pt-3"
             style={{ paddingBottom: insets.bottom + 12, shadowColor: "#221F1C", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -3 } }}
           >
-            <Pressable onPress={beginRoute} className="min-h-[52px] items-center justify-center rounded-full bg-accent active:bg-accent-pressed">
-              <Text className="text-[16px] font-semibold text-white">Begin practice drive</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Begin route" onPress={beginRoute} className="min-h-[52px] items-center justify-center rounded-lg bg-accent active:bg-accent-pressed">
+              <Text className="text-[16px] font-semibold text-white">Begin route</Text>
             </Pressable>
           </View>
         ) : (
-          <ArrivalCard
-            title={route.name}
+          <RouteStartPrompt
+            visible
+            routeName={route.name}
             detail={`${route.distance_km?.toFixed(1)} km · ${route.estimated_minutes} min`}
-            primaryLabel="Begin practice drive"
-            onPrimary={beginRoute}
-            secondaryLabel="Not yet — hold here"
-            onSecondary={() => setHeld(true)}
+            onBegin={beginRoute}
+            onWait={() => setHeld(true)}
           />
         )
       )}
@@ -596,59 +771,43 @@ export default function Practice() {
 
       {/* ---------- APPROACH / ROUTE ---------- */}
       {(phase === "approach" || phase === "route") && (
-        <>
-          <View className="absolute left-3 right-3" style={{ top: insets.top + 6 }}>
-            {offRoute ? (
-              <ManeuverBanner
-                tone="off"
-                eyebrow="Off route"
-                // Until the return leg lands there is no turn to give, so the
-                // banner falls back to saying what is happening rather than
-                // showing a stale instruction from the route they have left.
-                fallback={!returnLeg}
-                fallbackText="Rejoining the route"
-                step={returnLeg?.steps?.[0]}
-                next={returnLeg?.steps?.[1]}
-                distanceM={null}
-                distanceLabel={
-                  skippedM !== null ? `Rejoining — ${formatDistance(skippedM)} skipped` : "Rejoining ahead"
-                }
-              />
-            ) : (
-              <ManeuverBanner
-                eyebrow={isApproach ? "Heading to the start" : null}
-                fallback={fallback}
-                step={current}
-                next={next}
-                arriveLabel={isApproach ? "then the route begins" : undefined}
-                distanceM={fallback ? directDist : distanceM}
-              />
-            )}
-          </View>
+        <DriveChrome
+          tone={offRoute ? "off" : "go"}
+          eyebrow={offRoute ? "Off route" : isApproach ? "Heading to the start" : "Practice route"}
+          distanceLabel={
+            offRoute
+              ? skippedM !== null ? `Rejoining · ${formatDistance(skippedM)} skipped` : "Rejoining ahead"
+              : formatDistance((fallback ? directDist : distanceM) ?? 0)
+          }
+          instruction={
+            offRoute
+              ? returnLeg?.steps?.[0]?.instruction ?? "Head back toward route"
+              : fallback ? "Head toward the start point" : current?.instruction ?? "Follow the route"
+          }
+          nextInstruction={
+            offRoute
+              ? returnLeg?.steps?.[1]?.instruction ?? null
+              : next ? (isApproach && next.type === "arrive" ? "then the route begins" : `then ${next.instruction}`) : null
+          }
+          speedMph={speedMph}
+          remainingLabel={
+            isApproach && fallback
+              ? directDist === null ? "—" : formatDistance(directDist)
+              : remaining === null ? "—" : formatDistance(remaining)
+          }
+          following={following}
+          onRecenter={recenter}
+          onStop={() => { stopWatching(); router.back(); }}
+        />
+      )}
 
-          {phase === "route" && (
-            <View className="absolute left-4 items-center rounded-2xl bg-card px-3 py-2" style={{ bottom: 100, shadowColor: "#221F1C", shadowOpacity: 0.15, shadowRadius: 8 }}>
-              <Text className="text-[20px] font-bold leading-5 text-primary" style={{ fontVariant: ["tabular-nums"] }}>{speedMph}</Text>
-              <Text className="text-[8px] font-bold tracking-wider text-slate-500">MPH</Text>
-            </View>
-          )}
-
-          <Pressable onPress={recenter} className="absolute right-4 h-12 w-12 items-center justify-center rounded-full bg-card" style={{ bottom: 100, shadowColor: "#221F1C", shadowOpacity: 0.18, shadowRadius: 8 }}>
-            <Ionicons name="navigate" size={20} color={colors.accent} />
-          </Pressable>
-
-          <View className="absolute bottom-0 left-0 right-0 flex-row items-center gap-3 bg-card px-4 pt-3" style={{ paddingBottom: insets.bottom + 12, shadowColor: "#221F1C", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -3 } }}>
-            <View className="flex-1">
-              <Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{isApproach ? "To the start" : "Remaining"}</Text>
-              <Text className="text-[18px] font-semibold text-primary">
-                {isApproach && fallback ? (directDist === null ? "—" : formatDistance(directDist)) : (remaining === null ? "—" : formatDistance(remaining))}
-              </Text>
-            </View>
-            <Pressable onPress={() => { stopWatching(); router.back(); }} className="min-h-[44px] items-center justify-center rounded-full bg-danger px-7">
-              <Text className="text-[14px] font-semibold text-white">Stop</Text>
-            </Pressable>
-          </View>
-        </>
+      {phase === "finish-prompt" && route && (
+        <RouteFinishPrompt
+          visible
+          routeName={route.name}
+          onKeepDriving={keepDriving}
+          onEnd={endRoute}
+        />
       )}
 
       {/* ---------- FINISHED ---------- */}
