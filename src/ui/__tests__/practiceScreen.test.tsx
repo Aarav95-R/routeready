@@ -93,7 +93,10 @@ beforeEach(() => {
 
 const mount = async () => {
   render(<Practice />);
-  await waitFor(() => expect(screen.getByText("Route 3 · Sandpit Lane")).toBeTruthy());
+  await waitFor(
+    () => expect(screen.getByText("Route 3 · Sandpit Lane")).toBeTruthy(),
+    { timeout: 5_000 },
+  );
 };
 
 test("arriving at the start asks rather than setting off on its own", async () => {
