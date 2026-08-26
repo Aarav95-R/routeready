@@ -61,6 +61,17 @@ test("three consecutive fixes past the threshold declare a departure once", () =
   expect(again.event).toBe("none");
 });
 
+test("three far fixes inside one second do not declare a departure", () => {
+  let s = stepOffRoute(initialOffRoute, input({ routeDistM: 120, timestampMs: 0 })).state;
+  s = stepOffRoute(s, input({ routeDistM: 120, timestampMs: 400 })).state;
+  s = stepOffRoute(s, input({ routeDistM: 120, timestampMs: 800 })).state;
+
+  expect(s.phase).toBe("straying");
+  const confirmed = stepOffRoute(s, input({ routeDistM: 120, timestampMs: 3_000 }));
+  expect(confirmed.state.phase).toBe("off-route");
+  expect(confirmed.event).toBe("departed");
+});
+
 test("the departure index is the trail index at the moment of leaving, not later", () => {
   let s = stepOffRoute(initialOffRoute, input({ routeDistM: 120, trailIdx: 40 })).state;
   s = stepOffRoute(s, input({ routeDistM: 200, trailIdx: 41 })).state;

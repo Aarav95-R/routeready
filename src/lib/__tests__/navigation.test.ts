@@ -1,4 +1,4 @@
-import { advance, ADVANCE_RADIUS_M, destinationPoint, formatDistance, navZoom, NAV_ZOOM_NEAR, NAV_ZOOM_MID, NAV_ZOOM_FAR, remainingM, ROAD_BEARING_MIN_MPH, routeComplete, ROUTE_PROGRESS_MIN, trailIndex, travelBearing } from "../navigation";
+import { advance, ADVANCE_RADIUS_M, destinationPoint, formatDistance, navZoom, NAV_ZOOM_NEAR, NAV_ZOOM_MID, NAV_ZOOM_FAR, rebaseRouteCursor, remainingM, ROAD_BEARING_MIN_MPH, routeComplete, ROUTE_PROGRESS_MIN, trailIndex, travelBearing } from "../navigation";
 import { cumulativeM, haversineM } from "../geo";
 import type { NavStep } from "@/types/db";
 
@@ -107,6 +107,28 @@ test("trailIndex tracks the nearest vertex and never rewinds", () => {
   expect(trailIndex(line, { lat: 51.5052, lng: -0.1 }, 0)).toBe(5);
   // even if we drift back, progress index does not go below minIdx
   expect(trailIndex(line, { lat: 51.5, lng: -0.1 }, 5)).toBe(5);
+});
+
+test("a large forward rejoin rebases the trail floor and manoeuvre cursor", () => {
+  const coords = Array.from({ length: 201 }, (_, i) => ({ lat: 51.5 + i * 0.0001, lng: -0.1 }));
+  const routeSteps = [0, 50, 100, 150, 200].map((idx, i) =>
+    mk(coords[idx].lat, coords[idx].lng, `Step ${i}`));
+
+  expect(rebaseRouteCursor(
+    { trailIdx: 20, progressFloorIdx: 20, stepIdx: 1 },
+    160,
+    routeSteps,
+    coords,
+  )).toEqual({ trailIdx: 160, progressFloorIdx: 160, stepIdx: 4 });
+});
+
+test("rebasing behind current progress never rewinds any cursor", () => {
+  expect(rebaseRouteCursor(
+    { trailIdx: 20, progressFloorIdx: 20, stepIdx: 1 },
+    10,
+    steps,
+    line,
+  )).toEqual({ trailIdx: 20, progressFloorIdx: 20, stepIdx: 1 });
 });
 
 test("destinationPoint lands the right distance ahead on the given bearing", () => {

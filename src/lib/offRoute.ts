@@ -42,6 +42,8 @@ export type OffRouteState = {
   phase: OffRoutePhase;
   /** Consecutive fixes supporting the transition currently being considered. */
   streak: number;
+  /** Timestamp of the first fix in a timed departure/recompute candidate. */
+  candidateSinceMs: number | null;
   /**
    * The route vertex the driver was last on before leaving, or null while on
    * the route. Captured at the *first* straying fix rather than when the
@@ -51,7 +53,12 @@ export type OffRouteState = {
   departedIdx: number | null;
 };
 
-export const initialOffRoute: OffRouteState = { phase: "on-route", streak: 0, departedIdx: null };
+export const initialOffRoute: OffRouteState = {
+  phase: "on-route",
+  streak: 0,
+  candidateSinceMs: null,
+  departedIdx: null,
+};
 
 export type OffRouteInput = {
   /** Distance from this fix to the nearest point on the active route polyline. */
@@ -62,6 +69,8 @@ export type OffRouteInput = {
   trailIdx: number;
   /** True once a return leg has been fetched and is being navigated. */
   returnLegReady: boolean;
+  /** Fix timestamp. When supplied, entry/recompute candidates must span 3 s. */
+  timestampMs?: number;
 };
 
 /**
@@ -73,25 +82,46 @@ export type OffRouteEvent = "none" | "departed" | "rejoined" | "recompute";
 
 export type OffRouteStep = { state: OffRouteState; event: OffRouteEvent };
 
-const on = (): OffRouteState => ({ phase: "on-route", streak: 0, departedIdx: null });
+const on = (): OffRouteState => ({
+  phase: "on-route",
+  streak: 0,
+  candidateSinceMs: null,
+  departedIdx: null,
+});
+
+const timeConfirmed = (since: number | null, now: number | undefined) =>
+  since === null || now === undefined || now - since >= 3_000;
 
 export function stepOffRoute(prev: OffRouteState, input: OffRouteInput): OffRouteStep {
-  const { routeDistM, returnLegDistM, trailIdx, returnLegReady } = input;
+  const { routeDistM, returnLegDistM, trailIdx, returnLegReady, timestampMs } = input;
   const near = routeDistM <= OFF_ROUTE_EXIT_M;
   const far = routeDistM > OFF_ROUTE_ENTER_M;
 
   switch (prev.phase) {
     case "on-route":
       if (!far) return { state: prev, event: "none" };
-      return { state: { phase: "straying", streak: 1, departedIdx: trailIdx }, event: "none" };
+      return {
+        state: {
+          phase: "straying",
+          streak: 1,
+          candidateSinceMs: timestampMs ?? null,
+          departedIdx: trailIdx,
+        },
+        event: "none",
+      };
 
     case "straying": {
       if (near) return { state: on(), event: "none" };
       // Between the two thresholds: hold everything, including the streak.
       if (!far) return { state: prev, event: "none" };
       const streak = prev.streak + 1;
-      if (streak < ENTER_FIXES) return { state: { ...prev, streak }, event: "none" };
-      return { state: { ...prev, phase: "off-route", streak: 0 }, event: "departed" };
+      if (streak < ENTER_FIXES || !timeConfirmed(prev.candidateSinceMs, timestampMs)) {
+        return { state: { ...prev, streak }, event: "none" };
+      }
+      return {
+        state: { ...prev, phase: "off-route", streak: 0, candidateSinceMs: null },
+        event: "departed",
+      };
     }
 
     case "off-route": {
@@ -101,8 +131,10 @@ export function stepOffRoute(prev: OffRouteState, input: OffRouteInput): OffRout
         if (streak < EXIT_FIXES) return { state: { ...prev, streak }, event: "none" };
         return { state: on(), event: "rejoined" };
       }
-      if (returnLegReady) return { state: { ...prev, phase: "returning", streak: 0 }, event: "none" };
-      return { state: { ...prev, streak: 0 }, event: "none" };
+      if (returnLegReady) {
+        return { state: { ...prev, phase: "returning", streak: 0, candidateSinceMs: null }, event: "none" };
+      }
+      return { state: { ...prev, streak: 0, candidateSinceMs: null }, event: "none" };
     }
 
     case "returning": {
@@ -117,10 +149,16 @@ export function stepOffRoute(prev: OffRouteState, input: OffRouteInput): OffRout
       // here, and scoring that as a second departure would loop forever.
       if (returnLegDistM !== null && returnLegDistM > OFF_ROUTE_ENTER_M) {
         const streak = prev.streak + 1;
-        if (streak < ENTER_FIXES) return { state: { ...prev, streak }, event: "none" };
-        return { state: { ...prev, phase: "off-route", streak: 0 }, event: "recompute" };
+        const candidateSinceMs = prev.candidateSinceMs ?? timestampMs ?? null;
+        if (streak < ENTER_FIXES || !timeConfirmed(candidateSinceMs, timestampMs)) {
+          return { state: { ...prev, streak, candidateSinceMs }, event: "none" };
+        }
+        return {
+          state: { ...prev, phase: "off-route", streak: 0, candidateSinceMs: null },
+          event: "recompute",
+        };
       }
-      return { state: { ...prev, streak: 0 }, event: "none" };
+      return { state: { ...prev, streak: 0, candidateSinceMs: null }, event: "none" };
     }
   }
 }

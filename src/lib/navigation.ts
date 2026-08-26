@@ -88,6 +88,41 @@ export function trailIndex(coords: LatLng[], pos: LatLng, minIdx = 0): number {
   return idx;
 }
 
+export type RouteCursor = {
+  trailIdx: number;
+  progressFloorIdx: number;
+  stepIdx: number;
+};
+
+/** Move every route cursor to a forward rejoin point without ever rewinding. */
+export function rebaseRouteCursor(
+  cursor: RouteCursor,
+  rejoinIdx: number,
+  steps: NavStep[],
+  coords: LatLng[],
+): RouteCursor {
+  const floor = Math.max(cursor.progressFloorIdx, cursor.trailIdx);
+  const bounded = coords.length
+    ? Math.min(Math.max(rejoinIdx, 0), coords.length - 1)
+    : floor;
+  if (bounded <= floor) return cursor;
+
+  const progressFloorIdx = bounded;
+  let stepIdx = cursor.stepIdx;
+  if (steps.length && coords.length) {
+    const next = steps.findIndex((step, index) =>
+      index >= cursor.stepIdx
+      && trailIndex(coords, { lat: step.lat, lng: step.lng }) >= progressFloorIdx);
+    stepIdx = next === -1 ? steps.length - 1 : next;
+  }
+
+  return {
+    trailIdx: progressFloorIdx,
+    progressFloorIdx,
+    stepIdx: Math.max(cursor.stepIdx, stepIdx),
+  };
+}
+
 // A point `distanceM` metres from `from` along `bearing` (deg). Used to place
 // the camera ahead of the driver so they sit low with the road ahead in view.
 export function destinationPoint(from: LatLng, bearing: number, distanceM: number): LatLng {
