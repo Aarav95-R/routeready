@@ -7,8 +7,9 @@ This policy explains what the app collects, why, and what you can do about it.
 It describes what the app actually does; where something is not collected, this
 policy says so plainly rather than staying quiet about it.
 
-RouteReady is operated by **[YOUR NAME OR COMPANY]**, **[ADDRESS]**, United
-Kingdom. For anything in this policy, contact **[SUPPORT EMAIL]**.
+RouteReady is operated by **Aarav Raheja**, an independent developer based in
+the United Kingdom. For anything in this policy, contact
+**aaravraheja99@gmail.com**.
 
 Under UK GDPR we are the **data controller** for the information described here.
 
@@ -141,8 +142,8 @@ The screen lists exactly what will be removed before you confirm. Deletion is
 immediate and cannot be undone. Signing up again with the same email address
 gives you a new, empty account.
 
-If you would rather we did it, email **[SUPPORT EMAIL]** from the address on the
-account and we will action it within 30 days.
+If you would rather we did it, email **aaravraheja99@gmail.com** from the
+address on the account and we will action it within 30 days.
 
 ---
 
@@ -157,9 +158,9 @@ Under UK GDPR you have the right to:
 - **portability** — receive your data in a machine-readable form,
 - **withdraw consent** where consent was the basis.
 
-To exercise any of these, email **[SUPPORT EMAIL]**. We will respond within one
-month. You will never be charged for making a request or treated differently for
-having made one.
+To exercise any of these, email **aaravraheja99@gmail.com**. We will respond
+within one month. You will never be charged for making a request or treated
+differently for having made one.
 
 If you are unhappy with how we have handled your data, you can complain to the
 **Information Commissioner's Office** — [ico.org.uk](https://ico.org.uk),
@@ -199,6 +200,5 @@ before it takes effect.
 
 ## Contact
 
-**[YOUR NAME OR COMPANY]**
-**[ADDRESS]**
-**[SUPPORT EMAIL]**
+**Aarav Raheja**
+**aaravraheja99@gmail.com**

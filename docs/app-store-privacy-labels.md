@@ -134,11 +134,14 @@ off the phone, revisit User Content.
 
 ## Before you submit
 
-- [ ] Run `supabase/migrations/2026-08-20-deviation-positions.sql` so the
-      Precise Location answer is true of your stored data, not just your code
+- [ ] Confirm `supabase/migrations/2026-08-20-deviation-positions.sql` has been
+      run against the live project (not just committed here) so the Precise
+      Location answer is true of your stored data, not just your code
 - [ ] Host the privacy policy and put its URL in App Store Connect
-- [ ] Fill in the placeholders in `docs/privacy-policy.md` — name, address,
-      support email
+- [x] Fill in the placeholders in `docs/privacy-policy.md` — name and support
+      email are filled in (Aarav Raheja, aaravraheja99@gmail.com); no street
+      address is published, which UK ICO guidance permits as long as the
+      controller is reasonably contactable
 - [ ] Add a support URL (the same site with an email on it is enough)
 - [ ] Age rating: 4+ is correct — no objectionable content, no user-generated
       content, no web browsing
