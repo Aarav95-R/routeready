@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Linking, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Location from "expo-location";
@@ -13,15 +13,17 @@ import { fetchDirections, Directions } from "@/services/directions";
 import { useMockTest } from "@/stores/mockTestStore";
 import { EXAMINER_CATEGORIES, habitualWarnings, minorCountsByCategory, type MarkLevel } from "@/lib/examiner";
 import { bearingDeg, cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath } from "@/lib/geo";
-import { advance, ANNOUNCE_M, ARRIVE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, remainingM, routeComplete } from "@/lib/navigation";
+import { advance, ANNOUNCE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, rebaseRouteCursor, remainingM, routeProgress } from "@/lib/navigation";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
 import { chooseRejoin, departureLine, initialOffRoute, REJOINED_LINE, SKIP_WARN_M, stepOffRoute, type OffRouteState, type Rejoin } from "@/lib/offRoute";
+import { createRouteLifecycle, qualifyLocationFix, routeLifecycleReducer, type RouteFix } from "@/lib/routeLifecycle";
 import type { ObservationZone, Route } from "@/types/db";
-import { ArrivalCard } from "@/ui/ArrivalCard";
 import { EXAMINER_BAR_H, ExaminerBar, ExaminerCategoryList, ExaminerWarningPill } from "@/ui/ExaminerSheet";
 import { ManeuverBanner } from "@/ui/ManeuverBanner";
 import { NavMap, NavMapHandle } from "@/ui/NavMap";
 import { RoutePreviewCard } from "@/ui/RoutePreviewCard";
+import { RouteFinishPrompt } from "@/ui/RouteFinishPrompt";
+import { RouteStartPrompt } from "@/ui/RouteStartPrompt";
 import { colors } from "@/ui/theme";
 
 // The screen's own three stages, distinct from the store's phase: the store
@@ -39,7 +41,7 @@ import { colors } from "@/ui/theme";
 // There is no matching leg at the other end. Closing the loop is not a
 // decision — the driver is back at the test centre and the drive is over — so
 // the test scores itself and leaves for the result screen.
-type Leg = "preview" | "approach" | "at-start" | "test";
+type Leg = "preview" | "approach" | "at-start" | "test" | "finish-prompt" | "location-unavailable";
 
 // The collapsed sheet is gorhom's handle — container padding 10 pt top and
 // bottom plus a 4 pt indicator (node_modules/@gorhom/bottom-sheet/src/
@@ -136,7 +138,7 @@ export default function Mock() {
   // the moment the drive does not need the map. Released on unmount.
   useKeepAwake();
   const {
-    startedAt, activeZoneIdx, marks, samples,
+    startedAt, activeZoneIdx, marks,
     start, onSample, tapMirrors, addMark, undoMark, finish, addDeviation,
   } = useMockTest();
 
@@ -161,7 +163,6 @@ export default function Mock() {
   const [trailIdx, setTrailIdx] = useState(0);
   const [following, setFollowing] = useState(true);
   const [permissionDenied, setPermissionDenied] = useState(false);
-  const [noFix, setNoFix] = useState(false);
   // Degrees to draw the user icon at, measured against the rotated map rather
   // than against north. Held in state, not a ref, because the compass has to
   // be able to redraw it between GPS fixes.
@@ -200,6 +201,7 @@ export default function Mock() {
   // the watch fires several times a second — without this the test would be
   // scored again on every fix and the result screen stacked on itself.
   const completedRef = useRef(false);
+  const lifecycleRef = useRef(createRouteLifecycle());
   const trailRef = useRef(0);
   const mapBearingRef = useRef(0);            // what the map is rotated to: travel direction only
   const mapBearingSeededRef = useRef(false);  // first fix snaps straight to target, no ease-in
@@ -212,7 +214,8 @@ export default function Mock() {
   const rejoinRef = useRef<Rejoin | null>(null);
   // Guards the directions fetch: the GPS callback runs several times a second
   // and a departure stays true until the driver is back on the line.
-  const fetchingReturnRef = useRef(false);
+  const returnRequestRef = useRef(0);
+  const failedLegRef = useRef<Leg>("preview");
   // When the current departure began, so its duration can be recorded. Null
   // whenever the driver is on the route.
   const offSinceRef = useRef<number | null>(null);
@@ -300,32 +303,58 @@ export default function Mock() {
    * here would serialise the whole nav loop behind a network call.
    */
   const fetchReturnLeg = useCallback(async (from: LatLng, rejoin: Rejoin) => {
-    if (fetchingReturnRef.current) return;
-    fetchingReturnRef.current = true;
+    const request = ++returnRequestRef.current;
     try {
       const dirs = await fetchDirections(from, rejoin.point);
+      if (request !== returnRequestRef.current || !["off-route", "returning"].includes(offRef.current.phase)) return;
       returnLegRef.current = dirs;
       setReturnLeg(dirs);
     } catch {
+      if (request !== returnRequestRef.current) return;
       // No directions available. The banner still says "off route" and the
       // route stays drawn, which is more use at the wheel than an error.
       returnLegRef.current = null;
       setReturnLeg(null);
-    } finally {
-      fetchingReturnRef.current = false;
     }
   }, []);
 
-  const beginTest = useCallback(() => {
+  const beginTest = useCallback(async () => {
     const r = routeRef.current;
     if (!r) return;
+    let lastFixAt = lifecycleRef.current.lastAcceptedFix?.timestamp ?? 0;
+    if (Date.now() - lastFixAt > 5_000) {
+      try {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+        const raw = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+        const startPoint = startRef.current;
+        const distanceToStart = startPoint ? haversineM(raw, startPoint) : Infinity;
+        const fix: RouteFix = {
+          lat: raw.lat, lng: raw.lng, timestamp: loc.timestamp,
+          accuracyM: loc.coords.accuracy ?? Infinity,
+          speedMph: mpsToMph(Math.max(0, loc.coords.speed ?? 0)),
+          routeDistanceM: distanceToStart, startDistanceM: distanceToStart,
+          finishDistanceM: distanceToStart, routeProgress: 0, trailIdx: 0,
+        };
+        lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+          type: "FIX_RECEIVED", fix, receivedAt: Math.max(Date.now(), loc.timestamp),
+        });
+        lastFixAt = fix.timestamp;
+      } catch { return; }
+    }
+    const lifecycle = routeLifecycleReducer(lifecycleRef.current, {
+      type: "BEGIN_REQUESTED",
+      at: Math.max(Date.now(), lastFixAt),
+    });
+    lifecycleRef.current = lifecycle;
+    if (lifecycle.phase !== "active" || lifecycle.startedAt === null) return;
     legRef.current = "test";
     setLeg("test");
-    start(r);
+    start(r, lifecycle.startedAt);
     // A departure on the drive to the start must not carry into the test.
     offRef.current = initialOffRoute;
     rejoinRef.current = null;
     returnLegRef.current = null;
+    returnRequestRef.current += 1;
     offSinceRef.current = null;
     setOffPhase("on-route");
     setReturnLeg(null);
@@ -348,6 +377,30 @@ export default function Mock() {
     const c = loc.coords;
     const raw = { lat: c.latitude, lng: c.longitude };
     posRef.current = raw;
+
+    const startPoint = startRef.current;
+    const distanceToStart = startPoint ? haversineM(raw, startPoint) : Infinity;
+    const startFix: RouteFix = {
+      lat: raw.lat,
+      lng: raw.lng,
+      timestamp: loc.timestamp,
+      accuracyM: c.accuracy ?? Infinity,
+      speedMph: mpsToMph(Math.max(0, c.speed ?? 0)),
+      routeDistanceM: distanceToStart,
+      startDistanceM: distanceToStart,
+      finishDistanceM: distanceToStart,
+      routeProgress: 0,
+      trailIdx: trailRef.current,
+    };
+    lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+      type: "FIX_RECEIVED",
+      fix: startFix,
+      receivedAt: Math.max(Date.now(), loc.timestamp),
+    });
+    if (lifecycleRef.current.phase === "start-prompt") {
+      reachStart();
+      return;
+    }
 
     const dirs = approachRef.current;
     const startPt = startRef.current;
@@ -377,12 +430,6 @@ export default function Mock() {
     // see routeComplete. A step index only moves when the driver passes within
     // 25 m of each manoeuvre in turn, and one missed junction used to strand
     // the handover for the rest of the drive.
-    if (!isFallback && !completedRef.current
-        && routeComplete(dirs?.coords ?? [], approachCumRef.current, p, result.trailIdx)) {
-      completedRef.current = true;
-      reachStart();
-      return;
-    }
 
     // No directions could be fetched, so there is nothing to follow but the
     // direction of the start. The arrow is screen-space, so it is measured
@@ -393,7 +440,6 @@ export default function Mock() {
       setCrowRot(bearingDeg(p, startPt!) - mapBearingRef.current);
       zoomRef.current = NAV_ZOOM_FAR;
       mapRef.current?.pushCamera(p, mapBearingRef.current, NAV_ZOOM_FAR);
-      if (d <= ARRIVE_M && !completedRef.current) { completedRef.current = true; reachStart(); }
       return;
     }
 
@@ -435,25 +481,111 @@ export default function Mock() {
   //
   // The watch is not torn down here — the screen is leaving, and its unmount
   // effect owns that, exactly as the Finish button leaves it to.
-  const endTest = useCallback(() => {
-    finish();
+  const finishAndNavigate = useCallback((at: number) => {
+    if (completedRef.current) return;
+    completedRef.current = true;
+    const since = offSinceRef.current;
+    if (since !== null) {
+      addDeviation({
+        atIdx: offRef.current.departedIdx ?? trailRef.current,
+        skippedM: rejoinRef.current?.skippedM ?? 0,
+        seconds: Math.max(0, Math.round((at - since) / 1000)),
+      });
+      offSinceRef.current = null;
+    }
+    returnRequestRef.current += 1;
+    finish(at);
     router.replace(`/route/${id}/result`);
-  }, [finish, router, id]);
+  }, [addDeviation, finish, router, id]);
+
+  const endTest = useCallback(() => {
+    lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+      type: "END_REQUESTED",
+      at: Date.now(),
+    });
+    const completedAt = lifecycleRef.current.completedAt;
+    if (lifecycleRef.current.phase !== "complete" || completedAt === null) return;
+    finishAndNavigate(completedAt);
+  }, [finishAndNavigate]);
+
+  const keepDriving = useCallback(() => {
+    lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, { type: "KEEP_DRIVING" });
+    legRef.current = "test";
+    setLeg("test");
+  }, []);
 
   const onPosition = useCallback((loc: Location.LocationObject) => {
+    const c = loc.coords;
+    const raw = { lat: c.latitude, lng: c.longitude };
+    if (legRef.current === "preview") {
+      const startPoint = startRef.current;
+      if (!startPoint) return;
+      setPreviewLoc(raw);
+      const distanceToStart = haversineM(raw, startPoint);
+      const startFix: RouteFix = {
+        lat: raw.lat,
+        lng: raw.lng,
+        timestamp: loc.timestamp,
+        accuracyM: c.accuracy ?? Infinity,
+        speedMph: mpsToMph(Math.max(0, c.speed ?? 0)),
+        routeDistanceM: distanceToStart,
+        startDistanceM: distanceToStart,
+        finishDistanceM: distanceToStart,
+        routeProgress: 0,
+        trailIdx: 0,
+      };
+      lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+        type: "FIX_RECEIVED",
+        fix: startFix,
+        receivedAt: Math.max(Date.now(), loc.timestamp),
+      });
+      if (lifecycleRef.current.phase === "start-prompt") reachStart();
+      return;
+    }
     if (legRef.current === "approach") { onApproachPosition(loc); return; }
     // Waiting on the start line for the driver to tap Begin. Nothing reaches
     // the store: a fault cannot be scored against a test that has not started.
-    if (legRef.current === "at-start") { setPos({ lat: loc.coords.latitude, lng: loc.coords.longitude }); return; }
+    if (legRef.current === "at-start") {
+      setPos(raw);
+      const startPoint = startRef.current;
+      const distanceToStart = startPoint ? haversineM(raw, startPoint) : Infinity;
+      lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+        type: "FIX_RECEIVED",
+        fix: {
+          lat: raw.lat, lng: raw.lng, timestamp: loc.timestamp,
+          accuracyM: c.accuracy ?? Infinity,
+          speedMph: mpsToMph(Math.max(0, c.speed ?? 0)),
+          routeDistanceM: distanceToStart, startDistanceM: distanceToStart,
+          finishDistanceM: distanceToStart, routeProgress: 0, trailIdx: 0,
+        },
+        receivedAt: Math.max(Date.now(), loc.timestamp),
+      });
+      return;
+    }
+    if (legRef.current === "finish-prompt") { setPos(raw); return; }
 
-    const c = loc.coords;
+    const qualityProbe: RouteFix = {
+      lat: raw.lat,
+      lng: raw.lng,
+      timestamp: loc.timestamp,
+      accuracyM: c.accuracy ?? Infinity,
+      speedMph: mpsToMph(Math.max(0, c.speed ?? 0)),
+      routeDistanceM: 0,
+      startDistanceM: 0,
+      finishDistanceM: 0,
+      routeProgress: 0,
+      trailIdx: trailRef.current,
+    };
+    if (!qualifyLocationFix(lifecycleRef.current, qualityProbe, Math.max(Date.now(), loc.timestamp))) {
+      setPos(raw);
+      return;
+    }
     // Scoring sees the raw fix, never the snapped one. Snapping assumes you are
     // on the route, and a mock test is exactly where someone might not be — it
     // could otherwise credit an observation zone the driver never entered, or
     // hide one they did.
     onSample({ lat: c.latitude, lng: c.longitude, speedMps: Math.max(0, c.speed ?? 0), t: loc.timestamp });
 
-    const raw = { lat: c.latitude, lng: c.longitude };
     posRef.current = raw;
 
     // Snapped once, here, and only for the display. A mock test has no turn
@@ -486,8 +618,9 @@ export default function Mock() {
     // The icon's angle is relative to the map, so a map that turned changes it
     // even when the phone did not move.
     setIconRotation(result.iconRotation);
-    trailRef.current = result.trailIdx;
-    setTrailIdx(result.trailIdx);
+    let acceptedTrailIdx = result.onRoute ? result.trailIdx : trailRef.current;
+    trailRef.current = acceptedTrailIdx;
+    setTrailIdx(acceptedTrailIdx);
     zoomRef.current = result.zoom;
     mapRef.current?.pushCamera(result.pos, result.mapBearing, result.zoom);
 
@@ -499,21 +632,24 @@ export default function Mock() {
     {
       const coords = routeLLRef.current;
       const departedBefore = offRef.current.departedIdx;
-      const routeSnap = snapToPath(coords, raw, trailRef.current);
+      const routeSnap = offRef.current.phase === "off-route" || offRef.current.phase === "returning"
+        ? snapToPath(coords, raw, 0, coords.length)
+        : snapToPath(coords, raw, trailRef.current);
       const legSnap = returnLegRef.current
         ? snapToPath(returnLegRef.current.coords, raw, 0, returnLegRef.current.coords.length)
         : null;
       const { state, event } = stepOffRoute(offRef.current, {
         routeDistM: routeSnap?.distM ?? Infinity,
         returnLegDistM: legSnap?.distM ?? null,
-        trailIdx: result.trailIdx,
+        trailIdx: acceptedTrailIdx,
         returnLegReady: returnLegRef.current !== null,
+        timestampMs: loc.timestamp,
       });
       offRef.current = state;
       setOffPhase(state.phase);
 
       if (event === "departed" || event === "recompute") {
-        const rejoin = chooseRejoin(coords, routeCumRef.current, result.pos, departedBefore ?? result.trailIdx, mapBearingRef.current);
+        const rejoin = chooseRejoin(coords, routeCumRef.current, result.pos, departedBefore ?? acceptedTrailIdx, mapBearingRef.current);
         rejoinRef.current = rejoin;
         returnLegRef.current = null;
         setReturnLeg(null);
@@ -529,12 +665,26 @@ export default function Mock() {
       }
 
       if (event === "rejoined") {
+        returnRequestRef.current += 1;
+        const cursor = rebaseRouteCursor(
+          {
+            trailIdx: trailRef.current,
+            progressFloorIdx: lifecycleRef.current.progressFloorIdx,
+            stepIdx: indexRef.current,
+          },
+          routeSnap?.idx ?? rejoinRef.current?.idx ?? acceptedTrailIdx,
+          [],
+          coords,
+        );
+        trailRef.current = cursor.trailIdx;
+        acceptedTrailIdx = cursor.trailIdx;
+        setTrailIdx(cursor.trailIdx);
         // Recorded before the refs are cleared, and against the index the
         // driver actually left at rather than where they came back.
         const since = offSinceRef.current;
         if (since !== null) {
           addDeviation({
-            atIdx: departedBefore ?? result.trailIdx,
+            atIdx: departedBefore ?? acceptedTrailIdx,
             skippedM: rejoinRef.current?.skippedM ?? 0,
             seconds: Math.round((Date.now() - since) / 1000),
           });
@@ -549,14 +699,27 @@ export default function Mock() {
       }
     }
 
-    // Back at the test centre with the loop behind them: the drive is over,
-    // and unlike setting off that is not a decision anyone needs to confirm.
-    // Latched, because routeComplete stays true once true.
-    if (!completedRef.current && routeComplete(routeLLRef.current, routeCumRef.current, result.pos, result.trailIdx)) {
-      completedRef.current = true;
-      endTest();
+    const finishPoint = routeLLRef.current.at(-1);
+    const routeSnap = snapToPath(routeLLRef.current, raw, trailRef.current);
+    const routeFix: RouteFix = {
+      ...qualityProbe,
+      routeDistanceM: routeSnap?.distM ?? Infinity,
+      startDistanceM: startRef.current ? haversineM(raw, startRef.current) : Infinity,
+      finishDistanceM: finishPoint ? haversineM(raw, finishPoint) : Infinity,
+      routeProgress: routeProgress(routeCumRef.current, acceptedTrailIdx),
+      trailIdx: acceptedTrailIdx,
+    };
+    lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+      type: "FIX_RECEIVED",
+      fix: routeFix,
+      receivedAt: Math.max(Date.now(), loc.timestamp),
+    });
+    if (lifecycleRef.current.phase === "finish-prompt") {
+      legRef.current = "finish-prompt";
+      setLeg("finish-prompt");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-  }, [onSample, onApproachPosition, endTest, addDeviation, fetchReturnLeg]);
+  }, [onSample, onApproachPosition, reachStart, addDeviation, fetchReturnLeg]);
 
   const stopWatching = useCallback(() => {
     subRef.current?.remove();
@@ -568,6 +731,10 @@ export default function Mock() {
   useEffect(() => stopWatching, [stopWatching]);
 
   const startWatch = useCallback(async () => {
+    subRef.current?.remove();
+    subRef.current = null;
+    headingSubRef.current?.remove();
+    headingSubRef.current = null;
     // headingSub is declared outside the try so a throw from
     // watchPositionAsync — after watchHeadingAsync already resolved — can
     // still find it and remove it. An uncaught throw anywhere here used to
@@ -600,7 +767,17 @@ export default function Mock() {
       // earlier ones, and the sample cadence is part of what they score.
       const sub = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 5 },
-        onPosition
+        onPosition,
+        () => {
+          lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+            type: "LOCATION_FAILED",
+            reason: "watch-failed",
+          });
+          failedLegRef.current = legRef.current;
+          legRef.current = "location-unavailable";
+          setLeg("location-unavailable");
+          setPermissionDenied(true);
+        },
       );
       headingSubRef.current = headingSub;
       subRef.current = sub;
@@ -610,6 +787,9 @@ export default function Mock() {
       // than inventing a third dead-end screen: either way the test cannot be
       // scored, and "check Settings" is the same remedy to offer.
       headingSub?.remove();
+      failedLegRef.current = legRef.current;
+      legRef.current = "location-unavailable";
+      setLeg("location-unavailable");
       setPermissionDenied(true);
       return;
     }
@@ -633,6 +813,16 @@ export default function Mock() {
     }
   }, [onPosition]);
 
+  useEffect(() => {
+    if (!routeLL.length || leg !== "preview" || subRef.current) return;
+    let active = true;
+    void (async () => {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (active && status === "granted") await startWatch();
+    })();
+    return () => { active = false; };
+  }, [leg, routeLL.length, startWatch]);
+
   // Asked for at the moment the driver commits to setting off, not on mount.
   // A refusal used to return silently: the clock kept ticking, the map kept
   // drawing and Finish still worked, so a whole route could be driven and then
@@ -646,9 +836,14 @@ export default function Mock() {
 
   const startDirectly = useCallback(async () => {
     if (!(await ensurePermission())) return;
-    beginTest();
+    approachRef.current = null;
+    setApproach(null);
+    fallbackRef.current = true;
+    setFallback(true);
+    legRef.current = "approach";
+    setLeg("approach");
     await startWatch();
-  }, [beginTest, startWatch]);
+  }, [startWatch]);
 
   const guideToStart = useCallback(async () => {
     if (!(await ensurePermission())) return;
@@ -741,10 +936,8 @@ export default function Mock() {
     // produces a verdict rather than inside the scoring engine: aggregate() is
     // a pure function of the faults it is handed, and has no business knowing
     // whether the GPS was working.
-    if (samples.length === 0) { setNoFix(true); return; }
-    finish();
-    router.replace(`/route/${id}/result`);
-  }, [samples.length, finish, router, id]);
+    finishAndNavigate(Date.now());
+  }, [finishAndNavigate]);
 
   // Held apart from the render below: the compass re-renders this screen about
   // fifteen times a second, and the list is ~70 pressables that only change
@@ -805,7 +998,25 @@ export default function Mock() {
       <View className="flex-1 items-center justify-center gap-3 bg-surface px-8">
         <Text className="text-center text-[15px] font-semibold text-primary">Location access is needed to mark a mock test.</Text>
         <Text className="text-center text-[12px] text-slate-500">Enable it in Settings → Privacy → Location Services.</Text>
-        <Pressable onPress={() => router.back()} className="mt-2 min-h-[44px] items-center justify-center rounded-full border-[1.5px] border-slate-200 px-6">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Retry location"
+          onPress={() => {
+            lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, { type: "RETRY_LOCATION" });
+            const resume = failedLegRef.current === "location-unavailable" ? "preview" : failedLegRef.current;
+            legRef.current = resume;
+            setLeg(resume);
+            setPermissionDenied(false);
+            void startWatch();
+          }}
+          className="mt-2 min-h-[44px] items-center justify-center rounded-lg bg-accent px-6"
+        >
+          <Text className="text-[14px] font-semibold text-white">Retry location</Text>
+        </Pressable>
+        <Pressable onPress={() => void Linking.openSettings()} className="min-h-[44px] items-center justify-center rounded-lg border-[1.5px] border-slate-200 px-6">
+          <Text className="text-[14px] font-semibold text-primary">Open settings</Text>
+        </Pressable>
+        <Pressable onPress={() => router.back()} className="min-h-[44px] items-center justify-center px-6">
           <Text className="text-[14px] font-semibold text-primary">Back</Text>
         </Pressable>
       </View>
@@ -861,18 +1072,17 @@ export default function Mock() {
             className="absolute bottom-0 left-0 right-0 bg-card px-4 pt-3"
             style={{ paddingBottom: insets.bottom + 12, shadowColor: "#221F1C", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -3 } }}
           >
-            <Pressable onPress={beginTest} className="min-h-[52px] items-center justify-center rounded-full bg-accent active:bg-accent-pressed">
-              <Text className="text-[16px] font-semibold text-white">Begin mock test</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="Begin route" onPress={beginTest} className="min-h-[52px] items-center justify-center rounded-lg bg-accent active:bg-accent-pressed">
+              <Text className="text-[16px] font-semibold text-white">Begin route</Text>
             </Pressable>
           </View>
         ) : (
-          <ArrivalCard
-            title={route.name}
+          <RouteStartPrompt
+            visible
+            routeName={route.name}
             detail={`${route.distance_km?.toFixed(1)} km · ${route.estimated_minutes} min`}
-            primaryLabel="Begin mock test"
-            onPrimary={beginTest}
-            secondaryLabel="Not yet — hold here"
-            onSecondary={() => setHeld(true)}
+            onBegin={beginTest}
+            onWait={() => setHeld(true)}
           />
         )
       )}
@@ -1041,31 +1251,16 @@ export default function Mock() {
         </BottomSheetScrollView>
       </BottomSheet>
 
-      {/* Nothing was recorded, so there is nothing to mark. Said plainly rather
-          than scored: an empty test aggregates to a flawless one. */}
-      {noFix && (
-        <View className="absolute inset-0 items-center justify-center bg-primary/70 px-8">
-          <View className="w-full items-center gap-2 rounded-3xl bg-card px-6 py-7">
-            <Text className="text-center text-[16px] font-semibold text-primary">No GPS data was recorded</Text>
-            <Text className="text-center text-[12px] leading-5 text-slate-500">
-              Nothing was tracked on this drive, so it cannot be marked. Scoring it now would report a clean pass you have not been assessed for.
-            </Text>
-            <Pressable
-              onPress={() => setNoFix(false)}
-              className="mt-2 min-h-[44px] w-full items-center justify-center rounded-full bg-accent active:bg-accent-pressed"
-            >
-              <Text className="text-[15px] font-semibold text-white">Keep driving</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => router.back()}
-              className="min-h-[44px] w-full items-center justify-center rounded-full border-[1.5px] border-slate-200"
-            >
-              <Text className="text-[14px] font-semibold text-primary">Leave the test</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
       </>
+      )}
+
+      {leg === "finish-prompt" && route && (
+        <RouteFinishPrompt
+          visible
+          routeName={route.name}
+          onKeepDriving={keepDriving}
+          onEnd={endTest}
+        />
       )}
     </View>
   );

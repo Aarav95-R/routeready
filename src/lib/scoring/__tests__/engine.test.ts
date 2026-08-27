@@ -45,6 +45,7 @@ test("aggregate applies DVSA rule: 16 minors fail, any major fails", () => {
   const r = aggregate([minor, minor, major], 1234);
   expect(r).toMatchObject({ minors: 2, majors: 1, score: 50, durationSeconds: 1234 });
   expect(r.tags).toEqual(["Speeding"]);
+  expect(r.assessable).toBe(true);
 });
 
 const mkMinor = { kind: "speeding" as const, severity: "minor" as const, detail: "", tag: "Speeding" };

@@ -85,7 +85,10 @@ export const useMockTest = create<MockState>((set, get) => ({
       ...detectObservationFaults(outcomes.map((o) => ({ zone: route!.observation_zones[o.zoneIdx], tapped: o.tapped }))),
       ...marksToFaults(marks),
     ];
-    const result = aggregate(faults, Math.round((now - startedAt) / 1000), creditCount(marks));
+    const aggregateResult = aggregate(faults, Math.round((now - startedAt) / 1000), creditCount(marks));
+    const result: MockResult = samples.length > 0
+      ? aggregateResult
+      : { ...aggregateResult, assessable: false, passed: false, score: 0 };
     set({ phase: "finished", result, zoneOutcomes: outcomes, activeZoneIdx: null });
     return result;
   },

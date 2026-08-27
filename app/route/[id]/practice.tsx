@@ -11,7 +11,7 @@ import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
-import { advance, ANNOUNCE_M, ARRIVE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, rebaseRouteCursor, remainingM, routeProgress } from "@/lib/navigation";
+import { advance, ANNOUNCE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, rebaseRouteCursor, remainingM, routeProgress } from "@/lib/navigation";
 import { bearingDeg, cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath } from "@/lib/geo";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
 import { chooseRejoin, departureLine, initialOffRoute, REJOINED_LINE, SKIP_WARN_M, stepOffRoute, type OffRouteState, type Rejoin } from "@/lib/offRoute";
@@ -210,8 +210,27 @@ export default function Practice() {
     Speech.speak("You've reached the start.", { language: "en-GB" });
   }, []);
 
-  const beginRoute = useCallback(() => {
-    const lastFixAt = lifecycleRef.current.lastAcceptedFix?.timestamp ?? Date.now();
+  const beginRoute = useCallback(async () => {
+    let lastFixAt = lifecycleRef.current.lastAcceptedFix?.timestamp ?? 0;
+    if (Date.now() - lastFixAt > 5_000) {
+      try {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+        const raw = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+        const start = startRef.current;
+        const distanceToStart = start ? haversineM(raw, start) : Infinity;
+        const fix: RouteFix = {
+          lat: raw.lat, lng: raw.lng, timestamp: loc.timestamp,
+          accuracyM: loc.coords.accuracy ?? Infinity,
+          speedMph: mpsToMph(Math.max(0, loc.coords.speed ?? 0)),
+          routeDistanceM: distanceToStart, startDistanceM: distanceToStart,
+          finishDistanceM: distanceToStart, routeProgress: 0, trailIdx: 0,
+        };
+        lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+          type: "FIX_RECEIVED", fix, receivedAt: Math.max(Date.now(), loc.timestamp),
+        });
+        lastFixAt = fix.timestamp;
+      } catch { return; }
+    }
     const lifecycle = routeLifecycleReducer(lifecycleRef.current, {
       type: "BEGIN_REQUESTED",
       at: Math.max(Date.now(), lastFixAt),
@@ -394,6 +413,7 @@ export default function Practice() {
 
     const result = navFix({ ...fixInput, distanceToManeuverM, snap });
     const p = result.pos;
+    let acceptedTrailIdx = ph === "route" && !result.onRoute ? trailRef.current : result.trailIdx;
     setPos(p);
     mapBearingRef.current = result.mapBearing;
     mapBearingSeededRef.current = true;
@@ -414,7 +434,7 @@ export default function Practice() {
       const { state, event } = stepOffRoute(offRef.current, {
         routeDistM: routeSnap?.distM ?? Infinity,
         returnLegDistM: legSnap?.distM ?? null,
-        trailIdx: result.trailIdx,
+        trailIdx: acceptedTrailIdx,
         returnLegReady: returnLegRef.current !== null,
         timestampMs: loc.timestamp,
       });
@@ -422,7 +442,7 @@ export default function Practice() {
       setOffPhase(state.phase);
 
       if (event === "departed" || event === "recompute") {
-        const rejoin = chooseRejoin(coords, cum, p, departedBefore ?? result.trailIdx, mapBearingRef.current);
+        const rejoin = chooseRejoin(coords, cum, p, departedBefore ?? acceptedTrailIdx, mapBearingRef.current);
         rejoinRef.current = rejoin;
         returnLegRef.current = null;
         setReturnLeg(null);
@@ -445,11 +465,12 @@ export default function Practice() {
             progressFloorIdx: lifecycleRef.current.progressFloorIdx,
             stepIdx: indexRef.current,
           },
-          rejoinRef.current?.idx ?? result.trailIdx,
+          routeSnap?.idx ?? rejoinRef.current?.idx ?? acceptedTrailIdx,
           steps,
           coords,
         );
         trailRef.current = cursor.trailIdx;
+        acceptedTrailIdx = cursor.trailIdx;
         indexRef.current = cursor.stepIdx;
         setTrailIdx(cursor.trailIdx);
         setStepIndex(cursor.stepIdx);
@@ -465,6 +486,18 @@ export default function Practice() {
     // Waiting on the start line for the driver to tap Begin. The map keeps up
     // with them; nothing is narrated, and no leg is being navigated.
     if (ph === "at-start") {
+      const distanceToStart = start ? haversineM(raw, start) : Infinity;
+      lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
+        type: "FIX_RECEIVED",
+        fix: {
+          ...qualityProbe,
+          routeDistanceM: distanceToStart,
+          startDistanceM: distanceToStart,
+          finishDistanceM: distanceToStart,
+          trailIdx: 0,
+        },
+        receivedAt: Math.max(Date.now(), loc.timestamp),
+      });
       mapRef.current?.pushCamera(p, mapBearingRef.current, zoomRef.current);
       return;
     }
@@ -488,15 +521,17 @@ export default function Practice() {
     }
 
     if (ph === "route") {
-      const routeSnap = snapToPath(coords, raw, trailRef.current);
+      const routeSnap = offRef.current.phase === "off-route" || offRef.current.phase === "returning"
+        ? snapToPath(coords, raw, 0, coords.length)
+        : snapToPath(coords, raw, trailRef.current);
       const finish = coords.at(-1);
       const routeFix: RouteFix = {
         ...qualityProbe,
         routeDistanceM: routeSnap?.distM ?? Infinity,
         startDistanceM: start ? haversineM(p, start) : Infinity,
         finishDistanceM: finish ? haversineM(p, finish) : Infinity,
-        routeProgress: routeProgress(cum, result.trailIdx),
-        trailIdx: result.trailIdx,
+        routeProgress: routeProgress(cum, acceptedTrailIdx),
+        trailIdx: acceptedTrailIdx,
       };
       lifecycleRef.current = routeLifecycleReducer(lifecycleRef.current, {
         type: "FIX_RECEIVED",
@@ -530,7 +565,6 @@ export default function Practice() {
       setCrowRot(bearingDeg(p, start!) - mapBearingRef.current);
       zoomRef.current = NAV_ZOOM_FAR;
       mapRef.current?.pushCamera(p, mapBearingRef.current, NAV_ZOOM_FAR);
-      if (d <= ARRIVE_M && !completedRef.current) { completedRef.current = true; reachStart(); }
       return;
     }
 
@@ -547,8 +581,8 @@ export default function Practice() {
     setStepIndex(st!.index);
     setDistanceM(st!.distanceToManeuverM);
     setRemaining(remainingM(steps, p, st!.index));
-    trailRef.current = result.trailIdx;
-    setTrailIdx(result.trailIdx);
+    trailRef.current = acceptedTrailIdx;
+    setTrailIdx(acceptedTrailIdx);
 
     zoomRef.current = result.zoom;
     mapRef.current?.pushCamera(p, mapBearingRef.current, zoomRef.current);

@@ -43,6 +43,16 @@ test("finish computes duration and phase", () => {
   const r = useMockTest.getState().finish(90_000);
   expect(r.durationSeconds).toBe(90);
   expect(useMockTest.getState().phase).toBe("finished");
+  expect(r.assessable).toBe(true);
+});
+
+test("finishing without accepted samples is explicitly unassessable", () => {
+  const s = useMockTest.getState();
+  s.start(route, 0);
+  const result = s.finish(30_000);
+
+  expect(result.assessable).toBe(false);
+  expect(result.passed).toBe(false);
 });
 
 test("tapMirrors outside a zone is a no-op", () => {

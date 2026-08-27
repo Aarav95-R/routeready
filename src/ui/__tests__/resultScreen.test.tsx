@@ -27,7 +27,7 @@ function finishedRun(deviations: Deviation[]) {
   useMockTest.setState({
     deviations,
     result: {
-      passed: true, score: 92, minors: 0, majors: 0,
+      assessable: true, passed: true, score: 92, minors: 0, majors: 0,
       durationSeconds: 2400, faults: [], tags: [],
     } as never,
   });
@@ -70,4 +70,21 @@ test("departures are saved with the run, and never as mistakes", () => {
   // The whole point of the column: a departure cannot reach the marking sheet.
   expect(entry.mistakes).toEqual([]);
   expect(entry.mock_test_score).toBe(92);
+});
+
+test("an unassessable run is neither presented as clean nor saved", () => {
+  useMockTest.getState().reset();
+  useMockTest.setState({
+    result: {
+      assessable: false, passed: false, score: 0, minors: 0, majors: 0,
+      credits: 0, durationSeconds: 30, faults: [], tags: [],
+    },
+  });
+
+  render(<Result />);
+
+  expect(screen.getByText("Test not assessed")).toBeTruthy();
+  expect(screen.getByText("Not enough reliable GPS data was recorded.")).toBeTruthy();
+  expect(screen.queryByText(/clean drive/)).toBeNull();
+  expect(mockSaveProgress).not.toHaveBeenCalled();
 });

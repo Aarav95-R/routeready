@@ -48,6 +48,7 @@ type Candidate = { firstAt: number; lastAt: number; count: number };
 
 export type RouteLifecycleState = {
   phase: RouteLifecyclePhase;
+  phaseBeforeLocationFailure: RouteLifecyclePhase | null;
   lastAcceptedFix: RouteFix | null;
   startedAt: number | null;
   finishCandidateAt: number | null;
@@ -81,6 +82,7 @@ export type RouteLifecycleEvent =
 export function createRouteLifecycle(): RouteLifecycleState {
   return {
     phase: "preview",
+    phaseBeforeLocationFailure: null,
     lastAcceptedFix: null,
     startedAt: null,
     finishCandidateAt: null,
@@ -316,13 +318,19 @@ export function routeLifecycleReducer(
 
     case "LOCATION_FAILED":
       if (state.phase === "complete" || state.phase === "abandoned") return state;
-      return appendEffect({ ...state, phase: "location-unavailable" }, {
+      return appendEffect({
+        ...state,
+        phase: "location-unavailable",
+        phaseBeforeLocationFailure: state.phase,
+      }, {
         type: "location-unavailable",
         reason: event.reason,
       });
 
     case "RETRY_LOCATION":
-      return state.phase === "location-unavailable" ? { ...state, phase: "preview" } : state;
+      return state.phase === "location-unavailable"
+        ? { ...state, phase: state.phaseBeforeLocationFailure ?? "preview", phaseBeforeLocationFailure: null }
+        : state;
 
     case "ABANDON":
       return state.phase === "complete" ? state : { ...state, phase: "abandoned" };

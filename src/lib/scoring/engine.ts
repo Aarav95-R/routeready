@@ -4,7 +4,7 @@ import type { ObservationZone, SpeedProfileSegment } from "@/types/db";
 export type GpsSample = { lat: number; lng: number; speedMps: number; t: number };
 export type Fault = { kind: "speeding" | "observation" | "examiner"; severity: "minor" | "major"; detail: string; tag: string };
 export type MockResult = {
-  passed: boolean; score: number; minors: number; majors: number; credits: number;
+  assessable: boolean; passed: boolean; score: number; minors: number; majors: number; credits: number;
   faults: Fault[]; tags: string[]; durationSeconds: number;
 };
 export const SUSTAINED_MS = 5000;
@@ -69,6 +69,7 @@ export function aggregate(faults: Fault[], durationSeconds: number, credits = 0)
   const bounded = Math.max(0, Math.min(100, raw));
 
   return {
+    assessable: true,
     passed,
     // A failed test must not read like a comfortable pass, however many
     // credits were banked.

@@ -32,7 +32,7 @@ jest.mock("@/services/routesRepo", () => ({ getRoute: (...a: unknown[]) => mockG
 const mockFetchDirections = jest.fn();
 jest.mock("@/services/directions", () => ({ fetchDirections: (...a: unknown[]) => mockFetchDirections(...a) }));
 
-import { emitFix, resetLocationMock, setLastKnownPosition } from "../../test/locationMock";
+import { emitFix, failPositionWatch, resetLocationMock, setCurrentPosition, setLastKnownPosition } from "../../test/locationMock";
 import { buildNavSteps } from "@/lib/navsteps";
 import { useMockTest } from "@/stores/mockTestStore";
 import Mock from "../../../app/route/[id]/mock";
@@ -71,7 +71,7 @@ const approach = {
 
 const drive = async (path: LatLng[]) => {
   for (const p of path) {
-    await act(async () => { emitFix(p.lat, p.lng, 10); });
+    await act(async () => { emitFix(p.lat, p.lng, { speedMps: 0 }); });
   }
 };
 
@@ -104,19 +104,18 @@ const mount = async () => {
 const beginAtStart = async () => {
   setLastKnownPosition(A.lat, A.lng);
   await mount();
-  await waitFor(() => expect(screen.getByText("Start")).toBeTruthy());
-  await act(async () => { fireEvent.press(screen.getByText("Start")); });
+  await drive([A, A, A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Begin route" })); });
 };
 
-test("arriving at the start asks, and marks nothing until it is answered", async () => {
+test("live preview arrival asks, and marks nothing until it is answered", async () => {
   setLastKnownPosition(51.4980, -0.100);
   await mount();
 
-  await act(async () => { fireEvent.press(screen.getByText("Guide me to the start")); });
-  await drive(APPROACH_LL);
+  await drive([A, A, A]);
 
-  expect(screen.getByText("You're at the start line")).toBeTruthy();
-  expect(screen.getByText("Begin mock test")).toBeTruthy();
+  expect(screen.getByText("Ready to begin?")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Begin route" })).toBeTruthy();
   // Nothing is scored against a driver who has not been told the test began.
   expect(useMockTest.getState().phase).toBe("idle");
   expect(useMockTest.getState().samples).toHaveLength(0);
@@ -126,12 +125,56 @@ test("the test begins only once the driver says so", async () => {
   setLastKnownPosition(51.4980, -0.100);
   await mount();
 
-  await act(async () => { fireEvent.press(screen.getByText("Guide me to the start")); });
-  await drive(APPROACH_LL);
-  await act(async () => { fireEvent.press(screen.getByText("Begin mock test")); });
+  await drive([A, A, A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Begin route" })); });
 
   expect(useMockTest.getState().phase).toBe("running");
-  expect(screen.queryByText("You're at the start line")).toBeNull();
+  expect(screen.queryByText("Ready to begin?")).toBeNull();
+});
+
+test("a delayed Begin refreshes the start fix before starting", async () => {
+  await mount();
+  await drive([A, A, A]);
+  setCurrentPosition(A.lat, A.lng);
+  const now = Date.now();
+  const dateSpy = jest.spyOn(Date, "now").mockReturnValue(now + 10_000);
+  try {
+    await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Begin route" })); });
+  } finally {
+    dateSpy.mockRestore();
+  }
+
+  expect(useMockTest.getState().phase).toBe("running");
+});
+
+test("moving away from the confirmed start prevents Begin", async () => {
+  await mount();
+  await drive([A, A, A]);
+  await drive([B]);
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Begin route" })); });
+
+  expect(useMockTest.getState().phase).toBe("idle");
+});
+
+test("a live location failure stops the mock flow with a clear recovery message", async () => {
+  await mount();
+
+  await act(async () => { failPositionWatch("location unavailable"); });
+
+  expect(screen.getByText("Location access is needed to mark a mock test.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Retry location" })).toBeTruthy();
+  expect(useMockTest.getState().phase).toBe("idle");
+});
+
+test("retrying a watch failure resumes an active test lifecycle", async () => {
+  await beginAtStart();
+  await act(async () => { failPositionWatch("location unavailable"); });
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Retry location" })); });
+
+  await drive([...LOOP, A, A]);
+
+  expect(screen.getByRole("button", { name: "End route" })).toBeTruthy();
 });
 
 // A loop's finish is its start, so a radius-only check would score the test
@@ -144,12 +187,28 @@ test("standing on the start line does not end the test", async () => {
   expect(useMockTest.getState().phase).toBe("running");
 });
 
-test("closing the loop scores the test and shows the result, with no tap", async () => {
+test("inaccurate fixes never become mock-test evidence or advance completion", async () => {
   await beginAtStart();
-  await drive(LOOP);
 
-  expect(useMockTest.getState().phase).toBe("finished");
-  expect(useMockTest.getState().result).not.toBeNull();
+  for (const p of LOOP) {
+    await act(async () => { emitFix(p.lat, p.lng, { speedMps: 0, accuracyM: 80 }); });
+  }
+
+  expect(useMockTest.getState().samples).toHaveLength(0);
+  expect(screen.queryByRole("button", { name: "End route" })).toBeNull();
+  expect(mockReplace).not.toHaveBeenCalled();
+});
+
+test("closing the loop waits for an explicit end before showing the result", async () => {
+  await beginAtStart();
+  await drive([...LOOP, A, A]);
+
+  expect(useMockTest.getState().phase).toBe("running");
+  expect(useMockTest.getState().result).toBeNull();
+  expect(screen.getByRole("button", { name: "End route" })).toBeTruthy();
+  expect(mockReplace).not.toHaveBeenCalled();
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "End route" })); });
   expect(mockReplace).toHaveBeenCalledWith("/route/route-1/result");
 });
 
@@ -158,7 +217,9 @@ test("closing the loop scores the test and shows the result, with no tap", async
 // screen on itself.
 test("sitting at the finish scores the test exactly once", async () => {
   await beginAtStart();
-  await drive([...LOOP, A, A, A, A]);
+  await drive([...LOOP, A, A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "End route" })); });
+  await drive([A, A, A, A]);
 
   expect(mockReplace).toHaveBeenCalledTimes(1);
 });
@@ -198,4 +259,34 @@ test("leaving the route records no GPS position, because none is ever read", asy
   const [deviation] = useMockTest.getState().deviations;
   expect(deviation).toBeDefined();
   expect(Object.keys(deviation).sort()).toEqual(["atIdx", "seconds", "skippedM"]);
+});
+
+test("a large forward rejoin searches the full route and clears recovery", async () => {
+  await beginAtStart();
+  await drive(side(A, B, 5));
+  await drive([
+    { lat: 51.4975, lng: -0.0955 },
+    { lat: 51.4972, lng: -0.0950 },
+    { lat: 51.4970, lng: -0.0945 },
+  ]);
+  await drive([LOOP[39], LOOP[40]]);
+
+  expect(screen.queryByText("Off route")).toBeNull();
+  expect(useMockTest.getState().deviations).toHaveLength(1);
+  expect(screen.getByTestId("source:trail").props.shape.features[0].geometry.coordinates.length).toBeGreaterThanOrEqual(40);
+});
+
+test("finishing while still off route flushes the open deviation", async () => {
+  await beginAtStart();
+  await drive(side(A, B, 6));
+  await drive([
+    { lat: 51.4975, lng: -0.0955 },
+    { lat: 51.4972, lng: -0.0950 },
+    { lat: 51.4970, lng: -0.0945 },
+  ]);
+
+  await act(async () => { fireEvent.press(screen.getByText("Finish test")); });
+
+  expect(useMockTest.getState().deviations).toHaveLength(1);
+  expect(mockReplace).toHaveBeenCalledTimes(1);
 });

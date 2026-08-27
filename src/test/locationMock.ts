@@ -83,7 +83,7 @@ export const resetLocationMock = () => {
 };
 
 export const setCurrentPosition = (lat: number, lng: number) =>
-  getCurrentPositionAsync.mockResolvedValue({ coords: coords(lat, lng), timestamp: 0 });
+  getCurrentPositionAsync.mockImplementation(async () => ({ coords: coords(lat, lng), timestamp: Date.now() }));
 
 export const setLastKnownPosition = (lat: number, lng: number) =>
   getLastKnownPositionAsync.mockResolvedValue({ coords: coords(lat, lng) });

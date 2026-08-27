@@ -212,6 +212,9 @@ test("watch failures become recoverable without completing", () => {
     type: "location-unavailable",
     reason: "watch-failed",
   });
+
+  state = send(state, { type: "RETRY_LOCATION" });
+  expect(state.phase).toBe("active");
 });
 
 test("acknowledging an effect removes only that effect", () => {

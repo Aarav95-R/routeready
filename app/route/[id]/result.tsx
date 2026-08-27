@@ -20,9 +20,10 @@ export default function Result() {
 
   useEffect(() => {
     if (!result) return;
-    Haptics.notificationAsync(
-      result.passed ? Haptics.NotificationFeedbackType.Success : Haptics.NotificationFeedbackType.Error
-    );
+    Haptics.notificationAsync(result.assessable && result.passed
+      ? Haptics.NotificationFeedbackType.Success
+      : Haptics.NotificationFeedbackType.Error);
+    if (!result.assessable) return;
     saveProgress({
       route_id: id, mock_test_score: result.score,
       mistakes: result.tags, duration_seconds: result.durationSeconds,
@@ -43,22 +44,25 @@ export default function Result() {
       <ScrollView contentContainerClassName="items-center gap-3 px-4 pb-8 pt-6">
         <Animated.View
           entering={popIn(150)}
-          className={`h-28 w-28 items-center justify-center rounded-full border-[5px] ${result.passed ? "border-accent" : "border-danger"}`}
+          className={`h-28 w-28 items-center justify-center rounded-full border-[5px] ${!result.assessable ? "border-warning" : result.passed ? "border-accent" : "border-danger"}`}
         >
-          <Text className={`text-[13px] font-bold tracking-[0.18em] ${result.passed ? "text-emerald-400" : "text-red-400"}`}>
-            {result.passed ? "PASS" : "FAIL"}
+          <Text className={`text-[13px] font-bold ${!result.assessable ? "text-warning" : result.passed ? "text-emerald-400" : "text-red-400"}`}>
+            {!result.assessable ? "NOT ASSESSED" : result.passed ? "PASS" : "FAIL"}
           </Text>
           <Text className="text-[11px] text-slate-400">{result.minors} minors</Text>
         </Animated.View>
         <Animated.View entering={enterAfter(350)} className="items-center">
           <Text className="text-[21px] font-semibold tracking-tight text-surface" style={{ fontFamily: FACES["600"] }}>
-            {result.passed ? "You'd have passed" : "Not this time"}
+            {!result.assessable ? "Test not assessed" : result.passed ? "You'd have passed" : "Not this time"}
           </Text>
-          <Text className="text-[12px] text-slate-400">
+          {!result.assessable && (
+            <Text className="text-[12px] text-slate-400">Not enough reliable GPS data was recorded.</Text>
+          )}
+          {result.assessable && <Text className="text-[12px] text-slate-400">
             {result.minors} minor{result.minors === 1 ? "" : "s"} · {result.majors} major{result.majors === 1 ? "" : "s"} · {mins} min {secs} s · score {result.score}
-          </Text>
+          </Text>}
         </Animated.View>
-        {wentWell.length > 0 && (
+        {result.assessable && wentWell.length > 0 && (
           <Animated.View entering={enterAfter(400)} className="w-full">
             <Card className="gap-2">
               <Text className="text-[13px] font-semibold text-accent">What went well</Text>
@@ -71,7 +75,7 @@ export default function Result() {
             </Card>
           </Animated.View>
         )}
-        {result.faults.map((f, i) => {
+        {result.assessable && result.faults.map((f, i) => {
           const elapsed = faultTimes[i];
           return (
             <Animated.View key={i} entering={enterAfter(450 + i * 90)} className="w-full">
@@ -89,7 +93,7 @@ export default function Result() {
             </Animated.View>
           );
         })}
-        {result.faults.length === 0 && (
+        {result.assessable && result.faults.length === 0 && (
           <Animated.View entering={enterAfter(450)} className="w-full">
             <Card><Text className="text-center text-[13px] font-semibold text-accent">A clean drive — no faults recorded</Text></Card>
           </Animated.View>
