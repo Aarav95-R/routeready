@@ -17,7 +17,19 @@ export type RoutePreviewCardProps = {
   /** Directions are being fetched — every button is inert until they land. */
   busy: boolean;
   onGuideToStart: () => void;
-  onStartHere: () => void;
+  /**
+   * "Start directly from here" — set off now and steer to the start on a
+   * bearing, because the driver would rather not be routed there.
+   */
+  onStartUnguided: () => void;
+  /**
+   * The collapsed "Start", offered only when the driver is already on the
+   * start line. A separate callback rather than a second use of the one
+   * above: they read alike and mean opposite things — one opens a drive to
+   * the start, the other says there is no drive to make — and sharing a prop
+   * is what put a full-screen bearing arrow over a car parked on the start.
+   */
+  onBeginAtStart: () => void;
   onBack: () => void;
 };
 
@@ -32,7 +44,7 @@ export type RoutePreviewCardProps = {
  */
 export function RoutePreviewCard({
   route, isLoop, distToStart, atStart, busy,
-  onGuideToStart, onStartHere, onBack,
+  onGuideToStart, onStartUnguided, onBeginAtStart, onBack,
 }: RoutePreviewCardProps) {
   const insets = useSafeAreaInsets();
 
@@ -50,7 +62,7 @@ export function RoutePreviewCard({
       </View>
 
       {atStart ? (
-        <Pressable disabled={busy} onPress={onStartHere} className="mt-1 min-h-[52px] flex-row items-center justify-center gap-2 rounded-full bg-accent active:bg-accent-pressed">
+        <Pressable accessibilityRole="button" accessibilityLabel="Start" disabled={busy} onPress={onBeginAtStart} className="mt-1 min-h-[52px] flex-row items-center justify-center gap-2 rounded-full bg-accent active:bg-accent-pressed">
           <Ionicons name="navigate" size={18} color="#fff" /><Text className="text-[16px] font-semibold text-white">Start</Text>
         </Pressable>
       ) : (
@@ -64,7 +76,7 @@ export function RoutePreviewCard({
           <Pressable disabled={busy} onPress={onGuideToStart} className="min-h-[52px] flex-row items-center justify-center gap-2 rounded-full bg-accent active:bg-accent-pressed">
             <Ionicons name="navigate" size={18} color="#fff" /><Text className="text-[16px] font-semibold text-white">{busy ? "Finding route…" : "Guide me to the start"}</Text>
           </Pressable>
-          <Pressable disabled={busy} onPress={onStartHere} className="min-h-[50px] flex-row items-center justify-center gap-2 rounded-full border-[1.5px] border-slate-200 bg-card">
+          <Pressable accessibilityRole="button" accessibilityLabel="Start directly from here" disabled={busy} onPress={onStartUnguided} className="min-h-[50px] flex-row items-center justify-center gap-2 rounded-full border-[1.5px] border-slate-200 bg-card">
             <Ionicons name="arrow-forward" size={17} color={colors.primary} /><Text className="text-[15px] font-semibold text-primary">Start directly from here</Text>
           </Pressable>
         </>

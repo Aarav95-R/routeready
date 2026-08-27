@@ -13,7 +13,7 @@ export type DriveChromeProps = {
   remainingLabel: string;
   following: boolean;
   onRecenter: () => void;
-  onStop?: () => void;
+  onExit?: () => void;
   tone?: "go" | "off";
 };
 
@@ -26,7 +26,7 @@ export function DriveChrome({
   remainingLabel,
   following,
   onRecenter,
-  onStop,
+  onExit,
   tone = "go",
 }: DriveChromeProps) {
   const insets = useSafeAreaInsets();
@@ -105,14 +105,20 @@ export function DriveChrome({
           <Text className="text-[10px] font-bold uppercase text-slate-500">Speed</Text>
           <Text className="text-[16px] font-semibold text-primary">{Math.max(0, Math.round(speedMph))} mph</Text>
         </View>
-        {onStop && (
+        {/* Leaving, not pausing — so a close mark rather than the stop square,
+            which on a screen full of driving reads as "hold here". Solid and
+            worded rather than a tinted icon square: at a glance from the
+            driver's seat an unlabelled glyph in the corner of the rail was not
+            reading as the way out at all. */}
+        {onExit && (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Stop route"
-            onPress={onStop}
-            className="ml-3 h-10 w-10 items-center justify-center rounded-lg bg-red-50 active:bg-red-100"
+            accessibilityLabel="Exit route"
+            onPress={onExit}
+            className="ml-3 min-h-[44px] flex-row items-center gap-1.5 rounded-full bg-danger px-4 active:opacity-80"
           >
-            <Ionicons name="stop" size={18} color={colors.danger} />
+            <Ionicons name="close" size={17} color="#fff" />
+            <Text className="text-[15px] font-semibold text-white">Exit</Text>
           </Pressable>
         )}
       </View>

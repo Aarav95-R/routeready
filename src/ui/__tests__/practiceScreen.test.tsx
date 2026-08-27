@@ -1,3 +1,4 @@
+import { Alert } from "react-native";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import type { LatLng } from "@/lib/geo";
 import type { Route } from "@/types/db";
@@ -25,9 +26,10 @@ jest.mock("@gorhom/bottom-sheet", () => {
 });
 
 const mockBack = jest.fn();
+const mockDismissTo = jest.fn();
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "route-1" }),
-  useRouter: () => ({ back: mockBack, push: jest.fn(), replace: jest.fn() }),
+  useRouter: () => ({ back: mockBack, push: jest.fn(), replace: jest.fn(), dismissTo: mockDismissTo }),
 }));
 
 const mockGetRoute = jest.fn();
@@ -87,6 +89,7 @@ const drive = async (path: LatLng[]) => {
 beforeEach(() => {
   resetLocationMock();
   mockBack.mockClear();
+  mockDismissTo.mockClear();
   mockGetRoute.mockResolvedValue({ data: { route, hazards: [] }, stale: false });
   mockFetchDirections.mockResolvedValue(approach);
 });
@@ -139,6 +142,37 @@ test("the drive begins only once the driver says so", async () => {
 
   expect(screen.queryByText("Ready to begin?")).toBeNull();
   expect(screen.getByText("Remaining")).toBeTruthy();
+});
+
+// Home, not the screen underneath. back() would land on the route's own start
+// page — "how do you want to drive this today?" — which is not a question for
+// a driver who has just pulled over and quit.
+test("exiting mid-drive unwinds the stack to Home", async () => {
+  setLastKnownPosition(A.lat, A.lng);
+  await mount();
+  await drive([A, A, A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Begin route" })); });
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Exit route" })); });
+
+  expect(mockDismissTo).toHaveBeenCalledWith("/(tabs)");
+  expect(mockBack).not.toHaveBeenCalled();
+});
+
+// Nothing is recorded on a practice route, so there is nothing a mistap can
+// destroy and nothing to ask about.
+test("exiting a practice drive does not stop to ask", async () => {
+  const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+  setLastKnownPosition(A.lat, A.lng);
+  await mount();
+  await drive([A, A, A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Begin route" })); });
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Exit route" })); });
+
+  expect(alert).not.toHaveBeenCalled();
+  expect(mockDismissTo).toHaveBeenCalledWith("/(tabs)");
+  alert.mockRestore();
 });
 
 // The defect this whole change exists for: a loop's finish IS its start, so a
@@ -298,4 +332,76 @@ test("the screen is held awake for the length of the drive", async () => {
   await mount();
 
   expect(mockKeepAwake).toHaveBeenCalled();
+});
+
+// ── Tapping Start on the start line ───────────────────────────────────────
+//
+// The defect these close: Start and "Start directly from here" shared one
+// handler, so tapping Start while parked on the start opened a bearing-guided
+// approach to a point the car was standing on — and painted a 96 pt arrow
+// across the map until the lifecycle confirmed, which between START_RADIUS_M
+// (30 m) and AT_START_M (60 m) it never does.
+
+// One fix is enough for the card to offer Start: previewLoc lands on the first
+// one and AT_START_M is 60 m. The lifecycle needs three, spanning three
+// seconds — so this is the ordinary case, a driver tapping as soon as the
+// button appears.
+test("tapping Start on the start line never opens the approach", async () => {
+  setLastKnownPosition(A.lat, A.lng);
+  await mount();
+  await drive([A]);
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Start" })); });
+
+  // Both of these are the render condition for the bearing arrow.
+  expect(screen.queryByText("Heading to the start")).toBeNull();
+  expect(screen.queryByText("Head toward the start point")).toBeNull();
+  expect(screen.getByText("Confirming your position")).toBeTruthy();
+});
+
+test("the confirmed fix hands the start line straight to the begin prompt", async () => {
+  setLastKnownPosition(A.lat, A.lng);
+  await mount();
+  await drive([A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Start" })); });
+
+  await drive([A, A]);
+
+  expect(screen.queryByText("Confirming your position")).toBeNull();
+  expect(screen.getByText("Ready to begin?")).toBeTruthy();
+});
+
+// 45 m north of the start: inside AT_START_M, so the card offers Start, and
+// outside START_RADIUS_M, so the lifecycle will never confirm. This is the band
+// the arrow used to sit in forever.
+const DEAD_BAND = { lat: A.lat + 0.000404, lng: A.lng };
+
+test("the dead band between the two start radii says why nothing is happening", async () => {
+  setLastKnownPosition(DEAD_BAND.lat, DEAD_BAND.lng);
+  await mount();
+  await drive([DEAD_BAND, DEAD_BAND, DEAD_BAND, DEAD_BAND]);
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Start" })); });
+
+  expect(screen.queryByText("Heading to the start")).toBeNull();
+  expect(screen.getByText(/Pull up within 30 m of the start/)).toBeTruthy();
+  // And it is not a trap: there is a way back to the card. At 45 m the card is
+  // still collapsed to Start, because AT_START_M is 60.
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Cancel" })); });
+  expect(screen.queryByText("Confirming your position")).toBeNull();
+  expect(screen.getByRole("button", { name: "Start" })).toBeTruthy();
+});
+
+// The unguided path still opens the approach — that is what the button is for.
+// Nothing is drawn over the map any more; the deck carries the instruction.
+test("starting unguided from far away still opens the approach", async () => {
+  mockFetchDirections.mockRejectedValue(new Error("no directions"));
+  setLastKnownPosition(51.4900, -0.100);
+  await mount();
+  await drive([{ lat: 51.4900, lng: -0.100 }]);
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Start directly from here" })); });
+
+  expect(screen.getByText("Heading to the start")).toBeTruthy();
+  expect(screen.getByText("Head toward the start point")).toBeTruthy();
 });

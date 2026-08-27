@@ -12,16 +12,18 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
 import { advance, ANNOUNCE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, rebaseRouteCursor, remainingM, routeProgress } from "@/lib/navigation";
-import { bearingDeg, cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath } from "@/lib/geo";
+import { cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath } from "@/lib/geo";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
+import { HOME_HREF } from "@/lib/exitRoute";
 import { chooseRejoin, departureLine, initialOffRoute, REJOINED_LINE, SKIP_WARN_M, stepOffRoute, type OffRouteState, type Rejoin } from "@/lib/offRoute";
 import { stitchLegs } from "@/lib/navsteps";
-import { createRouteLifecycle, qualifyLocationFix, routeLifecycleReducer, type RouteFix } from "@/lib/routeLifecycle";
+import { createRouteLifecycle, qualifyLocationFix, routeLifecycleReducer, START_RADIUS_M, type RouteFix } from "@/lib/routeLifecycle";
 import type { Hazard, NavStep, Route } from "@/types/db";
 import { DriveChrome } from "@/ui/DriveChrome";
 import { RoutePreviewCard } from "@/ui/RoutePreviewCard";
 import { RouteFinishPrompt } from "@/ui/RouteFinishPrompt";
 import { RouteStartPrompt } from "@/ui/RouteStartPrompt";
+import { colors } from "@/ui/theme";
 import { FACES } from "@/ui/type";
 import { NavMap, NavMapHandle } from "@/ui/NavMap";
 
@@ -62,6 +64,11 @@ export default function Practice() {
   // same action, so a learner who wants a minute at the kerb gets one without
   // the drive becoming two taps away again.
   const [held, setHeld] = useState(false);
+  // The driver tapped Start on the start line and the lifecycle has not
+  // confirmed the fix yet. Still the preview phase — no leg is being
+  // navigated — but the card gives way to a line saying what is being waited
+  // on, because a card that does nothing when tapped reads as a broken button.
+  const [confirming, setConfirming] = useState(false);
   const [approach, setApproach] = useState<Directions | null>(null);
   const [fallback, setFallback] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -82,7 +89,7 @@ export default function Practice() {
   const [trailIdx, setTrailIdx] = useState(0);
   const [speedMph, setSpeedMph] = useState(0);
   const [directDist, setDirectDist] = useState<number | null>(null);
-  const [crowRot, setCrowRot] = useState(0);
+
   const [following, setFollowing] = useState(true);
   // Degrees to draw the user icon at, measured against the rotated map rather
   // than against north. Held in state, not a ref, because the compass has to
@@ -173,6 +180,13 @@ export default function Practice() {
     Speech.stop();
   }, []);
   useEffect(() => stopWatching, [stopWatching]);
+
+  // Quitting the drive. Nothing is recorded on a practice route, so there is
+  // nothing to lose and nothing to confirm — the tap is the decision.
+  const exitDrive = useCallback(() => {
+    stopWatching();
+    router.dismissTo(HOME_HREF);
+  }, [stopWatching, router]);
 
   const resetLeg = (startIndex: number) => {
     indexRef.current = startIndex;
@@ -558,11 +572,8 @@ export default function Practice() {
     if (isFallback) {
       const d = haversineM(p, start!);
       setDirectDist(Math.round(d));
-      // Screen-space overlay, so subtract the bearing the map is actually
-      // rotated to — the map bearing the camera is given below, not the raw
-      // compass, which runs tens of degrees ahead of it through a turn. This
-      // arrow is the only navigation aid the fallback path has.
-      setCrowRot(bearingDeg(p, start!) - mapBearingRef.current);
+      // Zoomed out rather than pointed at: with no line to follow, the wider
+      // frame showing both the car and the way it is facing is the guidance.
       zoomRef.current = NAV_ZOOM_FAR;
       mapRef.current?.pushCamera(p, mapBearingRef.current, NAV_ZOOM_FAR);
       return;
@@ -664,6 +675,26 @@ export default function Practice() {
     return true;
   };
 
+  /**
+   * The driver is already on the start line, so there is no drive to the start
+   * to make and no approach to open.
+   *
+   * This used to share startDirectly with "Start directly from here", which
+   * meant tapping Start while parked on the start put the screen into a
+   * bearing-guided approach to a point the car was standing on — and painted
+   * the fallback arrow across the map for as long as the lifecycle took to
+   * confirm, which between START_RADIUS_M and AT_START_M is forever.
+   *
+   * There is nothing for it to do but acknowledge the tap. The preview watch
+   * is already feeding the lifecycle and already calls reachStart() the moment
+   * three good fixes agree; all this adds is somewhere to look while it does.
+   */
+  const beginAtStartLine = useCallback(async () => {
+    if (!(await ensurePermission())) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setConfirming(true);
+  }, []);
+
   const startDirectly = useCallback(async () => {
     if (!(await ensurePermission())) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -759,7 +790,7 @@ export default function Practice() {
       </NavMap>
 
       {/* ---------- PREVIEW ---------- */}
-      {phase === "preview" && route && (
+      {phase === "preview" && !confirming && route && (
         <RoutePreviewCard
           route={route}
           isLoop={isLoop}
@@ -767,9 +798,44 @@ export default function Practice() {
           atStart={atStart}
           busy={busy}
           onGuideToStart={guideToStart}
-          onStartHere={startDirectly}
+          onStartUnguided={startDirectly}
+          onBeginAtStart={beginAtStartLine}
           onBack={() => router.back()}
         />
+      )}
+
+      {/* ---------- CONFIRMING THE START LINE ---------- */}
+      {/* Still the preview phase: nothing is being navigated, and reachStart()
+          replaces this with the Ready-to-begin prompt as soon as the lifecycle
+          is satisfied. The distance is named rather than hidden behind a
+          spinner — inside START_RADIUS_M it explains a wait of a few seconds,
+          and outside it, it is the only thing that tells a driver parked 45 m
+          away why nothing is happening. */}
+      {phase === "preview" && confirming && (
+        <View
+          className="absolute bottom-0 left-0 right-0 gap-1.5 rounded-t-3xl bg-card px-4 pt-4"
+          style={{ paddingBottom: insets.bottom + 14, shadowColor: "#221F1C", shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } }}
+        >
+          <View className="flex-row items-center gap-2">
+            <Ionicons name="locate" size={15} color={colors.accent} />
+            <Text className="text-[14px] font-semibold text-primary">Confirming your position</Text>
+          </View>
+          <Text className="text-[12px] leading-4 text-slate-500">
+            {distToStart === null
+              ? "Waiting for a steady GPS fix. Hold still for a few seconds."
+              : distToStart > START_RADIUS_M
+                ? `You're ${formatDistance(distToStart)} away. Pull up within ${START_RADIUS_M} m of the start and hold still.`
+                : `You're ${formatDistance(distToStart)} from the start. Hold still for a few seconds.`}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cancel"
+            onPress={() => setConfirming(false)}
+            className="min-h-[40px] items-center justify-center"
+          >
+            <Text className="text-[13px] font-semibold text-slate-500">Cancel</Text>
+          </Pressable>
+        </View>
       )}
 
       {/* ---------- AT THE START ---------- */}
@@ -794,14 +860,11 @@ export default function Practice() {
         )
       )}
 
-      {/* ---------- APPROACH FALLBACK ---------- */}
-      {phase === "approach" && fallback && (
-        <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
-          <View style={{ transform: [{ rotate: `${crowRot}deg` }] }}>
-            <Ionicons name="navigate" size={96} color="rgba(5,150,105,0.85)" />
-          </View>
-        </View>
-      )}
+      {/* Nothing is drawn over the map on the fallback approach. There used to
+          be a bearing arrow here — 96 pt and centred, then a 60 pt dial above
+          the rail — and both read as a logo stamped on the drive rather than
+          as guidance. The deck carries "Head toward the start point" and the
+          rail carries the distance; the map itself stays clear. */}
 
       {/* ---------- APPROACH / ROUTE ---------- */}
       {(phase === "approach" || phase === "route") && (
@@ -831,7 +894,7 @@ export default function Practice() {
           }
           following={following}
           onRecenter={recenter}
-          onStop={() => { stopWatching(); router.back(); }}
+          onExit={exitDrive}
         />
       )}
 

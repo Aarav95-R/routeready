@@ -12,11 +12,12 @@ import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
 import { useMockTest } from "@/stores/mockTestStore";
 import { EXAMINER_CATEGORIES, habitualWarnings, minorCountsByCategory, type MarkLevel } from "@/lib/examiner";
-import { bearingDeg, cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath } from "@/lib/geo";
+import { cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath } from "@/lib/geo";
 import { advance, ANNOUNCE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, rebaseRouteCursor, remainingM, routeProgress } from "@/lib/navigation";
+import { confirmExitMockTest, HOME_HREF } from "@/lib/exitRoute";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
 import { chooseRejoin, departureLine, initialOffRoute, REJOINED_LINE, SKIP_WARN_M, stepOffRoute, type OffRouteState, type Rejoin } from "@/lib/offRoute";
-import { createRouteLifecycle, qualifyLocationFix, routeLifecycleReducer, type RouteFix } from "@/lib/routeLifecycle";
+import { createRouteLifecycle, qualifyLocationFix, routeLifecycleReducer, START_RADIUS_M, type RouteFix } from "@/lib/routeLifecycle";
 import type { ObservationZone, Route } from "@/types/db";
 import { EXAMINER_BAR_H, ExaminerBar, ExaminerCategoryList, ExaminerWarningPill } from "@/ui/ExaminerSheet";
 import { ManeuverBanner } from "@/ui/ManeuverBanner";
@@ -100,16 +101,19 @@ const CONTROLS_BOTTOM = 150;
 // the road ahead the way the toast and the controls are, so it does not need
 // to live near the bottom stack at all. Measured from the top of the screen:
 //
-//   banner       [insets.top + 6,  insets.top + 40]
-//   zone toast    insets.top + 56                    one line, ~28 pt
-//   warning pill  insets.top + 92                     36 pt clear of the toast
+//   banner       [insets.top + 6,  insets.top + 46]
+//   zone toast    insets.top + 62                    one line, ~28 pt
+//   warning pill  insets.top + 98                     36 pt clear of the toast
+//
+// The banner grew by 6 pt when its bare ✕ became a worded Exit pill, and both
+// gaps below moved with it rather than being left to close up.
 // While off route the amber banner takes the top slot, and everything
 // stacked below it moves down by its height plus a gap. Measured from
 // ManeuverBanner: the eyebrow strip is 20 pt and the manoeuvre row is a
 // 48 pt tile in 14 pt of padding, so 96 clears both with the gap included.
 const OFF_ROUTE_BANNER_H = 96;
-const ZONE_TOAST_TOP_GAP = 56;
-const PILL_TOP_GAP = 92;
+const ZONE_TOAST_TOP_GAP = 62;
+const PILL_TOP_GAP = 98;
 
 // Hoisted so the compass tick — about fifteen re-renders a second — does not
 // hand the BottomSheet a fresh style object each time.
@@ -139,7 +143,7 @@ export default function Mock() {
   useKeepAwake();
   const {
     startedAt, activeZoneIdx, marks,
-    start, onSample, tapMirrors, addMark, undoMark, finish, addDeviation,
+    start, onSample, tapMirrors, addMark, undoMark, finish, addDeviation, reset,
   } = useMockTest();
 
   // The way back onto the route, and how far off it we are.
@@ -158,6 +162,11 @@ export default function Mock() {
   // same action, so a learner who wants a minute at the kerb gets one without
   // the test becoming two taps away again.
   const [held, setHeld] = useState(false);
+  // The driver tapped Start on the start line and the lifecycle has not
+  // confirmed the fix yet. Still the preview leg — the store stays idle and
+  // nothing is marked — but the card gives way to a line saying what is being
+  // waited on. See practice.tsx for the defect this exists to close.
+  const [confirming, setConfirming] = useState(false);
   const [clock, setClock] = useState("0:00");
   const [pos, setPos] = useState<LatLng | null>(null);
   const [trailIdx, setTrailIdx] = useState(0);
@@ -178,7 +187,7 @@ export default function Mock() {
   const [distanceM, setDistanceM] = useState<number | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [directDist, setDirectDist] = useState<number | null>(null);
-  const [crowRot, setCrowRot] = useState(0);
+
 
   const mapRef = useRef<NavMapHandle>(null);
   const sheetRef = useRef<BottomSheet>(null);
@@ -432,12 +441,10 @@ export default function Mock() {
     // the handover for the rest of the drive.
 
     // No directions could be fetched, so there is nothing to follow but the
-    // direction of the start. The arrow is screen-space, so it is measured
-    // against the bearing the map is actually rotated to.
+    // distance to the start and a frame wide enough to place the car in.
     if (isFallback) {
       const d = haversineM(p, startPt!);
       setDirectDist(Math.round(d));
-      setCrowRot(bearingDeg(p, startPt!) - mapBearingRef.current);
       zoomRef.current = NAV_ZOOM_FAR;
       mapRef.current?.pushCamera(p, mapBearingRef.current, NAV_ZOOM_FAR);
       return;
@@ -730,6 +737,20 @@ export default function Mock() {
   }, []);
   useEffect(() => stopWatching, [stopWatching]);
 
+  // Quitting the drive, from either leg. The store is emptied on the way out:
+  // an abandoned test is not a result, and leaving its marks behind would let
+  // the next test open on top of them.
+  const exitDrive = useCallback(() => {
+    stopWatching();
+    reset();
+    router.dismissTo(HOME_HREF);
+  }, [stopWatching, reset, router]);
+
+  // From the test leg it asks first — every fault marked since the start line
+  // goes with it. From the drive to the start there is nothing yet to lose,
+  // which is why the approach's own control calls exitDrive directly.
+  const exitTest = useCallback(() => confirmExitMockTest(exitDrive), [exitDrive]);
+
   const startWatch = useCallback(async () => {
     subRef.current?.remove();
     subRef.current = null;
@@ -833,6 +854,18 @@ export default function Mock() {
     if (status !== "granted") { setPermissionDenied(true); return false; }
     return true;
   };
+
+  /**
+   * Already on the start line: no drive to the start, so no approach leg and
+   * no bearing arrow. The preview watch is already feeding the lifecycle and
+   * calls reachStart() the moment three good fixes agree — this only
+   * acknowledges the tap. Twin of practice.tsx's handler of the same name.
+   */
+  const beginAtStartLine = useCallback(async () => {
+    if (!(await ensurePermission())) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setConfirming(true);
+  }, []);
 
   const startDirectly = useCallback(async () => {
     if (!(await ensurePermission())) return;
@@ -1052,7 +1085,7 @@ export default function Mock() {
       />
 
       {/* ---------- PREVIEW ---------- */}
-      {leg === "preview" && route && (
+      {leg === "preview" && !confirming && route && (
         <RoutePreviewCard
           route={route}
           isLoop={isLoop}
@@ -1060,9 +1093,38 @@ export default function Mock() {
           atStart={atStart}
           busy={busy}
           onGuideToStart={guideToStart}
-          onStartHere={startDirectly}
+          onStartUnguided={startDirectly}
+          onBeginAtStart={beginAtStartLine}
           onBack={() => router.back()}
         />
+      )}
+
+      {/* ---------- CONFIRMING THE START LINE ---------- */}
+      {leg === "preview" && confirming && (
+        <View
+          className="absolute bottom-0 left-0 right-0 gap-1.5 rounded-t-3xl bg-card px-4 pt-4"
+          style={{ paddingBottom: insets.bottom + 14, shadowColor: "#221F1C", shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } }}
+        >
+          <View className="flex-row items-center gap-2">
+            <Ionicons name="locate" size={15} color={colors.accent} />
+            <Text className="text-[14px] font-semibold text-primary">Confirming your position</Text>
+          </View>
+          <Text className="text-[12px] leading-4 text-slate-500">
+            {distToStart === null
+              ? "Waiting for a steady GPS fix. Hold still for a few seconds."
+              : distToStart > START_RADIUS_M
+                ? `You're ${formatDistance(distToStart)} away. Pull up within ${START_RADIUS_M} m of the start and hold still.`
+                : `You're ${formatDistance(distToStart)} from the start. Hold still for a few seconds.`}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cancel"
+            onPress={() => setConfirming(false)}
+            className="min-h-[40px] items-center justify-center"
+          >
+            <Text className="text-[13px] font-semibold text-slate-500">Cancel</Text>
+          </Pressable>
+        </View>
       )}
 
       {/* ---------- AT THE START ---------- */}
@@ -1090,13 +1152,9 @@ export default function Mock() {
       {/* ---------- HEADING TO THE START ---------- */}
       {leg === "approach" && (
         <>
-          {fallback && (
-            <View pointerEvents="none" className="absolute inset-0 items-center justify-center">
-              <View style={{ transform: [{ rotate: `${crowRot}deg` }] }}>
-                <Ionicons name="navigate" size={96} color="rgba(5,150,105,0.85)" />
-              </View>
-            </View>
-          )}
+          {/* Nothing is drawn over the map on the fallback approach — see
+              practice.tsx. The banner above carries the instruction and the
+              bar below carries the distance. */}
 
           <View className="absolute left-3 right-3" style={{ top: insets.top + 6 }}>
             <ManeuverBanner
@@ -1130,12 +1188,15 @@ export default function Mock() {
               </Text>
             </View>
             {/* Nothing has been assessed yet, so there is nothing to score and
-                nothing to discard — this leaves rather than finishing. */}
+                nothing to discard — this leaves rather than finishing, and
+                leaves without asking. */}
             <Pressable
-              onPress={() => { stopWatching(); router.back(); }}
+              accessibilityRole="button"
+              accessibilityLabel="Exit route"
+              onPress={exitDrive}
               className="min-h-[44px] items-center justify-center rounded-full bg-danger px-7"
             >
-              <Text className="text-[14px] font-semibold text-white">Stop</Text>
+              <Text className="text-[14px] font-semibold text-white">Exit</Text>
             </Pressable>
           </View>
         </>
@@ -1172,7 +1233,26 @@ export default function Mock() {
           <View className="h-2 w-2 rounded-full bg-danger" />
           <Text className="text-[13px] font-semibold text-primary">Mock test</Text>
         </View>
-        <Text className="text-[14px] font-semibold text-primary" style={{ fontVariant: ["tabular-nums"] }}>{clock}</Text>
+        <View className="flex-row items-center gap-3">
+          <Text className="text-[14px] font-semibold text-primary" style={{ fontVariant: ["tabular-nums"] }}>{clock}</Text>
+          {/* Up here rather than in the controls row at the foot of the map:
+              that row is Finish test, Mirrors and Recenter, all of them
+              pressed while driving, and the one control that throws the drive
+              away should not sit among them. Worded and solid rather than a
+              grey ✕ — a bare glyph beside the clock read as a dismiss for the
+              clock, not a way out of the test. */}
+          <View className="h-5 w-px bg-stone-200" />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Exit mock test"
+            hitSlop={8}
+            onPress={exitTest}
+            className="h-7 flex-row items-center gap-1 rounded-full bg-danger px-2.5 active:opacity-80"
+          >
+            <Ionicons name="close" size={14} color="#fff" />
+            <Text className="text-[13px] font-semibold text-white">Exit</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* Under the banner rather than above the mirrors button: on a short

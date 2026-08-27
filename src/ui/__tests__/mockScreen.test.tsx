@@ -1,3 +1,4 @@
+import { Alert } from "react-native";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import type { LatLng } from "@/lib/geo";
 import type { Route } from "@/types/db";
@@ -21,9 +22,10 @@ jest.mock("@gorhom/bottom-sheet", () => {
 });
 
 const mockReplace = jest.fn();
+const mockDismissTo = jest.fn();
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "route-1" }),
-  useRouter: () => ({ back: jest.fn(), push: jest.fn(), replace: mockReplace }),
+  useRouter: () => ({ back: jest.fn(), push: jest.fn(), replace: mockReplace, dismissTo: mockDismissTo }),
 }));
 
 const mockGetRoute = jest.fn();
@@ -78,6 +80,7 @@ const drive = async (path: LatLng[]) => {
 beforeEach(() => {
   resetLocationMock();
   mockReplace.mockClear();
+  mockDismissTo.mockClear();
   useMockTest.getState().reset();
   mockGetRoute.mockResolvedValue({ data: { route, hazards: [] }, stale: false });
   mockFetchDirections.mockResolvedValue(approach);
@@ -289,4 +292,116 @@ test("finishing while still off route flushes the open deviation", async () => {
 
   expect(useMockTest.getState().deviations).toHaveLength(1);
   expect(mockReplace).toHaveBeenCalledTimes(1);
+});
+
+// Two ways out of a mock test that never reach the result screen, and one of
+// them has to ask: every fault marked since the start line goes with it.
+test("exiting a mock test in progress asks before it goes", async () => {
+  const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+  await beginAtStart();
+  await act(async () => { useMockTest.getState().addMark("control", "minor"); });
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Exit mock test" })); });
+
+  // Asked, and nothing happened until it is answered.
+  expect(alert).toHaveBeenCalled();
+  expect(mockDismissTo).not.toHaveBeenCalled();
+  expect(useMockTest.getState().phase).toBe("running");
+  expect(useMockTest.getState().marks).toHaveLength(1);
+  alert.mockRestore();
+});
+
+test("confirming the exit empties the store and lands on Home, not the result", async () => {
+  const alert = jest.spyOn(Alert, "alert").mockImplementation((_title, _body, buttons) => {
+    buttons?.find((b) => b.style === "destructive")?.onPress?.();
+  });
+  await beginAtStart();
+  await act(async () => { useMockTest.getState().addMark("control", "minor"); });
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Exit mock test" })); });
+
+  expect(mockDismissTo).toHaveBeenCalledWith("/(tabs)");
+  // An abandoned test is not a result: no score is written and no result
+  // screen is opened, and the marks do not survive to seed the next test.
+  expect(mockReplace).not.toHaveBeenCalled();
+  expect(useMockTest.getState().phase).toBe("idle");
+  expect(useMockTest.getState().marks).toHaveLength(0);
+  alert.mockRestore();
+});
+
+// The drive to the start has assessed nothing, so there is nothing to discard
+// and nothing to ask about — but it still lands on Home like every other exit.
+test("exiting the drive to the start leaves without asking", async () => {
+  const alert = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+  setLastKnownPosition(51.4980, -0.100);
+  await mount();
+  await act(async () => { fireEvent.press(screen.getByText("Guide me to the start")); });
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Exit route" })); });
+
+  expect(alert).not.toHaveBeenCalled();
+  expect(mockDismissTo).toHaveBeenCalledWith("/(tabs)");
+  alert.mockRestore();
+});
+
+// ── Tapping Start on the start line ───────────────────────────────────────
+//
+// The twin of the practice suite's block of the same name — mock.tsx carried
+// its own copy of the defect, where Start and "Start directly from here"
+// shared one handler and the collapsed Start opened a bearing-guided approach
+// to a point the car was already parked on.
+
+test("tapping Start on the start line never opens the approach", async () => {
+  setLastKnownPosition(A.lat, A.lng);
+  await mount();
+  await drive([A]);
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Start" })); });
+
+  expect(screen.queryByText("Heading to the start")).toBeNull();
+  expect(screen.getByText("Confirming your position")).toBeTruthy();
+  // Nothing is marked while the fix is being confirmed.
+  expect(useMockTest.getState().phase).toBe("idle");
+});
+
+test("the confirmed fix hands the start line straight to the begin prompt", async () => {
+  setLastKnownPosition(A.lat, A.lng);
+  await mount();
+  await drive([A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Start" })); });
+
+  await drive([A, A]);
+
+  expect(screen.queryByText("Confirming your position")).toBeNull();
+  expect(screen.getByText("Ready to begin?")).toBeTruthy();
+});
+
+// Inside AT_START_M (60 m) so the card collapses to Start, outside
+// START_RADIUS_M (30 m) so the lifecycle will never confirm.
+const DEAD_BAND = { lat: A.lat + 0.000404, lng: A.lng };
+
+test("the dead band between the two start radii says why nothing is happening", async () => {
+  setLastKnownPosition(DEAD_BAND.lat, DEAD_BAND.lng);
+  await mount();
+  await drive([DEAD_BAND, DEAD_BAND, DEAD_BAND, DEAD_BAND]);
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Start" })); });
+
+  expect(screen.queryByText("Heading to the start")).toBeNull();
+  expect(screen.getByText(/Pull up within 30 m of the start/)).toBeTruthy();
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Cancel" })); });
+  expect(screen.queryByText("Confirming your position")).toBeNull();
+  expect(screen.getByRole("button", { name: "Start" })).toBeTruthy();
+});
+
+test("starting unguided from far away still opens the approach", async () => {
+  mockFetchDirections.mockRejectedValue(new Error("no directions"));
+  setLastKnownPosition(51.4900, -0.100);
+  await mount();
+  await drive([{ lat: 51.4900, lng: -0.100 }]);
+
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Start directly from here" })); });
+
+  expect(screen.getByText("Heading to the start")).toBeTruthy();
 });
