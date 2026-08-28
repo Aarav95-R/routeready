@@ -775,7 +775,10 @@ const COPY: Record<CodeType, Copy> = {
     subtitle: (email) => `We've sent a six-digit code to ${email}. Enter it, then you can set a new password.`,
   },
   email: {
-    title: "Enter your code",
+    // Distinct from recovery's title on purpose: the test above asserts three
+    // different titles, because a screen that cannot say which flow you are in
+    // is the one people abandon.
+    title: "Sign in with your code",
     subtitle: (email) => `We've sent a six-digit code to ${email}. Enter it and you're in.`,
   },
 };
@@ -958,7 +961,7 @@ Task 6 pushes to this route from three screens, so regenerate now:
 ```bash
 npx expo start --clear > /tmp/regen.log 2>&1 &
 sleep 6; pkill -f "expo start"
-grep -c "auth)/verify" .expo/types/router.d.ts
+grep -c "/verify" .expo/types/router.d.ts
 ```
 
 Expected: a non-zero count. Generation happens during boot and completes in a
@@ -1190,7 +1193,7 @@ skipped or when `.expo/` was cleared since. Re-run that step:
 ```bash
 npx expo start --clear > /tmp/regen.log 2>&1 &
 sleep 6; pkill -f "expo start"
-grep -c "auth)/verify" .expo/types/router.d.ts
+grep -c "/verify" .expo/types/router.d.ts
 ```
 
 - [ ] **Step 5: Commit**
