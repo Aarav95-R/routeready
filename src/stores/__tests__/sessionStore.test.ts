@@ -10,6 +10,8 @@ jest.mock("@/lib/supabase", () => ({
       setSession: jest.fn(),
       updateUser: jest.fn(),
       signOut: jest.fn().mockResolvedValue({ error: null }),
+      verifyOtp: jest.fn(),
+      resend: jest.fn(),
     },
     functions: { invoke: jest.fn() },
   },
@@ -178,18 +180,8 @@ test("signUp carries the interview's answers into user_metadata", async () => {
   expect(supabase.auth.signUp).toHaveBeenCalledWith({
     email: "a@b.com",
     password: "hunter2hunter2",
-    options: { data: metadata, emailRedirectTo: "routeready://auth-callback" },
+    options: { data: metadata },
   });
-});
-
-// Sign-in and reset already carried this; sign-up did not, so a confirmation
-// link opened outside the app instead of coming back to it — the deep-link
-// listener in app/_layout.tsx had nothing addressed to it.
-test("signUp asks for a link back into the app, same as sign-in and reset", async () => {
-  (supabase.auth.signUp as jest.Mock).mockResolvedValue({ data: {}, error: null });
-  await useSession.getState().signUp("a@b.com", "hunter2hunter2");
-  const [call] = (supabase.auth.signUp as jest.Mock).mock.calls.at(-1)!;
-  expect(call.options.emailRedirectTo).toBe("routeready://auth-callback");
 });
 
 test("a rejected sign-up is a sentence too", async () => {
@@ -197,53 +189,10 @@ test("a rejected sign-up is a sentence too", async () => {
   expect(await useSession.getState().signUp("a@b.com", "pw", {})).toBe(authError("User already registered"));
 });
 
-/**
- * The most serious gap on the old sign-in screen: `resetPasswordForEmail` was
- * wired nowhere — no link, no screen, no action — so an account whose password
- * was mistyped at sign-up could not be recovered inside the app at all.
- */
-test("sendPasswordReset asks Supabase for a link back into the app", async () => {
-  (supabase.auth.resetPasswordForEmail as jest.Mock).mockResolvedValue({ error: null });
-  expect(await useSession.getState().sendPasswordReset("a@b.com")).toBeNull();
-  expect(supabase.auth.resetPasswordForEmail).toHaveBeenCalledWith("a@b.com", {
-    redirectTo: "routeready://auth-callback",
-  });
-});
-
 test("a rejected reset says why in a sentence", async () => {
   (supabase.auth.resetPasswordForEmail as jest.Mock)
     .mockResolvedValue({ error: { message: "Email rate limit exceeded" } });
   expect(await useSession.getState().sendPasswordReset("a@b.com")).toBe(authError("Email rate limit exceeded"));
-});
-
-// ── The deep-link callback ─────────────────────────────────────────────────
-//
-// Every emailed link — signup confirmation, magic link, password recovery —
-// lands here with a pair of tokens and a `type`. Only recovery has to change
-// what happens next: the root layout redirects to the tabs the instant a
-// session exists, and for a recovery link that would sign the person in with
-// their old password still in place, never letting them set a new one.
-
-test("a signup or magic-link callback opens a session and nothing more", async () => {
-  (supabase.auth.setSession as jest.Mock).mockResolvedValue({ error: null });
-  await useSession.getState().setSessionFromCallback({ access_token: "at", refresh_token: "rt" }, "signup");
-  expect(supabase.auth.setSession).toHaveBeenCalledWith({ access_token: "at", refresh_token: "rt" });
-  expect(useSession.getState().recovering).toBe(false);
-});
-
-test("a recovery callback opens a session and flags recovery", async () => {
-  (supabase.auth.setSession as jest.Mock).mockResolvedValue({ error: null });
-  await useSession.getState().setSessionFromCallback({ access_token: "at", refresh_token: "rt" }, "recovery");
-  expect(useSession.getState().recovering).toBe(true);
-});
-
-// A stale, tampered or already-used link must not strand anyone on the
-// update-password screen with no real session behind it.
-test("a callback whose tokens Supabase rejects never sets the recovery flag", async () => {
-  (supabase.auth.setSession as jest.Mock).mockResolvedValue({ error: { message: "Invalid Refresh Token" } });
-  useSession.setState({ recovering: false });
-  await useSession.getState().setSessionFromCallback({ access_token: "at", refresh_token: "rt" }, "recovery");
-  expect(useSession.getState().recovering).toBe(false);
 });
 
 test("updatePassword clears the recovery flag on success", async () => {
@@ -361,15 +310,6 @@ test("signing out takes this user's cached scores off the device", async () => {
   useSession.setState({ session: signedIn });
   await useSession.getState().signOut();
   expect(await AsyncStorage.getItem("cache:progress:c1")).toBeNull();
-});
-
-test("sendMagicLink passes redirect", async () => {
-  (supabase.auth.signInWithOtp as jest.Mock).mockResolvedValue({ error: null });
-  await useSession.getState().sendMagicLink("a@b.com");
-  expect(supabase.auth.signInWithOtp).toHaveBeenCalledWith({
-    email: "a@b.com",
-    options: { emailRedirectTo: "routeready://auth-callback" },
-  });
 });
 
 // "" rather than null: `services/welcome` keys a per-account flag on this, and
@@ -496,4 +436,97 @@ test("a failed local teardown still signs the person out", async () => {
   expect(useSession.getState().session).toBeNull();
 
   spy.mockRestore();
+});
+
+/**
+ * ── Codes ─────────────────────────────────────────────────────────────────
+ *
+ * The session is set from the verify result rather than left to the auth
+ * listener. Both do fire in the real client, but the listener is the slower
+ * of the two and the screen navigates on the store, so trusting only the
+ * listener puts a frame of "signed in but still on the code screen" in front
+ * of every person who gets their code right.
+ */
+test("a good signup code opens a session", async () => {
+  const session = { user: { id: "u1" } };
+  (supabase.auth.verifyOtp as jest.Mock).mockResolvedValue({ data: { session }, error: null });
+
+  expect(await useSession.getState().verifyCode("a@b.com", "418302", "signup")).toBeNull();
+
+  expect(supabase.auth.verifyOtp).toHaveBeenCalledWith({ email: "a@b.com", token: "418302", type: "signup" });
+  expect(useSession.getState().session).toBe(session);
+  expect(useSession.getState().recovering).toBe(false);
+});
+
+// Same call, one different consequence — exactly as the old deep-link path
+// treated `type === "recovery"`. Without this the person lands in the app on
+// the password they could not remember.
+test("a good recovery code routes to setting a new password", async () => {
+  (supabase.auth.verifyOtp as jest.Mock).mockResolvedValue({ data: { session: { user: { id: "u1" } } }, error: null });
+
+  await useSession.getState().verifyCode("a@b.com", "418302", "recovery");
+
+  expect(useSession.getState().recovering).toBe(true);
+});
+
+test("a refused code is a sentence and changes nothing", async () => {
+  useSession.setState({ session: null, recovering: false });
+  (supabase.auth.verifyOtp as jest.Mock).mockResolvedValue({
+    data: { session: null }, error: { message: "Token has expired or is invalid" },
+  });
+
+  expect(await useSession.getState().verifyCode("a@b.com", "000000", "recovery"))
+    .toBe(authError("Token has expired or is invalid"));
+  expect(useSession.getState().session).toBeNull();
+  expect(useSession.getState().recovering).toBe(false);
+});
+
+/**
+ * Three flows, three different ways to ask again. `auth.resend` covers signup
+ * only; recovery and magic link are re-sent by calling the same function that
+ * sent them the first time.
+ */
+test("resending a signup code uses resend", async () => {
+  (supabase.auth.resend as jest.Mock).mockResolvedValue({ error: null });
+  expect(await useSession.getState().resendCode("a@b.com", "signup")).toBeNull();
+  expect(supabase.auth.resend).toHaveBeenCalledWith({ type: "signup", email: "a@b.com" });
+});
+
+test("resending a recovery code asks for another reset", async () => {
+  (supabase.auth.resetPasswordForEmail as jest.Mock).mockResolvedValue({ error: null });
+  expect(await useSession.getState().resendCode("a@b.com", "recovery")).toBeNull();
+  expect(supabase.auth.resetPasswordForEmail).toHaveBeenCalledWith("a@b.com");
+});
+
+test("resending a magic code asks for another one", async () => {
+  (supabase.auth.signInWithOtp as jest.Mock).mockResolvedValue({ error: null });
+  expect(await useSession.getState().resendCode("a@b.com", "email")).toBeNull();
+  expect(supabase.auth.signInWithOtp).toHaveBeenCalledWith({ email: "a@b.com" });
+});
+
+// max_frequency is 60s on the project, so this is the common answer to an
+// impatient second tap, not an edge case.
+test("resending too soon is a sentence", async () => {
+  (supabase.auth.resend as jest.Mock).mockResolvedValue({
+    error: { message: "For security purposes, you can only request this after 41 seconds" },
+  });
+  expect(await useSession.getState().resendCode("a@b.com", "signup")).toMatch(/give it a minute/i);
+});
+
+/**
+ * No emailed link exists any more, so a redirect on any of these is a leftover
+ * pointing at a screen that has been deleted.
+ */
+test("nothing asks Supabase to redirect anywhere", async () => {
+  (supabase.auth.signUp as jest.Mock).mockResolvedValue({ error: null });
+  (supabase.auth.signInWithOtp as jest.Mock).mockResolvedValue({ error: null });
+  (supabase.auth.resetPasswordForEmail as jest.Mock).mockResolvedValue({ error: null });
+
+  await useSession.getState().signUp("a@b.com", "hunter2hunter2", { full_name: "Sam" });
+  await useSession.getState().sendMagicLink("a@b.com");
+  await useSession.getState().sendPasswordReset("a@b.com");
+
+  expect(JSON.stringify((supabase.auth.signUp as jest.Mock).mock.calls)).not.toMatch(/redirect/i);
+  expect(JSON.stringify((supabase.auth.signInWithOtp as jest.Mock).mock.calls)).not.toMatch(/redirect/i);
+  expect(JSON.stringify((supabase.auth.resetPasswordForEmail as jest.Mock).mock.calls)).not.toMatch(/redirect/i);
 });

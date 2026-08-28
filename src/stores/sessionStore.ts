@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
+import type { CodeType } from "@/lib/otpCode";
 import { supabase } from "@/lib/supabase";
 import { authError, AUTH_TIMEOUT } from "@/lib/authError";
 import { TIMED_OUT, withTimeout } from "@/lib/withTimeout";
@@ -28,15 +29,13 @@ type SessionState = {
   signUp: (email: string, password: string, metadata?: Record<string, unknown>) => Promise<string | null>;
   sendMagicLink: (email: string) => Promise<string | null>;
   sendPasswordReset: (email: string) => Promise<string | null>;
-  setSessionFromCallback: (tokens: { access_token: string; refresh_token: string }, type: string | null) => Promise<void>;
+  verifyCode: (email: string, token: string, type: CodeType) => Promise<string | null>;
+  resendCode: (email: string, type: CodeType) => Promise<string | null>;
   updatePassword: (password: string) => Promise<string | null>;
   setName: (name: string) => Promise<string | null>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<string | null>;
 };
-
-/** Where an emailed link lands. Handled by the deep-link listener in app/_layout.tsx. */
-const REDIRECT = "routeready://auth-callback";
 
 /**
  * How long the app waits for a stored session to be restored before opening
@@ -169,42 +168,57 @@ export const useSession = create<SessionState>((set, get) => ({
    * session. This is the only moment they can be saved in one round trip.
    */
   signUp: async (email, password, metadata = {}) => {
-    const { error } = await supabase.auth.signUp({
-      email, password,
-      options: { data: metadata, emailRedirectTo: REDIRECT },
-    });
+    const { error } = await supabase.auth.signUp({ email, password, options: { data: metadata } });
     return error ? authError(error.message) : null;
   },
   sendMagicLink: async (email) => {
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: REDIRECT },
-    });
+    const { error } = await supabase.auth.signInWithOtp({ email });
     return error ? authError(error.message) : null;
   },
-  // Without this an account whose password was mistyped at sign-up cannot be
-  // recovered inside the app at all — the magic link was the only way back in,
-  // and it was presented as a convenience rather than as a rescue.
   sendPasswordReset: async (email) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: REDIRECT });
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
     return error ? authError(error.message) : null;
   },
 
   /**
-   * The deep link's tokens, however they got here — signup confirmation,
-   * magic link or recovery. All three open the same kind of session; only
-   * `type === "recovery"` changes what the app does with it, which is why
-   * that alone is threaded through rather than the whole callback shape.
+   * The typed code, whichever flow it came from.
    *
-   * A stale, tampered or already-used link fails here without setting
-   * `recovering` — otherwise a bad link would still strand whoever opened it
-   * on the update-password screen with no real session underneath it, unable
-   * to leave except by signing out of an account they were never signed into.
+   * All three open the same kind of session; only `recovery` changes what the
+   * app does next, which is why that alone is branched on — the same split the
+   * deep-link callback used to make on its `type` fragment.
+   *
+   * The session is set from the result rather than left to the auth listener.
+   * Both fire in the real client, but the screen navigates on this store, and
+   * waiting on the slower of the two shows a frame of the code screen to
+   * somebody who has already got it right.
    */
-  setSessionFromCallback: async ({ access_token, refresh_token }, type) => {
-    const { error } = await supabase.auth.setSession({ access_token, refresh_token });
-    if (error) return;
-    set({ recovering: type === "recovery" });
+  verifyCode: async (email, token, type) => {
+    const { data, error } = await supabase.auth.verifyOtp({ email, token, type });
+    if (error) return authError(error.message);
+    set({ session: data.session, recovering: type === "recovery" });
+    return null;
+  },
+
+  /**
+   * Ask for another code.
+   *
+   * Three flows, three calls: `auth.resend` handles signup and nothing else we
+   * use, so recovery and magic link are re-sent by calling the same function
+   * that sent them the first time. `max_frequency` is 60s on the project, so a
+   * refusal here is ordinary impatience rather than a fault — `authError`
+   * already turns it into a sentence about waiting a minute.
+   */
+  resendCode: async (email, type) => {
+    if (type === "recovery") {
+      const { error } = await supabase.auth.resetPasswordForEmail(email);
+      return error ? authError(error.message) : null;
+    }
+    if (type === "email") {
+      const { error } = await supabase.auth.signInWithOtp({ email });
+      return error ? authError(error.message) : null;
+    }
+    const { error } = await supabase.auth.resend({ type: "signup", email });
+    return error ? authError(error.message) : null;
   },
 
   // The one action available on the update-password screen. Left in place on
