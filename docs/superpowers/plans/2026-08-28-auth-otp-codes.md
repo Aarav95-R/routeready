@@ -1296,6 +1296,7 @@ test files where deployment tooling looks. Reading through `node:fs` under the
 ```ts
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { CODE_LENGTH } from "@/lib/otpCode";
 
 const DIR = join(__dirname, "../../../supabase/templates");
 const NAMES = ["confirmation.html", "recovery.html", "magic_link.html"];
@@ -1331,12 +1332,29 @@ test.each(NAMES)("%s quotes the configured expiry", (name) => {
   expect(seconds).toBe(3600);
   expect(read(name)).toContain(`${seconds / 60} minutes`);
 });
+
+/**
+ * The one mismatch that fails in production while every test passes.
+ *
+ * `otp_length` is what Supabase actually puts in the email; `CODE_LENGTH` is
+ * how many boxes the app draws and how many digits it will submit. If they
+ * disagree, every code is refused — the field submits six digits against an
+ * eight-digit code, or never fills at all — and nothing anywhere else notices,
+ * because both halves are internally consistent. The plan checks this by hand
+ * at the end; a test is what keeps it checked.
+ */
+test("the configured code length is the length the app types", () => {
+  const toml = readFileSync(join(DIR, "..", "config.toml"), "utf8");
+  const configured = Number(/^otp_length\s*=\s*(\d+)/m.exec(toml)?.[1]);
+  expect(configured).toBe(CODE_LENGTH);
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `npx jest supabase/templates`
-Expected: FAIL — templates still contain `ConfirmationURL`, and `otp_expiry` is 86400
+Run: `npx jest src/lib/__tests__/emailTemplates.test.ts`
+Expected: FAIL — templates still contain `ConfirmationURL`, `otp_expiry` is 86400, and
+`otp_length` is 8 where `CODE_LENGTH` is 6
 
 - [ ] **Step 3: Write minimal implementation**
 
@@ -1416,8 +1434,8 @@ six-digit code is a millionth the secret a link token is.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `npx jest supabase/templates`
-Expected: PASS, 11 assertions
+Run: `npx jest src/lib/__tests__/emailTemplates.test.ts`
+Expected: PASS — 11 test cases (1 + 3 + 3 + 3) plus the code-length check.
 
 - [ ] **Step 5: Commit**
 
