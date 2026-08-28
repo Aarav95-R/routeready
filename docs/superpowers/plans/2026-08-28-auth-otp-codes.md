@@ -1273,17 +1273,40 @@ Then delete the three files:
 git rm app/auth-callback.tsx src/lib/authCallback.ts src/lib/__tests__/authCallback.test.ts
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Regenerate the typed routes**
+
+Deleting `app/auth-callback.tsx` leaves `.expo/types/router.d.ts` still listing
+`/auth-callback` as a valid pathname. That does not fail the build — a union
+with a spare member compiles fine — but it means the generated types describe a
+route the app no longer has, and the next person to trust them is misled.
+
+```bash
+npx expo start --clear > /tmp/regen.log 2>&1 &
+sleep 6; pkill -f "expo start"
+grep -c "auth-callback" .expo/types/router.d.ts
+```
+
+Expected: `0`. A "Skipping dev server" line in the log is not a failure — the
+declarations are written before the server tries to bind a port. `.expo/` is
+gitignored, so this produces no diff.
+
+- [ ] **Step 5: Run the tests and the typecheck**
 
 Run: `npm test && npx tsc --noEmit`
-Expected: PASS, both clean. Confirm nothing references the deleted modules:
+
+Expected: PASS, and — for the first time since Task 4 — **a completely clean
+typecheck**. The `app/_layout.tsx` error about `setSessionFromCallback` is the
+one this task exists to clear; if it survives, the listener was not fully
+removed.
+
+Then confirm nothing references the deleted modules:
 
 ```bash
 grep -rn "parseAuthCallback\|setSessionFromCallback\|auth-callback" --include="*.ts" --include="*.tsx" app src
 ```
 Expected: no output.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A app src
