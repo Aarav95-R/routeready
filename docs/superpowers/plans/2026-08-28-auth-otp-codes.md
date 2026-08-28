@@ -1110,8 +1110,23 @@ becomes
     router.push({ pathname: "/(auth)/verify", params: { email: address, type: "recovery" } });
 ```
 
-Also delete the now-unused `sentTo` state, the `popIn` import, and the
-`Ionicons` mail badge that only the sent state used.
+Then clean up what the deleted branch leaves behind. Be precise — two of these
+imports are still in use by code that stays:
+
+- Delete the `sentTo` state (line 32). Its only readers were inside the branch.
+- Remove **`popIn` only** from `import { enterFrom, popIn } from "@/ui/motion";`
+  (line 11), leaving `import { enterFrom } from "@/ui/motion";`. `popIn` was
+  used at line 68 and nowhere else; `enterFrom` is still used three times.
+- **Keep the `Ionicons` import** (line 7). The mail badge at line 71 goes with
+  the branch, but the back chevron at line 59 stays and needs it.
+- **Keep `Animated`** (line 5) — `enterFrom` still drives three `Animated.View`s.
+
+Only one of those two mistakes is caught for you. Deleting an import that is
+still in use fails `tsc` immediately. Leaving one behind that is now unused
+does **not** — this project sets neither `noUnusedLocals` nor
+`noUnusedParameters` (checked in `tsconfig.json` and `expo/tsconfig.base`), so
+a stale `popIn` import typechecks happily. `npx expo lint` is what flags it, and
+Task 9 runs that. Remove it by hand here rather than relying on either.
 
 In `app/(auth)/sign-in.tsx`, replace the tail of `emailLink`:
 
