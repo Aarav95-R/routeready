@@ -110,6 +110,14 @@ the push. A half-finished setup fails silently: signups appear to work and no co
      plan's daily quota (free tier: 100/day).
    - `auth.email.max_frequency = "60s"` — the CLI default of `1s` makes the reset screen's
      "Send it again" button an email cannon aimed at any address someone can type.
+   - `auth.email.otp_length = 6` — must equal `CODE_LENGTH` in `src/lib/otpCode.ts`. If they
+     disagree, Supabase emails a code of one length while the app types and submits another, and
+     every code is refused in production while every local test that doesn't check this still
+     passes. `src/lib/__tests__/emailTemplates.test.ts` asserts this value against the repo, so a
+     drift shows up there as a test failure rather than as a production incident.
+   - `auth.email.otp_expiry = 3600` — 60 minutes, quoted verbatim in all three templates. A
+     six-digit code is one of a million, so the CLI's day-long default is a materially weaker
+     thing to leave standing than it was for an unguessable link token.
 
    Then check `auth.email.enable_confirmations` by hand against the dashboard, since it's set from
    what the app's code assumes rather than from the pull: it must be `true` — the sign-up flow is
