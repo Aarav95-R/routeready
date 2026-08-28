@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
+import { CODE_LENGTH } from "@/lib/otpCode";
+import { colors } from "@/ui/theme";
 import { CodeField } from "../CodeField";
 
 const field = () => screen.getByLabelText("Verification code");
@@ -36,11 +38,16 @@ test("it never reports more than a full code", () => {
 
 // The whole field goes red, not one box: the person cannot know which digit
 // was wrong, and marking one would be a guess presented as fact.
+//
+// A partial code keeps the cursor live, so without the invalid branch box 4
+// would be accent and the rest separator — two colours. Asserting the set is
+// exactly {danger} therefore fails if the invalid branch is ever removed,
+// which the previous version of this test did not.
 test("a refused code marks every box", () => {
-  render(<CodeField value="418302" onChangeText={jest.fn()} invalid />);
-  const borders = Array.from({ length: 6 }, (_, i) =>
+  render(<CodeField value="4183" onChangeText={jest.fn()} invalid />);
+  const borders = Array.from({ length: CODE_LENGTH }, (_, i) =>
     screen.getByTestId(`code-box-${i}`).props.style.borderColor);
-  expect(new Set(borders).size).toBe(1);
+  expect(new Set(borders)).toEqual(new Set([colors.danger]));
 });
 
 test("it asks for the numeric keypad and offers one-time-code autofill", () => {

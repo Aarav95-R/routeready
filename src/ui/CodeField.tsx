@@ -41,6 +41,14 @@ export function CodeField({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Enter the code"
+      // Pressable defaults to `accessible: true`, which collapses this whole
+      // subtree into one opaque accessibility node — the TextInput's own
+      // label below would never reach VoiceOver/TalkBack. `accessible={false}`
+      // lets the label that actually matters through.
+      accessible={false}
+      // Ordinary touch never reaches this: the full-bleed TextInput sits on
+      // top and claims the responder first. This exists for the assistive-tech
+      // activation path, where the label above is what gets tapped.
       onPress={() => input.current?.focus()}
       style={{ flexDirection: "row", justifyContent: "center", gap: 9, paddingHorizontal: 16 }}
     >
