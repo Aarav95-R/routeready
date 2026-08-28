@@ -19,9 +19,9 @@ import { AuthField } from "@/ui/AuthField";
 import { Group } from "@/ui/List";
 import { ChoiceRow, QuestionCard } from "@/ui/QuestionCard";
 import { StrengthMeter } from "@/ui/StrengthMeter";
-import { ENTER_MS, popIn, stepBack, stepForward, timing } from "@/ui/motion";
+import { ENTER_MS, stepBack, stepForward, timing } from "@/ui/motion";
 import { colors } from "@/ui/theme";
-import { body, caption, footnote, largeTitle, subheadline, MAX_DISPLAY_SCALE } from "@/ui/type";
+import { body, caption, footnote, MAX_DISPLAY_SCALE } from "@/ui/type";
 import { useSession } from "@/stores/sessionStore";
 
 /**
