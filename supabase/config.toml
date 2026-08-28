@@ -289,14 +289,18 @@ secure_password_change = false
 max_frequency = "60s"
 # Number of characters used in the email OTP.
 #
-# 8 to match the live project rather than the CLI's default of 6. Inert either way — every flow in
-# this app is link-based (`{{ .ConfirmationURL }}`), and nothing reads `{{ .Token }}` — so this
-# only becomes visible if the OTP fallback described in SETUP.md is ever adopted.
-otp_length = 8
-# Number of seconds before the email OTP / confirmation / recovery link expires. One knob covers
-# every email link type here (there's no separate setting per template), so all three custom
-# templates below quote "24 hours" — that copy has to move if this number does.
-otp_expiry = 86400
+# 6, matching `CODE_LENGTH` in src/lib/otpCode.ts. This is load-bearing, not cosmetic: every flow
+# now sends `{{ .Token }}` in the body and the app draws exactly this many boxes and submits
+# exactly this many digits to `verifyOtp`. If this drifts from `CODE_LENGTH`, every code is
+# refused in production while every local test still passes, because both halves stay internally
+# consistent on their own.
+otp_length = 6
+# Number of seconds before the email OTP / confirmation / recovery code expires. One knob covers
+# every email type here (there's no separate setting per template), so all three custom templates
+# below quote "60 minutes" — that copy has to move if this number does. Shorter than the old
+# link's 24 hours on purpose: a link token is unguessable, but a six-digit code is one of only a
+# million, so a day-long window is a materially weaker thing to hand out.
+otp_expiry = 3600
 
 # Production SMTP — Resend, sending as RouteReady <noreply@getticker.dev>.
 #
@@ -335,7 +339,7 @@ content_path = "./supabase/templates/recovery.html"
 # is not that no email is sent — it is that GoTrue's stock unbranded template is sent, from our
 # Resend sender, landing next to the two designed ones.
 [auth.email.template.magic_link]
-subject = "Your sign-in link — RouteReady"
+subject = "Your sign-in code — RouteReady"
 content_path = "./supabase/templates/magic_link.html"
 
 # Uncomment to customize notification email template

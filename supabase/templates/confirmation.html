@@ -12,8 +12,8 @@
   .bg { background:#F5F0E8; }
   .card { background:#FFFFFF; border-radius:16px; }
   .badge { background:#1A875E; border-radius:14px; }
-  .btn { background:#1A875E; border-radius:13px; }
-  .btn a { color:#FFFFFF !important; }
+  .slab { background:#E7F2ED; }
+  .slab-cap, .slab-code { color:#146B4A; }
   .h1 { color:#1C1917; }
   .body-text { color:#574F49; }
   .footnote { color:#6B635B; }
@@ -27,26 +27,27 @@
     .footnote { color:#9C9288 !important; }
     .hairline { border-top:1px solid #35302A !important; }
     .mono-link { color:#3FBF8F !important; }
+    .slab { background:#1B3A2E !important; }
+    .slab-cap, .slab-code { color:#6FD3AC !important; }
   }
 </style>
 </head>
 <body>
-<span style="display:none;font-size:1px;color:#F5F0E8;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">One tap and you're in. Link expires in 24 hours.</span>
+<span style="display:none;font-size:1px;color:#F5F0E8;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">Enter this code in RouteReady to activate your account.</span>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg"><tr><td align="center" style="padding:40px 16px;">
 <table role="presentation" width="100%" style="max-width:480px;" cellpadding="0" cellspacing="0" class="card"><tr><td style="padding:36px 32px 32px;">
 <table role="presentation" cellpadding="0" cellspacing="0"><tr><td class="badge" style="width:52px;height:52px;" width="52" height="52" align="center" valign="middle">
 <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNiIgaGVpZ2h0PSIyNiIgdmlld0JveD0iMCAwIDI2IDI2Ij48cGF0aCBkPSJNNyAxOGMzLTEgNC00IDctNHMzLTQgNi01IiBzdHJva2U9IiNGRkZGRkYiIHN0cm9rZS13aWR0aD0iMi4yIiBmaWxsPSJub25lIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48Y2lyY2xlIGN4PSIyMCIgY3k9IjgiIHI9IjIiIGZpbGw9IiNGRkZGRkYiLz48L3N2Zz4=" width="26" height="26" alt="" style="display:block;">
 </td></tr></table>
 <h1 class="h1" style="font-size:22px;line-height:28px;font-weight:700;letter-spacing:-0.02em;margin:20px 0 0;">Confirm your email</h1>
-<p class="body-text" style="font-size:15px;line-height:22px;margin:10px 0 0;">Open this to activate your RouteReady account. If you didn't sign up, you can ignore this — no account will be created.</p>
-<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:24px;"><tr><td class="btn" style="border-radius:13px;" align="center">
-<a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:14px 28px;font-size:16px;line-height:20px;font-weight:600;color:#FFFFFF;text-decoration:none;">Confirm email</a>
+<p class="body-text" style="font-size:15px;line-height:22px;margin:10px 0 0;">Enter this code in RouteReady to activate your account.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:22px;"><tr><td class="slab" style="border-radius:13px;padding:18px 16px 16px;" align="center">
+<div class="slab-cap" style="font-size:11.5px;line-height:16px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;padding-bottom:8px;">Your code</div>
+<div class="slab-code" style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:34px;line-height:40px;font-weight:700;letter-spacing:.34em;text-indent:.34em;">{{ .Token }}</div>
 </td></tr></table>
-<p class="footnote" style="font-size:12.5px;line-height:18px;margin:20px 0 0;">This link expires in 24 hours and can only be used once.</p>
+<p class="footnote" style="font-size:12.5px;line-height:18px;margin:20px 0 0;">This code expires in 60 minutes and can only be used once.</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="hairline" style="margin-top:24px;"><tr><td style="padding-top:18px;">
-<p class="footnote" style="font-size:12px;line-height:18px;margin:0;">Or paste this link into your browser:<br>
-<a class="mono-link" href="{{ .ConfirmationURL }}" style="word-break:break-all;">{{ .ConfirmationURL }}</a></p>
-<p class="footnote" style="font-size:12px;line-height:18px;margin:14px 0 0;">If this wasn't you, no action is needed — the account won't be created until this link is opened.</p>
+<p class="footnote" style="font-size:12px;line-height:18px;margin:0;">If this wasn't you, no action is needed — no account is created until the code is entered.</p>
 <p class="footnote" style="font-size:12px;line-height:18px;margin:14px 0 0;">Sent to {{ .Email }} &middot; RouteReady, getticker.dev</p>
 </td></tr></table>
 </td></tr></table>
