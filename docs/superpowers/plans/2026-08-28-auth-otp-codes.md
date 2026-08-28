@@ -628,7 +628,7 @@ git commit -m "feat: verify and resend codes instead of following links"
 
 **Interfaces:**
 - Consumes: `CodeField`, `CODE_LENGTH`/`isComplete`/`CodeType` from `@/lib/otpCode`, `verifyCode`/`resendCode` from `useSession`
-- Produces: route `/(auth)/verify` taking `email` and `type` params; `verifyCopy(type: CodeType): { title: string; subtitle: (email: string) => string; icon: string }`
+- Produces: route `/(auth)/verify` taking `email` and `type` params; `verifyCopy(type: CodeType): { title: string; subtitle: (email: string) => string }`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -753,29 +753,30 @@ import type { CodeType } from "@/lib/otpCode";
  * Separated from the screen because it is the part that differs and the part
  * worth reading in one place: three flows share every pixel and disagree only
  * about six sentences, and inlining them would bury that in JSX conditionals.
+ *
+ * Words only — the per-flow badge glyph lives in the screen instead. Typing an
+ * icon name properly costs `keyof typeof Ionicons.glyphMap`, and importing a
+ * vector-icon package into `src/lib` to get it would put a UI dependency in the
+ * one directory that has none: `authRoute`, `authError` and `otpCode` are all
+ * dependency-free, and that is what makes them trivially testable.
  */
 type Copy = {
   title: string;
   subtitle: (email: string) => string;
-  /** An Ionicons name, matching the badge each flow's email carries. */
-  icon: string;
 };
 
 const COPY: Record<CodeType, Copy> = {
   signup: {
     title: "Check your email",
     subtitle: (email) => `We've sent a six-digit code to ${email}. Enter it to activate your account.`,
-    icon: "mail-outline",
   },
   recovery: {
     title: "Enter your code",
     subtitle: (email) => `We've sent a six-digit code to ${email}. Enter it, then you can set a new password.`,
-    icon: "lock-open-outline",
   },
   email: {
     title: "Enter your code",
     subtitle: (email) => `We've sent a six-digit code to ${email}. Enter it and you're in.`,
-    icon: "key-outline",
   },
 };
 
@@ -801,6 +802,18 @@ import { enterFrom } from "@/ui/motion";
 import { colors } from "@/ui/theme";
 import { footnote, largeTitle, subheadline, MAX_DISPLAY_SCALE } from "@/ui/type";
 import { useSession } from "@/stores/sessionStore";
+
+/**
+ * The badge glyph per flow, matching the badge that flow's email carries.
+ *
+ * Here rather than in `verifyCopy` so that module stays free of UI imports;
+ * this is the same shape `app/(auth)/sign-up.tsx` uses for FOCUS_ICONS.
+ */
+const ICONS: Record<CodeType, React.ComponentProps<typeof Ionicons>["name"]> = {
+  signup: "mail-outline",
+  recovery: "lock-open-outline",
+  email: "key-outline",
+};
 
 /**
  * Where every emailed code is typed — sign-up, recovery and magic link alike.
@@ -876,7 +889,7 @@ export default function Verify() {
         <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           <Animated.View entering={enterFrom(0)} style={{ paddingHorizontal: 16, paddingBottom: 26, gap: 14 }}>
             <View style={{ height: 56, width: 56, borderRadius: 17, backgroundColor: colors.accent, alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name={copy.icon as never} size={26} color="#FFFFFF" />
+              <Ionicons name={ICONS[type] ?? ICONS.signup} size={26} color="#FFFFFF" />
             </View>
             <View>
               <Text accessibilityRole="header" maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...largeTitle, color: colors.label }}>
