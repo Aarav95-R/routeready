@@ -1529,9 +1529,28 @@ sends" with "confirm by typing the six-digit code from the email", and the
 reset sentence's "open the emailed link on the device" with "type the emailed
 code".
 
-Note in section 4 that `site_url` and the redirect allow-list are no longer
-load-bearing for auth email, but should still be set correctly for future
-share links.
+**Rewrite section 3 ("Enable auth deep links") rather than leaving it.** Every
+sentence in it is now wrong in a way that would waste someone's afternoon:
+
+- It says that without those settings "GoTrue rejects the
+  `redirectTo`/`emailRedirectTo` every auth call sends". No auth call sends one
+  any more — Task 4 removed all three.
+- It tells you to add an `exp://…/--/auth-callback` URL "for testing magic
+  links inside Expo Go". The magic link is a code now; there is nothing to open.
+- It names `routeready://auth-callback` as the Site URL — **a route Task 7
+  deletes.**
+
+Retitle it "Auth URL configuration (no longer load-bearing)" and say plainly:
+these settings no longer affect any auth email, because none of the three flows
+sends a redirect; Supabase still requires a `site_url`, so leave one set; and
+the value currently there names a route that no longer exists.
+
+Deliberately do **not** change `site_url` in `config.toml` as part of this work.
+It is not exercised by any flow now, so changing it buys nothing functional
+while adding another field to an already-delicate first push. Note it instead
+as the one thing to repoint if a link-based flow is ever reintroduced —
+otherwise that flow would redirect into expo-router's "Unmatched Route" screen.
+Record that in section 3 so the next person finds it before they debug it.
 
 - [ ] **Step 2: Run the whole suite**
 
