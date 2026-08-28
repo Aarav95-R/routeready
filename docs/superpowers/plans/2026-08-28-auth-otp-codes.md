@@ -1180,6 +1180,13 @@ form — there is no terminal panel any more, because the screen navigates.
 Update the file's header comment where it says the confirmation arrives as a
 link, so it describes the code instead.
 
+Then clear what the deleted panel orphans. It rendered a badge and two headings
+of its own, so removing it strands three imports — `popIn` from `@/ui/motion`,
+and `largeTitle` and `subheadline` from `@/ui/type`. Both are named imports
+sharing a line with bindings that are still used, so remove the names, not the
+statements. `tsc` will not tell you (this project sets no `noUnusedLocals`);
+`npx expo lint` will, and it should end at `0 problems`.
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test && npx tsc --noEmit`
