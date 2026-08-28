@@ -18,19 +18,29 @@ import { FACES, MAX_DISPLAY_SCALE } from "@/ui/type";
  * so this component cannot hold a string that `verifyOtp` would reject.
  */
 export function CodeField({
-  value, onChangeText, invalid = false, autoFocus = true,
+  value, onChangeText, invalid = false, busy = false, autoFocus = true,
 }: {
   value: string;
   onChangeText: (code: string) => void;
   /** Every box goes red — which digit was wrong is not knowable. */
   invalid?: boolean;
+  /**
+   * True while a submitted code is being checked against the server.
+   *
+   * Without this the screen looked identical whether a keystroke was ignored
+   * or a slow Auth service was still thinking — this project has measured
+   * that service taking 52-86 seconds on an ordinary call. Dimming is the
+   * whole affordance; no spinner, so the boxes stay the only thing on screen.
+   */
+  busy?: boolean;
   autoFocus?: boolean;
 }) {
   const input = useRef<TextInput>(null);
   const boxes = Array.from({ length: CODE_LENGTH }, (_, i) => value[i] ?? "");
   // The box the next digit lands in, so it can carry the accent. Once the code
-  // is full there is no next box and nothing is highlighted.
-  const cursor = value.length < CODE_LENGTH ? value.length : -1;
+  // is full, or a submitted code is being checked, there is no next box to
+  // highlight.
+  const cursor = busy || value.length >= CODE_LENGTH ? -1 : value.length;
 
   const border = (i: number) => {
     if (invalid) return colors.danger;
@@ -50,7 +60,7 @@ export function CodeField({
       // top and claims the responder first. This exists for the assistive-tech
       // activation path, where the label above is what gets tapped.
       onPress={() => input.current?.focus()}
-      style={{ flexDirection: "row", justifyContent: "center", gap: 9, paddingHorizontal: 16 }}
+      style={{ flexDirection: "row", justifyContent: "center", gap: 9, paddingHorizontal: 16, opacity: busy ? 0.5 : 1 }}
     >
       {boxes.map((digit, i) => (
         <View

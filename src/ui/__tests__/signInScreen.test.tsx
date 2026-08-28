@@ -5,6 +5,7 @@ jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, back: jest
 
 import SignIn from "../../../app/(auth)/sign-in";
 import { useSession } from "@/stores/sessionStore";
+import { EMAIL_NOT_CONFIRMED } from "@/lib/authError";
 
 const signIn = jest.fn();
 const sendMagicLink = jest.fn();
@@ -74,6 +75,24 @@ test("the button will not fire twice while the first attempt is in flight", asyn
  * recovered in the app at all — and the magic link, the only way back in, was
  * presented as a convenience rather than as a rescue.
  */
+/**
+ * The dead end this branch exists to close: before it, this sentence named a
+ * code with nowhere on this screen to enter it — sign-up refused a second
+ * attempt on the same address, so someone who closed the app before typing
+ * the first code had no way back in at all.
+ */
+test("an unconfirmed sign-in reaches the code screen instead of a dead end", async () => {
+  signIn.mockResolvedValue(EMAIL_NOT_CONFIRMED);
+  render(<SignIn />);
+  fill();
+  fireEvent.press(screen.getByRole("button", { name: "Sign in" }));
+  await waitFor(() => expect(mockPush).toHaveBeenCalledWith({
+    pathname: "/(auth)/verify",
+    params: { email: "sam@example.com", type: "signup" },
+  }));
+  expect(screen.queryByText(EMAIL_NOT_CONFIRMED)).toBeNull();
+});
+
 test("there is a way back in when the password is gone", () => {
   render(<SignIn />);
   fireEvent.press(screen.getByRole("button", { name: "Forgot your password?" }));

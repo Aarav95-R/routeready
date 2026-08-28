@@ -164,7 +164,7 @@ export const useSession = create<SessionState>((set, get) => ({
    *
    * They go on this call rather than being written afterwards because email
    * confirmation is on — `signUp()` returns no session, so there is no
-   * signed-in user to write a profile to until the link is opened in a later
+   * signed-in user to write a profile to until the code is entered in a later
    * session. This is the only moment they can be saved in one round trip.
    */
   signUp: async (email, password, metadata = {}) => {
@@ -191,11 +191,33 @@ export const useSession = create<SessionState>((set, get) => ({
    * Both fire in the real client, but the screen navigates on this store, and
    * waiting on the slower of the two shows a frame of the code screen to
    * somebody who has already got it right.
+   *
+   * Wrapped in `withTimeout` and a `try` for the same reason `signIn` above
+   * is: `verifyOtp` had neither, and the verify screen clears its own `busy`
+   * on the line after the await, so a hang or an escaped throw left the code
+   * field looking exactly like an ignored keystroke, for good. Reuses
+   * `SIGN_IN_DEADLINE_MS` rather than a code-specific budget — this is the
+   * same Auth service, hit the same way, and the recorded 52-86s health-check
+   * incident was about that service in general, not about sign-in in
+   * particular.
    */
   verifyCode: async (email, token, type) => {
-    const { data, error } = await supabase.auth.verifyOtp({ email, token, type });
-    if (error) return authError(error.message);
-    set({ session: data.session, recovering: type === "recovery" });
+    const attempt = Promise.resolve().then(() => supabase.auth.verifyOtp({ email, token, type }));
+
+    let answer;
+    try {
+      answer = await withTimeout(attempt, SIGN_IN_DEADLINE_MS);
+    } catch (thrown) {
+      return authError(thrown instanceof Error ? thrown.message : null);
+    }
+    if (answer === TIMED_OUT) return AUTH_TIMEOUT;
+    if (answer.error) return authError(answer.error.message);
+    // Guarded on an actual session rather than set unconditionally: the
+    // deleted link-era code carried this same guard, because a token that
+    // fails without an `error` — Supabase does not promise one is always set
+    // — would otherwise flag `recovering` with no session under it, stranding
+    // someone on update-password leavable only by signing out.
+    if (answer.data.session) set({ session: answer.data.session, recovering: type === "recovery" });
     return null;
   },
 
@@ -207,18 +229,41 @@ export const useSession = create<SessionState>((set, get) => ({
    * that sent them the first time. `max_frequency` is 60s on the project, so a
    * refusal here is ordinary impatience rather than a fault — `authError`
    * already turns it into a sentence about waiting a minute.
+   *
+   * The three calls are chosen with a `switch` on `type` rather than
+   * `if`/`else` so that a fourth member added to `CodeType` later fails this
+   * file at compile time instead of silently falling into the signup branch —
+   * the `never` assignment below is unreachable only while the switch is
+   * exhaustive.
+   *
+   * Wrapped in `withTimeout` and a `try` for the same reason `verifyCode`
+   * above is: none of these three calls had a deadline or a catch, and the
+   * screen's own resend guard clears on the line after the await, so a hang
+   * or an escaped throw here left "Send a new code" permanently unable to
+   * fire again.
    */
   resendCode: async (email, type) => {
-    if (type === "recovery") {
-      const { error } = await supabase.auth.resetPasswordForEmail(email);
-      return error ? authError(error.message) : null;
+    const send = (): Promise<{ error: { message: string } | null }> => {
+      switch (type) {
+        case "recovery": return supabase.auth.resetPasswordForEmail(email);
+        case "email": return supabase.auth.signInWithOtp({ email });
+        case "signup": return supabase.auth.resend({ type: "signup", email });
+        default: {
+          const exhaustive: never = type;
+          throw new Error(`Unhandled code type: ${exhaustive as string}`);
+        }
+      }
+    };
+    const attempt = Promise.resolve().then(send);
+
+    let answer;
+    try {
+      answer = await withTimeout(attempt, SIGN_IN_DEADLINE_MS);
+    } catch (thrown) {
+      return authError(thrown instanceof Error ? thrown.message : null);
     }
-    if (type === "email") {
-      const { error } = await supabase.auth.signInWithOtp({ email });
-      return error ? authError(error.message) : null;
-    }
-    const { error } = await supabase.auth.resend({ type: "signup", email });
-    return error ? authError(error.message) : null;
+    if (answer === TIMED_OUT) return AUTH_TIMEOUT;
+    return answer.error ? authError(answer.error.message) : null;
   },
 
   // The one action available on the update-password screen. Left in place on

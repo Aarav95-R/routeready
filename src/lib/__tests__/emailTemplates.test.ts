@@ -21,7 +21,7 @@ test.each(NAMES)("%s carries a code and no link", (name) => {
   const html = read(name);
   expect(html).toContain("{{ .Token }}");
   expect(html).not.toContain("ConfirmationURL");
-  expect(html).not.toMatch(/<a\s[^>]*href="\{\{/);
+  expect(html).not.toMatch(/<a\s[^>]*href=/);
 });
 
 test.each(NAMES)("%s still addresses the person it went to", (name) => {

@@ -187,10 +187,17 @@ enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
 #
-# There is no marketing site — RouteReady is mobile-only — so this points at the app itself. Every
-# emailed link (signup confirmation, magic link, recovery) is sent with an explicit `redirectTo` of
-# this same value from sessionStore.ts, but `site_url` is still what a *misconfigured or missing*
-# redirect falls back to, and it has to be in the allow-list either way.
+# No longer load-bearing. RouteReady is mobile-only, and none of the three auth flows (signup
+# confirmation, magic link, recovery) sends a `redirectTo` any more — see sessionStore.ts — because
+# each now emails a typed six-digit code instead of a link, and there is nothing for a redirect URL
+# to open. This still has to be non-empty regardless, because GoTrue refuses to start without a
+# `site_url`, so the value below is left as-is rather than cleared or repointed.
+#
+# It is, however, a latent trap: `auth-callback` names the deep-link route this project deleted once
+# codes replaced links. If a link-based flow is ever reintroduced, whatever it sends as `redirectTo`
+# will land here, and — because the route is gone — expo-router's "Unmatched Route" screen is what
+# the user sees. Repoint this (and `additional_redirect_urls` below) at wherever that flow's route
+# actually lives before shipping it. See SETUP.md section 3.
 site_url = "routeready://auth-callback"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
@@ -334,7 +341,7 @@ content_path = "./supabase/templates/confirmation.html"
 subject = "Reset your password — RouteReady"
 content_path = "./supabase/templates/recovery.html"
 
-# Magic link — the "Email me a link instead" path on app/(auth)/sign-in.tsx (sendMagicLink in
+# Magic link — the "Email me a sign-in code" path on app/(auth)/sign-in.tsx (sendMagicLink in
 # sessionStore.ts). Easy to miss when listing the templates that need designing, because no screen
 # is named after it and it shares the sign-in screen with the password form. Without this block it
 # is not that no email is sent — it is that GoTrue's stock unbranded template is sent, from our

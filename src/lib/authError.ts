@@ -32,6 +32,22 @@ export const AUTH_FALLBACK = "Something went wrong. Try again in a moment.";
 export const AUTH_TIMEOUT = "That's taking longer than it should. Try again in a moment.";
 
 /**
+ * What an unconfirmed sign-up hears on the sign-in screen.
+ *
+ * Exported rather than left inline in the table so `app/(auth)/sign-in.tsx`
+ * can compare against it by identity to decide whether to route to the verify
+ * screen — matching this by re-typing the sentence in the screen would let
+ * the two drift apart silently, exactly the failure `AUTH_FALLBACK` and
+ * `AUTH_TIMEOUT` are already exported to avoid.
+ *
+ * Says nothing about signing in afterwards: the sign-in screen now pushes
+ * straight to the verify screen on this sentence, and a correct code there
+ * opens a session directly, so there is no second "sign in" step left to
+ * describe.
+ */
+export const EMAIL_NOT_CONFIRMED = "Confirm your email first — enter the code we sent you.";
+
+/**
  * First match wins, so the order is the specificity order. `email not
  * confirmed` has to sit above the generic email entries, and the rate-limit
  * pair has to sit above anything matching on `email`.
@@ -48,7 +64,7 @@ const SENTENCES: readonly (readonly [needle: string, sentence: string])[] = [
   // Confirmation is on, so this is the state every new account is in until the
   // code is entered. Saying "wrong password" here would be a lie that sends
   // people to the reset screen for a password that is fine.
-  ["email not confirmed", "Confirm your email first — enter the code we sent you, then sign in."],
+  ["email not confirmed", EMAIL_NOT_CONFIRMED],
   ["user already registered", "There's already an account on that email. Sign in instead?"],
   ["already been registered", "There's already an account on that email. Sign in instead?"],
   ["rate limit", "Too many tries just now. Give it a minute and go again."],

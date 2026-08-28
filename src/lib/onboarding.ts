@@ -9,10 +9,11 @@ import type { Hazard } from "@/types/db";
  *
  * The questions come before the account exists, which is not a style choice.
  * Supabase email confirmation is on, so `signUp()` returns no session: there
- * is nobody to write a profile to until the learner opens the link and comes
- * back in a later session. Anything asked "after the account" would have to
- * survive that round trip on disk and be replayed on first sign-in. Asking
- * first removes the problem rather than solving it — one call carries the lot.
+ * is nobody to write a profile to until the learner enters the code that
+ * confirms them and comes back in a later session. Anything asked "after the
+ * account" would have to survive that round trip on disk and be replayed on
+ * first sign-in. Asking first removes the problem rather than solving it —
+ * one call carries the lot.
  */
 
 /**

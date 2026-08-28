@@ -15,10 +15,10 @@ import { footnote, largeTitle, subheadline, MAX_DISPLAY_SCALE } from "@/ui/type"
 import { useSession } from "@/stores/sessionStore";
 
 /**
- * Where a recovery link lands. `app/_layout.tsx` routes here — and only here
- * — for as long as `recovering` is set, from wherever the link happened to
- * open, so there is no way to carry a recovery session into the rest of the
- * app without this screen having run.
+ * Where a verified recovery code lands. `app/_layout.tsx` routes here — and
+ * only here — for as long as `recovering` is set, regardless of which screen
+ * the code was entered from, so there is no way to carry a recovery session
+ * into the rest of the app without this screen having run.
  *
  * There is deliberately no back button. The only two ways off this screen are
  * "set a new password" and "sign out" — going back would just be sent here

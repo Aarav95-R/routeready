@@ -9,6 +9,7 @@ import { AuthAction } from "@/ui/AuthAction";
 import { AuthField } from "@/ui/AuthField";
 import { Group } from "@/ui/List";
 import { enterFrom } from "@/ui/motion";
+import { EMAIL_NOT_CONFIRMED } from "@/lib/authError";
 import { colors } from "@/ui/theme";
 import { caption, footnote, headline, largeTitle, subheadline, MAX_DISPLAY_SCALE } from "@/ui/type";
 import { useSession } from "@/stores/sessionStore";
@@ -56,6 +57,16 @@ export default function SignIn() {
     const failure = await signIn(email.trim(), password);
     setBusy(false);
     if (!failure) return;
+    // An unconfirmed sign-up used to be a dead end here: this sentence named
+    // a code with nowhere on this screen to enter it, sign-up refused a
+    // second attempt on the same address, and before codes existed the same
+    // sentence at least named a link that could be opened from the inbox.
+    // Comparing against the exported constant, not the sentence text, is what
+    // keeps this from drifting out of sync with authError.ts.
+    if (failure === EMAIL_NOT_CONFIRMED) {
+      router.push({ pathname: "/(auth)/verify", params: { email: email.trim(), type: "signup" } });
+      return;
+    }
     setError(failure);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   };

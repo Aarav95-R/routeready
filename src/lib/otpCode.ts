@@ -13,6 +13,14 @@ export const CODE_LENGTH = 6;
 export type CodeType = "signup" | "recovery" | "email";
 
 /**
+ * Every value `CodeType` can hold, for validating something that claims to be
+ * one — `app/(auth)/verify.tsx` reads its `type` from a route param, and the
+ * `routeready` URL scheme is still registered, so a crafted deep link can put
+ * anything there before it ever reaches `verifyCode`/`resendCode`.
+ */
+export const CODE_TYPES: readonly CodeType[] = ["signup", "recovery", "email"];
+
+/**
  * Digits only, capped at the code length.
  *
  * Non-digits are dropped rather than refused: the emails group the code for

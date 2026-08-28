@@ -50,6 +50,24 @@ test("a refused code marks every box", () => {
   expect(new Set(borders)).toEqual(new Set([colors.danger]));
 });
 
+/**
+ * The visible half of the fix for a slow Auth service: without it, a code
+ * being checked and a keystroke being ignored looked identical on screen.
+ */
+test("a busy field is dimmed", () => {
+  render(<CodeField value="418" onChangeText={jest.fn()} busy />);
+  expect(screen.getByLabelText("Enter the code").props.style.opacity).toBe(0.5);
+});
+
+// A partial code would otherwise highlight the next box in accent — busy
+// means there is no "next box" to fill until the answer comes back.
+test("a busy field stops highlighting the next box", () => {
+  render(<CodeField value="418" onChangeText={jest.fn()} busy />);
+  const borders = Array.from({ length: CODE_LENGTH }, (_, i) =>
+    screen.getByTestId(`code-box-${i}`).props.style.borderColor);
+  expect(new Set(borders)).toEqual(new Set([colors.separator]));
+});
+
 test("it asks for the numeric keypad and offers one-time-code autofill", () => {
   render(<CodeField value="" onChangeText={jest.fn()} />);
   expect(field().props.keyboardType).toBe("number-pad");

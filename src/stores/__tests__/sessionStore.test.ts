@@ -482,6 +482,70 @@ test("a refused code is a sentence and changes nothing", async () => {
 });
 
 /**
+ * The deleted link-era code carried this guard explicitly: a token that
+ * fails to open a session without setting `error` — Supabase does not
+ * promise one is always present — must not still flag `recovering`, or the
+ * person is stranded on update-password with no session under it, leavable
+ * only by signing out.
+ */
+test("a verify response with no session does not flag recovering", async () => {
+  useSession.setState({ session: null, recovering: false });
+  (supabase.auth.verifyOtp as jest.Mock).mockResolvedValue({ data: { session: null }, error: null });
+
+  expect(await useSession.getState().verifyCode("a@b.com", "418302", "recovery")).toBeNull();
+  expect(useSession.getState().session).toBeNull();
+  expect(useSession.getState().recovering).toBe(false);
+});
+
+/**
+ * `verifyCode` and `resendCode` used to await Supabase directly, with neither
+ * a deadline nor a `try` — the same shape `signIn` was fixed for above, on
+ * the same Auth service that measured 52-86 seconds on a plain health check.
+ * Both screens clear their own busy flag on the line after the await, so a
+ * hang here left the code field dimmed and inert for good, and an escaped
+ * throw was worse than the hang it replaced.
+ */
+test("a verify that never answers hands back something to read", async () => {
+  jest.useFakeTimers();
+  try {
+    (supabase.auth.verifyOtp as jest.Mock).mockReturnValueOnce(new Promise(() => {}));
+
+    const pending = useSession.getState().verifyCode("a@b.com", "418302", "signup");
+    await jest.advanceTimersByTimeAsync(SIGN_IN_DEADLINE_MS);
+
+    expect(await pending).toBe(AUTH_TIMEOUT);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("a verify that rejects is a sentence, not a throw", async () => {
+  (supabase.auth.verifyOtp as jest.Mock).mockRejectedValueOnce(new Error("Network request failed"));
+  expect(await useSession.getState().verifyCode("a@b.com", "418302", "signup"))
+    .toBe(authError("Network request failed"));
+});
+
+test("a resend that never answers hands back something to read", async () => {
+  jest.useFakeTimers();
+  try {
+    (supabase.auth.resend as jest.Mock).mockReturnValueOnce(new Promise(() => {}));
+
+    const pending = useSession.getState().resendCode("a@b.com", "signup");
+    await jest.advanceTimersByTimeAsync(SIGN_IN_DEADLINE_MS);
+
+    expect(await pending).toBe(AUTH_TIMEOUT);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test("a resend that rejects is a sentence, not a throw", async () => {
+  (supabase.auth.resend as jest.Mock).mockRejectedValueOnce(new Error("Network request failed"));
+  expect(await useSession.getState().resendCode("a@b.com", "signup"))
+    .toBe(authError("Network request failed"));
+});
+
+/**
  * Three flows, three different ways to ask again. `auth.resend` covers signup
  * only; recovery and magic link are re-sent by calling the same function that
  * sent them the first time.
