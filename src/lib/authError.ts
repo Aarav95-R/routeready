@@ -38,6 +38,13 @@ export const AUTH_TIMEOUT = "That's taking longer than it should. Try again in a
  */
 const SENTENCES: readonly (readonly [needle: string, sentence: string])[] = [
   ["invalid login credentials", "That email and password don't match. Try again, or reset your password."],
+  // ── Codes. Above the generic entries because two of these contain the word
+  // "invalid", and below `invalid login credentials` because that one is more
+  // specific still. Supabase folds both causes into one message for verifyOtp,
+  // so that combined case gets a sentence naming both.
+  ["token has expired or is invalid", "That code has expired or isn't right. Check the email, or send a new code."],
+  ["otp_expired", "That code has expired. Send a new code and try again."],
+  ["invalid otp", "That code isn't right. Check the email and try again."],
   // Confirmation is on, so this is the state every new account is in until the
   // link is opened. Saying "wrong password" here would be a lie that sends
   // people to the reset screen for a password that is fine.
