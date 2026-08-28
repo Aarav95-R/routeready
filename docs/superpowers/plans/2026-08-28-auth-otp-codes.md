@@ -229,6 +229,8 @@ git commit -m "feat: tell a wrong code apart from an expired one"
 ```tsx
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import { CodeField } from "../CodeField";
+import { CODE_LENGTH } from "@/lib/otpCode";
+import { colors } from "@/ui/theme";
 
 const field = () => screen.getByLabelText("Verification code");
 
@@ -265,11 +267,16 @@ test("it never reports more than a full code", () => {
 
 // The whole field goes red, not one box: the person cannot know which digit
 // was wrong, and marking one would be a guess presented as fact.
+//
+// The value is deliberately partial. With a complete code the cursor is -1 and
+// every box already takes the same branch, so asserting only that the borders
+// agree would still pass with the invalid branch deleted — the assertion has
+// to name the colour, and the cursor has to be live for it to mean anything.
 test("a refused code marks every box", () => {
-  render(<CodeField value="418302" onChangeText={jest.fn()} invalid />);
-  const borders = Array.from({ length: 6 }, (_, i) =>
+  render(<CodeField value="4183" onChangeText={jest.fn()} invalid />);
+  const borders = Array.from({ length: CODE_LENGTH }, (_, i) =>
     screen.getByTestId(`code-box-${i}`).props.style.borderColor);
-  expect(new Set(borders).size).toBe(1);
+  expect(new Set(borders)).toEqual(new Set([colors.danger]));
 });
 
 test("it asks for the numeric keypad and offers one-time-code autofill", () => {
@@ -328,8 +335,17 @@ export function CodeField({
 
   return (
     <Pressable
+      // `accessible={false}` is load-bearing, not tidiness. Pressable defaults
+      // to accessible: true, which collapses this whole subtree — six boxes and
+      // the input — into one opaque node, and a screen reader then announces
+      // "Enter the code, button" and offers no way to type. With it false, the
+      // TextInput's own label is what assistive tech reaches.
+      accessible={false}
       accessibilityRole="button"
       accessibilityLabel="Enter the code"
+      // Effectively unreachable by ordinary touch, since the full-bleed input
+      // above claims the responder first; this serves the assistive-tech
+      // activation path.
       onPress={() => input.current?.focus()}
       style={{ flexDirection: "row", justifyContent: "center", gap: 9, paddingHorizontal: 16 }}
     >
@@ -874,8 +890,16 @@ export default function Verify() {
 
           <Animated.View entering={enterFrom(1)}>
             <CodeField value={code} onChangeText={enter} invalid={Boolean(error)} />
+            {/* The live region is the non-visual half of `invalid`. CodeField
+                signals a refused code by turning every box red, which reaches
+                nobody using a screen reader; this is where the sentence saying
+                what went wrong actually gets announced. */}
             {error && (
-              <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...footnote, color: colors.danger, paddingHorizontal: 20, paddingTop: 14, textAlign: "center" }}>
+              <Text
+                accessibilityLiveRegion="polite"
+                maxFontSizeMultiplier={MAX_DISPLAY_SCALE}
+                style={{ ...footnote, color: colors.danger, paddingHorizontal: 20, paddingTop: 14, textAlign: "center" }}
+              >
                 {error}
               </Text>
             )}
