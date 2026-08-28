@@ -905,12 +905,44 @@ export default function Verify() {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Regenerate the typed-route declarations**
 
-Run: `npx jest verifyCopy verifyScreen`
-Expected: PASS, 3 + 7 tests
+`app.config.js` sets `experiments.typedRoutes`, and `tsconfig.json` includes
+`.expo/types/**/*.ts`, where expo-router writes a literal union of every route
+that exists. Creating `verify.tsx` does not update that file, so until it is
+regenerated `tsc` rejects any push to the new route with:
 
-- [ ] **Step 5: Commit**
+```
+error TS2322: Type '"/(auth)/verify"' is not assignable to type '"/" | "/(auth)/update-password" | ...'
+```
+
+Task 6 pushes to this route from three screens, so regenerate now:
+
+```bash
+npx expo start --clear > /tmp/regen.log 2>&1 &
+sleep 6; pkill -f "expo start"
+grep -c "auth)/verify" .expo/types/router.d.ts
+```
+
+Expected: a non-zero count. Generation happens during boot and completes in a
+couple of seconds — it works even when the server then declines to bind a port
+because another dev server already holds 8081, so a "Skipping dev server" line
+in the log is not a failure.
+
+`.expo/` is gitignored, so this produces no diff. It is a local build artifact
+that any developer regenerates by running the app; it is regenerated here only
+so the typecheck in the next step reflects the route that now exists.
+
+- [ ] **Step 5: Run tests and the typecheck**
+
+Run: `npx jest verifyCopy verifyScreen && npx tsc --noEmit`
+Expected: PASS, 3 + 7 tests, and a clean typecheck.
+
+Note: `tsc` still reports the pre-existing error in `app/_layout.tsx` from
+Task 4's removal of `setSessionFromCallback` — that is expected and is Task 7's
+to fix. It must be the *only* error, and it must be in that one file.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/lib/verifyCopy.ts src/lib/__tests__/verifyCopy.test.ts "app/(auth)/verify.tsx" src/ui/__tests__/verifyScreen.test.tsx
@@ -1083,6 +1115,17 @@ link, so it describes the code instead.
 
 Run: `npm test && npx tsc --noEmit`
 Expected: PASS. `tsc` still flags `app/_layout.tsx` — Task 7.
+
+If instead you get `TS2322: Type '"/(auth)/verify"' is not assignable to type ...`
+on the three files you just edited, the typed-route declarations are stale:
+Task 5 Step 4 regenerates them, and this is what it looks like when that was
+skipped or when `.expo/` was cleared since. Re-run that step:
+
+```bash
+npx expo start --clear > /tmp/regen.log 2>&1 &
+sleep 6; pkill -f "expo start"
+grep -c "auth)/verify" .expo/types/router.d.ts
+```
 
 - [ ] **Step 5: Commit**
 
