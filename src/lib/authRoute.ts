@@ -23,12 +23,7 @@ export function nextAuthRoute({ session, recovering, segments }: AuthRouteState)
     return onUpdatePassword ? null : "/(auth)/update-password";
   }
 
-  // `auth-callback` (app/auth-callback.tsx) is a landing pad, not a screen —
-  // every emailed link passes through it for a moment while the tokens in the
-  // URL fragment are applied. Treated exactly like update-password once
-  // recovery is no longer in play: send the person on based on whether that
-  // application actually produced a session.
-  if (onUpdatePassword || segments[0] === "auth-callback") return session ? "/(tabs)" : "/(auth)/sign-in";
+  if (onUpdatePassword) return session ? "/(tabs)" : "/(auth)/sign-in";
 
   const inAuth = segments[0] === "(auth)";
   if (!session && !inAuth) return "/(auth)/sign-in";

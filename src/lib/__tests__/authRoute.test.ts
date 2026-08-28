@@ -54,30 +54,22 @@ test("a session outside the auth group, not recovering, is left alone", () => {
   expect(nextAuthRoute({ session: {}, recovering: false, segments: ["(tabs)"] })).toBeNull();
 });
 
-// ── The callback landing pad ────────────────────────────────────────────────
-//
-// `routeready://auth-callback` has no screen of its own in the (auth) group —
-// it's a single top-level route (app/auth-callback.tsx) that exists purely so
-// expo-router's own linking has *something* to match, instead of falling
-// through to its built-in "Unmatched Route" 404. It must never be a resting
-// place: every emailed link passes through it for a moment while the tokens
-// in the URL fragment are being applied, and then has to be sent on.
-
-test("recovering, freshly landed on the callback route, is sent to update-password", () => {
-  expect(nextAuthRoute({ session: {}, recovering: true, segments: ["auth-callback"] }))
-    .toBe("/(auth)/update-password");
-});
-
-test("a signup or magic-link callback with a session lands on the tabs", () => {
-  expect(nextAuthRoute({ session: {}, recovering: false, segments: ["auth-callback"] }))
-    .toBe("/(tabs)");
-});
-
-// A callback whose tokens Supabase rejected (see sessionStore.setSessionFromCallback)
-// never opens a session, so there's nothing to do but send the person to sign in —
-// leaving them on the callback route would repeat the old "stuck on a dead
-// screen" failure with a blank page instead of a 404.
-test("a rejected callback with no session goes to sign-in, not nowhere", () => {
+/**
+ * The landing pad is gone. No email carries a token any more, so a URL
+ * claiming to be one is a stale link from an old build or somebody's guess,
+ * and it gets the same answer as any other unknown route: go where the
+ * session says.
+ */
+test("a stale auth-callback link is treated as an ordinary route", () => {
   expect(nextAuthRoute({ session: null, recovering: false, segments: ["auth-callback"] }))
     .toBe("/(auth)/sign-in");
+  expect(nextAuthRoute({ session: {}, recovering: false, segments: ["auth-callback"] }))
+    .toBeNull();
+});
+
+// The one thing that must survive the deletion: recovery still outranks
+// everything, now set by a verified code rather than by a link's fragment.
+test("recovery still wins wherever it is set from", () => {
+  expect(nextAuthRoute({ session: {}, recovering: true, segments: ["(tabs)"] }))
+    .toBe("/(auth)/update-password");
 });

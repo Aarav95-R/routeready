@@ -18,7 +18,7 @@ type SessionState = {
   session: Session | null;
   initialized: boolean;
   /**
-   * Set the moment a recovery link's tokens land, cleared the moment the
+   * Set the moment a recovery code is verified, cleared the moment the
    * password is changed (or the person signs out instead). While true, the
    * root layout redirects to `update-password` no matter where else `session`
    * would otherwise send it.

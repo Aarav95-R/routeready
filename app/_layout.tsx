@@ -1,6 +1,5 @@
 import "../global.css";
 import { useEffect } from "react";
-import * as Linking from "expo-linking";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import {
@@ -8,7 +7,6 @@ import {
 } from "@expo-google-fonts/plus-jakarta-sans";
 import { View } from "react-native";
 import Mapbox from "@rnmapbox/maps";
-import { parseAuthCallback } from "@/lib/authCallback";
 import { nextAuthRoute } from "@/lib/authRoute";
 import { useSession } from "@/stores/sessionStore";
 import { useNetwork } from "@/stores/networkStore";
@@ -24,27 +22,11 @@ export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold,
   });
-  const { session, recovering, initialized, init, setSessionFromCallback } = useSession();
+  const { session, recovering, initialized, init } = useSession();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => { init(); useNetwork.getState().init(); }, [init]);
-
-  // Every emailed link — signup confirmation, magic link, password recovery —
-  // arrives as routeready://auth-callback#access_token=…&refresh_token=…&type=…
-  // `type` is what tells recovery apart from the other two; see
-  // sessionStore.setSessionFromCallback for why only recovery changes anything.
-  useEffect(() => {
-    const handle = ({ url }: { url: string }) => {
-      const callback = parseAuthCallback(url);
-      if (callback) setSessionFromCallback(callback, callback.type);
-    };
-    const sub = Linking.addEventListener("url", handle);
-    Linking.getInitialURL().then((url) => {
-      if (url) handle({ url });
-    });
-    return () => sub.remove();
-  }, [setSessionFromCallback]);
 
   useEffect(() => {
     if (!initialized) return;
