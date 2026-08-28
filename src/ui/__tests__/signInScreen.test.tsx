@@ -80,37 +80,23 @@ test("there is a way back in when the password is gone", () => {
   expect(mockPush).toHaveBeenCalledWith("/(auth)/reset");
 });
 
-test("a sign-in link can be sent instead, and says it was", async () => {
+// Sending no longer annotates this screen — there is a code to type, so the
+// flow moves to the screen that takes it.
+test("asking for a sign-in code goes to the code screen", async () => {
   render(<SignIn />);
   fireEvent.changeText(screen.getByLabelText("Email address"), "sam@example.com");
-  fireEvent.press(screen.getByRole("button", { name: "Email me a sign-in link" }));
+  fireEvent.press(screen.getByRole("button", { name: "Email me a sign-in code" }));
   await waitFor(() => expect(sendMagicLink).toHaveBeenCalledWith("sam@example.com"));
-  expect(await screen.findByText(/check your email/i)).toBeTruthy();
+  await waitFor(() => expect(mockPush).toHaveBeenCalledWith({
+    pathname: "/(auth)/verify",
+    params: { email: "sam@example.com", type: "email" },
+  }));
 });
 
 test("a link cannot be sent to an empty address", () => {
   render(<SignIn />);
-  fireEvent.press(screen.getByRole("button", { name: "Email me a sign-in link" }));
+  fireEvent.press(screen.getByRole("button", { name: "Email me a sign-in code" }));
   expect(sendMagicLink).not.toHaveBeenCalled();
-});
-
-/**
- * Send a link, then fail a sign-in, and the old screen left the success
- * message sitting under the failure: each handler cleared `error` and neither
- * cleared `notice`.
- */
-test("a later failure clears the earlier success message", async () => {
-  render(<SignIn />);
-  fireEvent.changeText(screen.getByLabelText("Email address"), "sam@example.com");
-  fireEvent.press(screen.getByRole("button", { name: "Email me a sign-in link" }));
-  await screen.findByText(/check your email/i);
-
-  signIn.mockResolvedValue("That email and password don't match. Try again, or reset your password.");
-  fireEvent.changeText(screen.getByLabelText("Password"), "hunter2hunter2");
-  fireEvent.press(screen.getByRole("button", { name: "Sign in" }));
-
-  await screen.findByText(/don't match/);
-  expect(screen.queryByText(/check your email/i)).toBeNull();
 });
 
 test("there is a way to make an account from here", () => {

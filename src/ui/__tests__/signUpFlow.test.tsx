@@ -2,8 +2,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react-nativ
 import { BackHandler } from "react-native";
 
 const mockReplace = jest.fn();
+const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace, back: jest.fn(), push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, back: jest.fn(), push: mockPush }),
 }));
 
 jest.mock("@/services/centresRepo", () => ({
@@ -191,14 +192,18 @@ test("every answer reaches signUp under its stored name", async () => {
   }));
 });
 
-test("success replaces the form rather than annotating it", async () => {
+// The screen used to end on its own "Check your inbox" panel. There is now a
+// code to type, so the flow continues on the verify screen instead of stopping.
+test("a created account goes to the code screen", async () => {
   render(<SignUp />);
   await answerEverything();
   fillCredentials();
   fireEvent.press(screen.getByRole("button", { name: "Create account" }));
 
-  expect(await screen.findByText("Check your inbox")).toBeTruthy();
-  expect(screen.queryByLabelText("Password")).toBeNull();
+  await waitFor(() => expect(mockPush).toHaveBeenCalledWith({
+    pathname: "/(auth)/verify",
+    params: { email: "sam@example.com", type: "signup" },
+  }));
 });
 
 test("a rejected sign-up keeps the form and states the reason", async () => {

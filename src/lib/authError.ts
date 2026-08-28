@@ -46,9 +46,9 @@ const SENTENCES: readonly (readonly [needle: string, sentence: string])[] = [
   ["otp_expired", "That code has expired. Send a new code and try again."],
   ["invalid otp", "That code isn't right. Check the email and try again."],
   // Confirmation is on, so this is the state every new account is in until the
-  // link is opened. Saying "wrong password" here would be a lie that sends
+  // code is entered. Saying "wrong password" here would be a lie that sends
   // people to the reset screen for a password that is fine.
-  ["email not confirmed", "Confirm your email first — open the link we sent you, then sign in."],
+  ["email not confirmed", "Confirm your email first — enter the code we sent you, then sign in."],
   ["user already registered", "There's already an account on that email. Sign in instead?"],
   ["already been registered", "There's already an account on that email. Sign in instead?"],
   ["rate limit", "Too many tries just now. Give it a minute and go again."],

@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 const mockBack = jest.fn();
-jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack, push: jest.fn(), replace: jest.fn() }) }));
+const mockPush = jest.fn();
+jest.mock("expo-router", () => ({ useRouter: () => ({ back: mockBack, push: mockPush, replace: jest.fn() }) }));
 
 import Reset from "../../../app/(auth)/reset";
 import { useSession } from "@/stores/sessionStore";
@@ -16,7 +17,7 @@ beforeEach(() => {
 
 const ask = (email = "sam@example.com") => {
   fireEvent.changeText(screen.getByLabelText("Email address"), email);
-  fireEvent.press(screen.getByRole("button", { name: "Send the link" }));
+  fireEvent.press(screen.getByRole("button", { name: "Send the code" }));
 };
 
 test("it asks Supabase for a reset link", async () => {
@@ -25,22 +26,15 @@ test("it asks Supabase for a reset link", async () => {
   await waitFor(() => expect(sendPasswordReset).toHaveBeenCalledWith("sam@example.com"));
 });
 
-/**
- * The sent state replaces the form rather than annotating it. The old sign-up
- * screen put its success message in the same slot as its error, under four
- * fields still holding a password, where it read as a failure.
- */
-test("once sent, the form is gone and the next step is named", async () => {
-  render(<Reset />);
-  ask();
-  expect(await screen.findByText(/check your inbox/i)).toBeTruthy();
-  expect(screen.queryByLabelText("Email address")).toBeNull();
-});
-
-test("the address it went to is repeated back, so a typo is visible", async () => {
+// The screen no longer has a terminal "check your inbox" state — the code has
+// to be typed somewhere, and that somewhere is the verify screen.
+test("once sent it goes to the code screen, carrying the address", async () => {
   render(<Reset />);
   ask("sam@example.com");
-  expect(await screen.findByText(/sam@example\.com/)).toBeTruthy();
+  await waitFor(() => expect(mockPush).toHaveBeenCalledWith({
+    pathname: "/(auth)/verify",
+    params: { email: "sam@example.com", type: "recovery" },
+  }));
 });
 
 test("a refused request states the reason and keeps the form", async () => {
@@ -53,7 +47,7 @@ test("a refused request states the reason and keeps the form", async () => {
 
 test("nothing is sent to an empty address", () => {
   render(<Reset />);
-  fireEvent.press(screen.getByRole("button", { name: "Send the link" }));
+  fireEvent.press(screen.getByRole("button", { name: "Send the code" }));
   expect(sendPasswordReset).not.toHaveBeenCalled();
 });
 

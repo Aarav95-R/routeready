@@ -22,8 +22,8 @@ import { useSession } from "@/stores/sessionStore";
  *
  * `resetPasswordForEmail` is reachable. It was wired nowhere, so an account
  * whose password was mistyped at sign-up could not be recovered inside the
- * app, and the magic link — the only way back in — was presented as a
- * convenience rather than as a rescue.
+ * app, and the magic-link sign-in was presented as a mere convenience rather
+ * than as the rescue it was.
  *
  * The fields carry their autofill attributes, so iOS offers the Keychain
  * credential in one tap. See `AuthField`.
@@ -42,13 +42,10 @@ export default function SignIn() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const passwordRef = useRef<TextInput>(null);
 
-  // Both are cleared on every attempt and on every keystroke. Clearing only
-  // one is how a sent-link notice used to end up sitting under a failure.
-  const clear = () => { setError(null); setNotice(null); };
+  const clear = () => setError(null);
 
   const canSubmit = email.trim().length > 0 && password.length > 0;
 
@@ -72,7 +69,7 @@ export default function SignIn() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
-    setNotice("Check your email for the sign-in link.");
+    router.push({ pathname: "/(auth)/verify", params: { email: email.trim(), type: "email" } });
   };
 
   return (
@@ -139,21 +136,16 @@ export default function SignIn() {
             </View>
             <Group>
               <Pressable
-                accessibilityRole="button" accessibilityLabel="Email me a sign-in link"
+                accessibilityRole="button" accessibilityLabel="Email me a sign-in code"
                 disabled={!email.trim()} onPress={emailLink}
                 style={{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, opacity: email.trim() ? 1 : 0.4 }}
               >
                 <Ionicons name="mail-outline" size={17} color={colors.accent} />
                 <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...headline, color: colors.accent }}>
-                  Email me a sign-in link
+                  Email me a sign-in code
                 </Text>
               </Pressable>
             </Group>
-            {notice && (
-              <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...footnote, color: colors.accentPressed, paddingHorizontal: 20, paddingTop: 10 }}>
-                {notice}
-              </Text>
-            )}
           </Animated.View>
 
           <Animated.View entering={enterFrom(4)} style={{ paddingTop: 22 }}>

@@ -29,8 +29,8 @@ import { useSession } from "@/stores/sessionStore";
  *
  * Four questions and then the account. The order is not a style choice:
  * Supabase email confirmation is on, so `signUp()` returns no session and
- * there is nobody to write a profile to until the learner opens the link and
- * comes back in a later session. Asking first lets one call carry everything.
+ * there is nobody to write a profile to until the learner enters the code
+ * that confirms them. Asking first lets one call carry everything.
  *
  * One route rather than five, because the answers have to survive until that
  * call regardless — route-per-step would only push the same state into a store
@@ -67,7 +67,6 @@ export default function SignUp() {
   const [step, setStep] = useState(0);
   const [goingBack, setGoingBack] = useState(false);
   const [answers, setAnswers] = useState<Answers>(EMPTY_ANSWERS);
-  const [done, setDone] = useState(false);
 
   const [centres, setCentres] = useState<Centre[]>([]);
   const [query, setQuery] = useState("");
@@ -127,13 +126,13 @@ export default function SignUp() {
   // an uncaught back press discards all of them.
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (done || step === 0) return false;
+      if (step === 0) return false;
       cancelSettle();
       goBack();
       return true;
     });
     return () => sub.remove();
-  }, [step, done, goBack, cancelSettle]);
+  }, [step, goBack, cancelSettle]);
 
   /** A choice on a single-answer card: acknowledge it, let it be seen, move on. */
   const chooseAndAdvance = (patch: Partial<Answers>) => {
@@ -157,34 +156,10 @@ export default function SignUp() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
-    setDone(true);
+    router.push({ pathname: "/(auth)/verify", params: { email: email.trim(), type: "signup" } });
   };
 
   const bar = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
-
-  if (done) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.field }}>
-        <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 16, gap: 16 }}>
-          <Animated.View
-            entering={popIn()}
-            style={{ height: 66, width: 66, borderRadius: 33, backgroundColor: colors.clayTint, alignItems: "center", justifyContent: "center" }}
-          >
-            <Ionicons name="checkmark" size={32} color={colors.clay} />
-          </Animated.View>
-          <Text accessibilityRole="header" maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...largeTitle, color: colors.label }}>
-            Check your inbox
-          </Text>
-          <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...subheadline, color: colors.labelSecondary }}>
-            {`We've sent a confirmation link to ${email.trim()}. Open it and everything you just told us is waiting.`}
-          </Text>
-          <View style={{ paddingTop: 10 }}>
-            <AuthAction label="Back to sign in" onPress={() => router.replace("/(auth)/sign-in")} />
-          </View>
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   const shown = query
     ? centres.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()))
