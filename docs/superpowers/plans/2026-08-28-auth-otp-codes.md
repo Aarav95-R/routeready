@@ -1143,7 +1143,21 @@ handler with:
     router.push({ pathname: "/(auth)/verify", params: { email: email.trim(), type: "signup" } });
 ```
 
-and delete the `done` state together with the entire `if (done) { ... }` block.
+Then remove the `done` state. It has **three** call sites, not one, and missing
+the third breaks the build:
+
+1. `const [done, setDone] = useState(false);` (line 70) — delete.
+2. The entire `if (done) { ... }` block (line 165) — delete. That was the
+   terminal "Check your inbox" panel; the push above replaces it.
+3. **The Android hardware-back handler at line 130** — `if (done || step === 0) return false;`
+   becomes `if (step === 0) return false;`, and `done` comes out of that
+   effect's dependency array on line 136.
+
+That third one is easy to miss and `tsc` is what catches it. The behaviour it
+encodes still holds: hardware back walks the interview's cards, and falls
+through to the system only on the first card. The `done` half of the condition
+existed so back would leave the terminal panel rather than re-entering the
+form — there is no terminal panel any more, because the screen navigates.
 
 Update the file's header comment where it says the confirmation arrives as a
 link, so it describes the code instead.
@@ -1187,8 +1201,13 @@ git commit -m "feat: send every flow to the code screen instead of the inbox"
 
 - [ ] **Step 1: Write the failing test**
 
-In `src/lib/__tests__/authRoute.test.ts`, delete the three `auth-callback`
-tests (around `:59-82`) and add:
+In `src/lib/__tests__/authRoute.test.ts`, delete the whole callback section —
+lines 57 to 83 inclusive, which is the `── The callback landing pad ──` comment
+block, the three tests it introduces (`recovering, freshly landed on the
+callback route...` at 66, `a signup or magic-link callback with a session...`
+at 71, `a rejected callback with no session...` at 80) and the explanatory
+comment between them at 76-79. Identify them by name rather than by line
+number. Then add:
 
 ```ts
 /**
