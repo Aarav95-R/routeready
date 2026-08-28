@@ -1562,7 +1562,23 @@ Expected: all green. Every previously passing test still passes; the suite is la
 ```bash
 grep -rn "ConfirmationURL\|emailRedirectTo\|auth-callback" --include="*.ts" --include="*.tsx" --include="*.html" --include="*.toml" app src supabase
 ```
-Expected: no output.
+
+Expected: **exactly six lines, all of them correct code.** "No output" is the wrong
+expectation — three of these are deliberate, and deleting them to satisfy a
+grep would be a regression:
+
+- `src/lib/__tests__/authRoute.test.ts` (3 lines) — the test's own literal
+  `segments: ["auth-callback"]`, asserting that a stale link URL now degrades to
+  an ordinary route instead of being special-cased.
+- `src/lib/__tests__/emailTemplates.test.ts` (1 line) — a *negative* assertion,
+  `expect(html).not.toContain("ConfirmationURL")`. The string has to appear in
+  order to be forbidden.
+- `supabase/config.toml` (2 lines) — `site_url` and `additional_redirect_urls`,
+  left pointing at the deleted route on purpose. See section 3 of SETUP.md: no
+  flow exercises them, GoTrue requires a non-empty `site_url`, and changing it
+  would add a field to an already-delicate first push for no functional gain.
+
+Anything *outside* those six is a real leftover.
 
 - [ ] **Step 4: Confirm the two lengths agree**
 
