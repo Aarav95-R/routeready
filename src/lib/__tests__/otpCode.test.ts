@@ -11,7 +11,7 @@ test.each([
   ["a space in the middle", "418 302"],
   ["a hyphen in the middle", "418-302"],
   ["leading and trailing space", "  418302 "],
-  ["a non-breaking space", "418 302"],
+  ["a non-breaking space", "418 302"],
 ])("it strips %s", (_label, raw) => {
   expect(normaliseCode(raw)).toBe("418302");
 });
