@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import { authError } from "@/lib/authError";
+import { authError, AUTH_TIMEOUT } from "@/lib/authError";
+import { TIMED_OUT, withTimeout } from "@/lib/withTimeout";
 import { clearOutbox, clearUserCache } from "@/services/cache";
 import { forgetWelcome } from "@/services/welcome";
 import { deleteAccountError } from "@/lib/deleteError";
@@ -15,11 +16,20 @@ import { deleteAccountError } from "@/lib/deleteError";
 type SessionState = {
   session: Session | null;
   initialized: boolean;
+  /**
+   * Set the moment a recovery link's tokens land, cleared the moment the
+   * password is changed (or the person signs out instead). While true, the
+   * root layout redirects to `update-password` no matter where else `session`
+   * would otherwise send it.
+   */
+  recovering: boolean;
   init: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<string | null>;
   signUp: (email: string, password: string, metadata?: Record<string, unknown>) => Promise<string | null>;
   sendMagicLink: (email: string) => Promise<string | null>;
   sendPasswordReset: (email: string) => Promise<string | null>;
+  setSessionFromCallback: (tokens: { access_token: string; refresh_token: string }, type: string | null) => Promise<void>;
+  updatePassword: (password: string) => Promise<string | null>;
   setName: (name: string) => Promise<string | null>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<string | null>;
@@ -27,6 +37,33 @@ type SessionState = {
 
 /** Where an emailed link lands. Handled by the deep-link listener in app/_layout.tsx. */
 const REDIRECT = "routeready://auth-callback";
+
+/**
+ * How long the app waits for a stored session to be restored before opening
+ * on the sign-in screen instead.
+ *
+ * This one is a launch budget rather than a network one. `initialized` gates
+ * every pixel the app draws, so the cost of waiting is a person looking at a
+ * blank screen wondering whether the app is broken — and eight seconds is
+ * already longer than anyone gives it. It is affordable only because giving
+ * up is not final: `init` registers its listener first, so a refresh that
+ * lands late still carries whoever was bounced to sign-in into the app.
+ */
+export const SESSION_RESTORE_DEADLINE_MS = 8_000;
+
+/**
+ * How long sign-in waits for an answer before saying so.
+ *
+ * Generous where sign-out's grace is brisk, because the two are not the same
+ * kind of wait. Sign-out is a courtesy call whose answer changes nothing the
+ * person can see; sign-in is the thing they are actually waiting for, and
+ * giving up early on a slow-but-working connection would refuse a sign-in
+ * that was about to succeed. Fifteen seconds is far longer than a healthy
+ * round trip — this project's own Auth service answers in under half a second
+ * when it is well — and far shorter than the minute React Native spends
+ * before it gives up on a service that has gone quiet.
+ */
+export const SIGN_IN_DEADLINE_MS = 15_000;
 
 /**
  * The name the account gave us, or "".
@@ -55,14 +92,71 @@ export function selectUserId(s: SessionState): string {
 export const useSession = create<SessionState>((set, get) => ({
   session: null,
   initialized: false,
+  recovering: false,
+  /**
+   * Open the app, with or without a session.
+   *
+   * `initialized` gates everything — app/_layout.tsx draws a bare coloured
+   * View until it flips — so the one thing this function may never do is
+   * leave it false. It used to do exactly that in two ways.
+   * `getSession()` reaches the network whenever the stored access token has
+   * expired, which is every launch more than an hour after the last one: with
+   * no deadline, a quiet Auth service was a blank screen for as long as it
+   * stayed quiet, and with no catch, a rejected refresh skipped the `set` and
+   * left that screen blank permanently — force-quitting only ran it again.
+   *
+   * Hence the ordering. The listener goes on first because the restore is the
+   * part that can hang, and a listener registered behind it would miss the
+   * session that arrives while it does. Then the restore, on a deadline and
+   * inside a try. Then `initialized`, unconditionally, on every path.
+   */
   init: async () => {
-    const { data } = await supabase.auth.getSession();
-    set({ session: data.session, initialized: true });
     supabase.auth.onAuthStateChange((_event, session) => set({ session }));
+
+    try {
+      const restored = await withTimeout(
+        Promise.resolve().then(() => supabase.auth.getSession()),
+        SESSION_RESTORE_DEADLINE_MS,
+      );
+      if (restored !== TIMED_OUT) set({ session: restored.data.session });
+    } catch {
+      // Nothing to restore, so the sign-in screen is the honest answer. The
+      // listener above still picks up a session that turns up late.
+    }
+
+    set({ initialized: true });
   },
+  /**
+   * Every way this call can fail now ends as a sentence, including the two
+   * that used to end as nothing at all.
+   *
+   * `signInWithPassword` had no deadline, so a service that accepts the
+   * connection and then goes quiet held the button on "Signing in…" for about
+   * a minute — the same failure sign-out was given a grace period for, at the
+   * other door. And a rejection escaped the store entirely, which is worse
+   * than the hang: the screen clears its own `busy` on the line after the
+   * await, so a throw past it leaves the spinner running for good.
+   *
+   * Started inside a `then` for the third case, matching `signOut` below: a
+   * synchronous throw reaching for `.signInWithPassword()` on a stubbed
+   * client never returns a promise for `withTimeout` to watch.
+   *
+   * A request that outlives the deadline is not cancelled — supabase-js takes
+   * no abort signal — so a late answer can still open a session and land the
+   * person inside the app a moment after being told to try again. That is the
+   * benign direction to be wrong in, and the only one available.
+   */
   signIn: async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return error ? authError(error.message) : null;
+    const attempt = Promise.resolve().then(() => supabase.auth.signInWithPassword({ email, password }));
+
+    let answer;
+    try {
+      answer = await withTimeout(attempt, SIGN_IN_DEADLINE_MS);
+    } catch (thrown) {
+      return authError(thrown instanceof Error ? thrown.message : null);
+    }
+    if (answer === TIMED_OUT) return AUTH_TIMEOUT;
+    return answer.error ? authError(answer.error.message) : null;
   },
   /**
    * The interview's answers ride along in `user_metadata` rather than a
@@ -75,7 +169,10 @@ export const useSession = create<SessionState>((set, get) => ({
    * session. This is the only moment they can be saved in one round trip.
    */
   signUp: async (email, password, metadata = {}) => {
-    const { error } = await supabase.auth.signUp({ email, password, options: { data: metadata } });
+    const { error } = await supabase.auth.signUp({
+      email, password,
+      options: { data: metadata, emailRedirectTo: REDIRECT },
+    });
     return error ? authError(error.message) : null;
   },
   sendMagicLink: async (email) => {
@@ -92,6 +189,34 @@ export const useSession = create<SessionState>((set, get) => ({
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: REDIRECT });
     return error ? authError(error.message) : null;
   },
+
+  /**
+   * The deep link's tokens, however they got here — signup confirmation,
+   * magic link or recovery. All three open the same kind of session; only
+   * `type === "recovery"` changes what the app does with it, which is why
+   * that alone is threaded through rather than the whole callback shape.
+   *
+   * A stale, tampered or already-used link fails here without setting
+   * `recovering` — otherwise a bad link would still strand whoever opened it
+   * on the update-password screen with no real session underneath it, unable
+   * to leave except by signing out of an account they were never signed into.
+   */
+  setSessionFromCallback: async ({ access_token, refresh_token }, type) => {
+    const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+    if (error) return;
+    set({ recovering: type === "recovery" });
+  },
+
+  // The one action available on the update-password screen. Left in place on
+  // failure — a rejected password still leaves the person mid-recovery, and
+  // the alternative (dropping the flag) would bounce them into the app on a
+  // password that was never actually changed.
+  updatePassword: async (password) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) return authError(error.message);
+    set({ recovering: false });
+    return null;
+  },
   // Re-read the session rather than trusting the caller to have it: the
   // greeting on the home screen is rendered from `session`, so it has to be the
   // thing that changes when the name does.
@@ -103,15 +228,41 @@ export const useSession = create<SessionState>((set, get) => ({
     return null;
   },
 
-  // The local session is cleared whatever the server says. signOut() reports a
-  // failed round-trip two ways — a rejected promise and an `{ error }` result —
-  // and neither is a reason to hold someone inside an account they have asked
-  // to leave: the root layout redirects off `session` alone, so leaving it set
-  // would make the button do nothing at all on a bad connection.
+  /**
+   * The local session is cleared whatever the server says — or does not say.
+   *
+   * There are three ways the round-trip can fail: a rejected promise, an
+   * `{ error }` result, and the one that caused the original bug — a service
+   * that neither rejects nor resolves. React Native waits about a minute on a
+   * request that is never answered, and because the local teardown sat
+   * *behind* that await, the button produced nothing observable for that whole
+   * minute. It read as broken because, from the outside, it was.
+   *
+   * The first answer to that was a four-second grace, which turned a minute of
+   * nothing into four seconds of nothing. This is the real answer: the wait
+   * was never necessary. Signing out is a local act, and none of what the
+   * person is waiting for depends on the reply.
+   *
+   * So the server is told and not awaited. The revoke still goes out — the app
+   * is very much alive afterwards, sitting on the sign-in screen, and dropping
+   * it would leave the refresh token live until it expired, which on a shared
+   * phone is the difference between signing out and appearing to. It simply
+   * does not get to hold the door shut on somebody trying to leave.
+   */
   signOut: async () => {
-    try { await supabase.auth.signOut(); } catch { /* local sign-out below is the part that matters */ }
-    await clearUserCache();
-    set({ session: null });
+    // Started inside a `then` and finished with a `catch` so that all three of
+    // its failures are spent here rather than escaping as an unhandled
+    // rejection: a synchronous throw (reaching for `.signOut()` on a stubbed
+    // client), a rejected promise, and never settling.
+    void Promise.resolve()
+      .then(() => supabase.auth.signOut())
+      .catch(() => { /* the local teardown below is the part that matters */ });
+
+    // A full disk is not a reason to stay signed in, so the sweep cannot
+    // strand anyone either.
+    try { await clearUserCache(); } catch { /* the session below is what matters */ }
+
+    set({ session: null, recovering: false });
   },
 
   /**

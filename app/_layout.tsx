@@ -8,7 +8,8 @@ import {
 } from "@expo-google-fonts/plus-jakarta-sans";
 import { View } from "react-native";
 import Mapbox from "@rnmapbox/maps";
-import { supabase } from "@/lib/supabase";
+import { parseAuthCallback } from "@/lib/authCallback";
+import { nextAuthRoute } from "@/lib/authRoute";
 import { useSession } from "@/stores/sessionStore";
 import { useNetwork } from "@/stores/networkStore";
 import { colors } from "@/ui/theme";
@@ -23,33 +24,33 @@ export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     PlusJakartaSans_400Regular, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold,
   });
-  const { session, initialized, init } = useSession();
+  const { session, recovering, initialized, init, setSessionFromCallback } = useSession();
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => { init(); useNetwork.getState().init(); }, [init]);
 
-  // Magic-link deep link: routeready://auth-callback#access_token=…&refresh_token=…
+  // Every emailed link — signup confirmation, magic link, password recovery —
+  // arrives as routeready://auth-callback#access_token=…&refresh_token=…&type=…
+  // `type` is what tells recovery apart from the other two; see
+  // sessionStore.setSessionFromCallback for why only recovery changes anything.
   useEffect(() => {
-    const handle = async ({ url }: { url: string }) => {
-      const params = new URLSearchParams(url.split("#")[1] ?? "");
-      const access_token = params.get("access_token");
-      const refresh_token = params.get("refresh_token");
-      if (access_token && refresh_token) await supabase.auth.setSession({ access_token, refresh_token });
+    const handle = ({ url }: { url: string }) => {
+      const callback = parseAuthCallback(url);
+      if (callback) setSessionFromCallback(callback, callback.type);
     };
     const sub = Linking.addEventListener("url", handle);
     Linking.getInitialURL().then((url) => {
       if (url) handle({ url });
     });
     return () => sub.remove();
-  }, []);
+  }, [setSessionFromCallback]);
 
   useEffect(() => {
     if (!initialized) return;
-    const inAuth = segments[0] === "(auth)";
-    if (!session && !inAuth) router.replace("/(auth)/sign-in");
-    if (session && inAuth) router.replace("/(tabs)");
-  }, [session, initialized, segments, router]);
+    const next = nextAuthRoute({ session, recovering, segments });
+    if (next) router.replace(next);
+  }, [session, recovering, initialized, segments, router]);
 
   if (!fontsLoaded || !initialized) return <View className="flex-1 bg-surface" />;
   return (

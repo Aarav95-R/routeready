@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Animated from "react-native-reanimated";
@@ -64,14 +64,37 @@ export default function Settings() {
     if (err) { setNameError(err); setDraftName(savedName); }
   };
 
+  /**
+   * Signing out is never instant: the store tells the server first and waits
+   * up to its grace period for an answer. That wait used to be invisible —
+   * `void signOut()` threw the promise away, so the button sat unchanged for
+   * as long as it took, which against a slow Auth service is a button people
+   * tap again and again. It is held now instead, and says so.
+   *
+   * Never cleared on the happy path, because there is nothing left to clear
+   * it on: the root layout redirects off `session` the moment it goes null
+   * and takes this screen with it. The `finally` is for the other path — a
+   * teardown that throws leaves the person still here, and still needing a
+   * button that works.
+   */
+  const [signingOut, setSigningOut] = useState(false);
+
   const confirmSignOut = () => {
+    if (signingOut) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       "Sign out?",
       "Your saved routes and progress stay on your account. You'll need your email to sign back in.",
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Sign out", style: "destructive", onPress: () => { void signOut(); } },
+        {
+          text: "Sign out",
+          style: "destructive",
+          onPress: () => {
+            setSigningOut(true);
+            void signOut().finally(() => setSigningOut(false));
+          },
+        },
       ]
     );
   };
@@ -179,11 +202,19 @@ export default function Settings() {
             any screen it is on, and this is a door, not an alarm. */}
         <Animated.View entering={enterFrom(2)}>
           <Pressable
+            testID="sign-out-button"
             onPress={confirmSignOut}
+            disabled={signingOut}
             accessibilityRole="button"
-            className="mx-5 mt-8 items-center rounded-[19px] border border-[#F3C8C8] bg-[#FEF3F2] py-[19px] active:opacity-70"
+            accessibilityState={{ disabled: signingOut, busy: signingOut }}
+            className={`mx-5 mt-8 flex-row items-center justify-center gap-2.5 rounded-[19px] border border-[#F3C8C8] bg-[#FEF3F2] py-[19px] ${signingOut ? "" : "active:opacity-70"}`}
           >
-            <Text maxFontSizeMultiplier={DISPLAY_SCALE} className="text-[19px] font-semibold text-danger">Sign out</Text>
+            {/* Same spinner idiom as the auth screens' primary action: a
+                control that only greys out reads as one that failed. */}
+            {signingOut && <ActivityIndicator color={colors.danger} />}
+            <Text maxFontSizeMultiplier={DISPLAY_SCALE} className="text-[19px] font-semibold text-danger">
+              {signingOut ? "Signing out…" : "Sign out"}
+            </Text>
           </Pressable>
         </Animated.View>
         {/* Its own group, below Sign out rather than beside it. Sign out is a

@@ -7,6 +7,8 @@ jest.mock("@/lib/supabase", () => ({
       signUp: jest.fn(),
       signInWithOtp: jest.fn(),
       resetPasswordForEmail: jest.fn(),
+      setSession: jest.fn(),
+      updateUser: jest.fn(),
       signOut: jest.fn().mockResolvedValue({ error: null }),
     },
     functions: { invoke: jest.fn() },
@@ -14,8 +16,8 @@ jest.mock("@/lib/supabase", () => ({
 }));
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
-import { authError } from "@/lib/authError";
-import { selectUserId, useSession } from "../sessionStore";
+import { authError, AUTH_TIMEOUT } from "@/lib/authError";
+import { SESSION_RESTORE_DEADLINE_MS, SIGN_IN_DEADLINE_MS, selectUserId, useSession } from "../sessionStore";
 
 const signedIn = { user: { id: "u1", email: "a@b.com" } } as never;
 
@@ -23,6 +25,84 @@ test("init loads session and marks initialized", async () => {
   await useSession.getState().init();
   expect(useSession.getState().initialized).toBe(true);
   expect(useSession.getState().session).toBeNull();
+});
+
+/**
+ * ── The launch path ───────────────────────────────────────────────────────
+ *
+ * `initialized` gates the entire app: app/_layout.tsx renders a bare coloured
+ * View until it flips true. So `init` is not a screen that can afford to be
+ * slow — it is the difference between an app that opens and an app that does
+ * not, and both of the ways it could fail ended there.
+ *
+ * `getSession()` reaches the network whenever the stored access token has
+ * expired, which is every launch more than an hour after the last one. It had
+ * no deadline, so a quiet Auth service meant a blank screen for as long as it
+ * stayed quiet; and it had no catch, so a *rejected* refresh skipped the
+ * `set` entirely and left that screen blank for good — force-quitting only
+ * ran the same path again.
+ *
+ * Nothing in `init` may leave `initialized` false.
+ */
+test("a session restore that never answers still opens the app", async () => {
+  jest.useFakeTimers();
+  try {
+    (supabase.auth.getSession as jest.Mock).mockReturnValueOnce(new Promise(() => {}));
+    useSession.setState({ initialized: false, session: null });
+
+    const done = useSession.getState().init();
+    await jest.advanceTimersByTimeAsync(SESSION_RESTORE_DEADLINE_MS);
+    await done;
+
+    expect(useSession.getState().initialized).toBe(true);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+// The worse of the two, because it never recovered on its own: a throw skipped
+// the `set` and the app stayed on a blank screen permanently.
+test("a session restore that rejects still opens the app", async () => {
+  (supabase.auth.getSession as jest.Mock).mockRejectedValueOnce(new Error("Network request failed"));
+  useSession.setState({ initialized: false, session: null });
+
+  await useSession.getState().init();
+
+  expect(useSession.getState().initialized).toBe(true);
+  expect(useSession.getState().session).toBeNull();
+});
+
+/**
+ * What makes the deadline affordable.
+ *
+ * Giving up on the restore sends a signed-in person to sign-in, which would
+ * be its own bug if it were the end of it. It is not: the listener is
+ * registered ahead of the restore rather than behind it, so a refresh that
+ * lands late is still announced, and whoever was bounced to sign-in is picked
+ * up and carried into the app without touching anything.
+ */
+test("a session that arrives after the deadline still signs the person in", async () => {
+  jest.useFakeTimers();
+  try {
+    (supabase.auth.getSession as jest.Mock).mockReturnValueOnce(new Promise(() => {}));
+    let announce: ((event: string, session: unknown) => void) | undefined;
+    (supabase.auth.onAuthStateChange as jest.Mock).mockImplementationOnce((cb) => {
+      announce = cb;
+      return { data: { subscription: { unsubscribe: jest.fn() } } };
+    });
+    useSession.setState({ initialized: false, session: null });
+
+    const done = useSession.getState().init();
+    await jest.advanceTimersByTimeAsync(SESSION_RESTORE_DEADLINE_MS);
+    await done;
+    expect(useSession.getState().session).toBeNull();
+
+    announce!("TOKEN_REFRESHED", signedIn);
+
+    expect(useSession.getState().session).toBe(signedIn);
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 /**
@@ -44,6 +124,43 @@ test("signIn returns null on success, and a written sentence on failure", async 
   expect(failure).not.toBe("Invalid login credentials");
 });
 
+/**
+ * The sign-out bug below, at the other door.
+ *
+ * `signInWithPassword` carried no deadline of its own, so an Auth service
+ * that accepts the connection and then goes quiet left the button spinning on
+ * "Signing in…" until React Native's fetch gave up — about a minute — with
+ * nothing said and nothing to retry. That is not hypothetical: this project's
+ * own Auth service was measured answering `/auth/v1/health` in 52–86 seconds
+ * while the database beside it stayed under 300ms.
+ *
+ * A deadline turns that minute into a sentence.
+ */
+test("a server that never answers hands sign-in back with something to read", async () => {
+  jest.useFakeTimers();
+  try {
+    (supabase.auth.signInWithPassword as jest.Mock).mockReturnValueOnce(new Promise(() => {}));
+
+    const pending = useSession.getState().signIn("a@b.com", "pw");
+    await jest.advanceTimersByTimeAsync(SIGN_IN_DEADLINE_MS);
+
+    expect(await pending).toBe(AUTH_TIMEOUT);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+// The other half of the same guarantee. A deadline is no use if the throw it
+// was added around escapes instead: the screen awaits `signIn` to clear its
+// own `busy`, so a rejection thrown past it leaves the spinner running for
+// good — a worse outcome than the hang this replaces. Airplane mode is the
+// everyday way to get one.
+test("a sign-in that rejects is a sentence, not a throw", async () => {
+  (supabase.auth.signInWithPassword as jest.Mock)
+    .mockRejectedValueOnce(new Error("Network request failed"));
+  expect(await useSession.getState().signIn("a@b.com", "pw")).toBe(authError("Network request failed"));
+});
+
 // The contract the whole interview exists to satisfy, and the one thing a
 // mock cannot fake on a device: four answers and a name reaching Supabase in
 // the one call that creates the account.
@@ -61,8 +178,18 @@ test("signUp carries the interview's answers into user_metadata", async () => {
   expect(supabase.auth.signUp).toHaveBeenCalledWith({
     email: "a@b.com",
     password: "hunter2hunter2",
-    options: { data: metadata },
+    options: { data: metadata, emailRedirectTo: "routeready://auth-callback" },
   });
+});
+
+// Sign-in and reset already carried this; sign-up did not, so a confirmation
+// link opened outside the app instead of coming back to it — the deep-link
+// listener in app/_layout.tsx had nothing addressed to it.
+test("signUp asks for a link back into the app, same as sign-in and reset", async () => {
+  (supabase.auth.signUp as jest.Mock).mockResolvedValue({ data: {}, error: null });
+  await useSession.getState().signUp("a@b.com", "hunter2hunter2");
+  const [call] = (supabase.auth.signUp as jest.Mock).mock.calls.at(-1)!;
+  expect(call.options.emailRedirectTo).toBe("routeready://auth-callback");
 });
 
 test("a rejected sign-up is a sentence too", async () => {
@@ -89,10 +216,126 @@ test("a rejected reset says why in a sentence", async () => {
   expect(await useSession.getState().sendPasswordReset("a@b.com")).toBe(authError("Email rate limit exceeded"));
 });
 
+// ── The deep-link callback ─────────────────────────────────────────────────
+//
+// Every emailed link — signup confirmation, magic link, password recovery —
+// lands here with a pair of tokens and a `type`. Only recovery has to change
+// what happens next: the root layout redirects to the tabs the instant a
+// session exists, and for a recovery link that would sign the person in with
+// their old password still in place, never letting them set a new one.
+
+test("a signup or magic-link callback opens a session and nothing more", async () => {
+  (supabase.auth.setSession as jest.Mock).mockResolvedValue({ error: null });
+  await useSession.getState().setSessionFromCallback({ access_token: "at", refresh_token: "rt" }, "signup");
+  expect(supabase.auth.setSession).toHaveBeenCalledWith({ access_token: "at", refresh_token: "rt" });
+  expect(useSession.getState().recovering).toBe(false);
+});
+
+test("a recovery callback opens a session and flags recovery", async () => {
+  (supabase.auth.setSession as jest.Mock).mockResolvedValue({ error: null });
+  await useSession.getState().setSessionFromCallback({ access_token: "at", refresh_token: "rt" }, "recovery");
+  expect(useSession.getState().recovering).toBe(true);
+});
+
+// A stale, tampered or already-used link must not strand anyone on the
+// update-password screen with no real session behind it.
+test("a callback whose tokens Supabase rejects never sets the recovery flag", async () => {
+  (supabase.auth.setSession as jest.Mock).mockResolvedValue({ error: { message: "Invalid Refresh Token" } });
+  useSession.setState({ recovering: false });
+  await useSession.getState().setSessionFromCallback({ access_token: "at", refresh_token: "rt" }, "recovery");
+  expect(useSession.getState().recovering).toBe(false);
+});
+
+test("updatePassword clears the recovery flag on success", async () => {
+  (supabase.auth.updateUser as jest.Mock).mockResolvedValue({ error: null });
+  useSession.setState({ recovering: true });
+  expect(await useSession.getState().updatePassword("new-password-1")).toBeNull();
+  expect(supabase.auth.updateUser).toHaveBeenCalledWith({ password: "new-password-1" });
+  expect(useSession.getState().recovering).toBe(false);
+});
+
+test("a rejected password update leaves recovery in place, with a sentence to show", async () => {
+  (supabase.auth.updateUser as jest.Mock).mockResolvedValue({ error: { message: "Password should be at least 8 characters" } });
+  useSession.setState({ recovering: true });
+  const failure = await useSession.getState().updatePassword("short");
+  expect(failure).toBe(authError("Password should be at least 8 characters"));
+  expect(useSession.getState().recovering).toBe(true);
+});
+
 // The root layout redirects to sign-in off `session` alone. If signOut leaves
 // it set, the button does nothing visible and the user is stuck inside an
 // account they have asked to leave.
 test("signing out clears the session", async () => {
+  useSession.setState({ session: signedIn });
+  await useSession.getState().signOut();
+  expect(useSession.getState().session).toBeNull();
+});
+
+// A recovery link opened on the wrong device, or by mistake, has to be
+// escapable. Signing out from the update-password screen is that escape
+// hatch, and it only works if it also drops the flag forcing that screen.
+test("signing out during recovery drops the flag along with the session", async () => {
+  useSession.setState({ session: signedIn, recovering: true });
+  await useSession.getState().signOut();
+  expect(useSession.getState().recovering).toBe(false);
+});
+
+/**
+ * The failure that made "Sign out" look like a dead button.
+ *
+ * A hung Auth service does not reject and does not resolve — the POST to
+ * `/auth/v1/logout` simply never answers, and React Native waits about a
+ * minute before giving up. The store awaited that call before clearing
+ * anything, so for that whole minute the button did nothing observable.
+ *
+ * That was first answered with a four-second grace, which turned a minute of
+ * nothing into four seconds of nothing. The grace is gone now, because the
+ * wait was never necessary: signing out is a local act, and the revoke is a
+ * courtesy told in the background. No timers are advanced below — the
+ * teardown no longer sits behind the round trip at all.
+ */
+test("signing out does not wait for the server at all", async () => {
+  (supabase.auth.signOut as jest.Mock).mockReturnValueOnce(new Promise(() => {}));
+  useSession.setState({ session: signedIn });
+
+  await useSession.getState().signOut();
+
+  expect(useSession.getState().session).toBeNull();
+});
+
+// The revoke is still sent. Dropping it would leave the refresh token live
+// until it expired, which on a shared phone is the difference between signing
+// out and appearing to.
+test("signing out still tells the server, in the background", async () => {
+  (supabase.auth.signOut as jest.Mock).mockResolvedValueOnce({ error: null });
+  useSession.setState({ session: signedIn });
+
+  await useSession.getState().signOut();
+
+  expect(supabase.auth.signOut).toHaveBeenCalled();
+});
+
+// The local sweep is not allowed to strand anyone either: a failed disk write
+// is not a reason to stay signed in to an account somebody asked to leave.
+test("a teardown that throws still signs the person out", async () => {
+  // The module mock's own queue, not a spy over it: `jest.spyOn` on a function
+  // that is already a mock leaves it returning undefined once restored, which
+  // silently breaks every later test that reads a key back.
+  (AsyncStorage.getAllKeys as jest.Mock).mockRejectedValueOnce(new Error("disk full"));
+  useSession.setState({ session: signedIn });
+
+  await useSession.getState().signOut();
+
+  expect(useSession.getState().session).toBeNull();
+});
+
+// The third way the call can misbehave, and the one a bare `.catch()` misses:
+// throwing before it ever returns a promise. `jest.setup.js` stubs the whole
+// client as `{}` for screen suites, so `supabase.auth.signOut` is not a
+// function there — and a sign-out that throws on the way out would strand the
+// person exactly as surely as one that hangs.
+test("a client that throws on the way out still signs the person out", async () => {
+  (supabase.auth.signOut as jest.Mock).mockImplementationOnce(() => { throw new TypeError("no auth"); });
   useSession.setState({ session: signedIn });
   await useSession.getState().signOut();
   expect(useSession.getState().session).toBeNull();

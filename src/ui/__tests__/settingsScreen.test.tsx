@@ -1,5 +1,5 @@
 import { Alert } from "react-native";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 const mockBack = jest.fn();
 const mockPush = jest.fn();
@@ -22,11 +22,15 @@ const confirmButton = (spy: jest.SpyInstance) => {
   return buttons.find((b) => b.text === "Sign out")!;
 };
 
+/** The store's own action, put back after any test that stands in for it. */
+const realSignOut = useSession.getState().signOut;
+
 beforeEach(() => {
   mockBack.mockClear();
   mockPush.mockClear();
   signedInAs("sumeet.raheja@yahoo.com");
   useDevPreview.setState({ firstRun: false });
+  useSession.setState({ signOut: realSignOut });
 });
 
 test("the account you are about to leave is named on the screen", () => {
@@ -65,9 +69,59 @@ test("confirming ends the session", async () => {
   render(<Settings />);
 
   fireEvent.press(screen.getByText("Sign out"));
-  confirmButton(spy).onPress!();
+  // Confirming now moves the button into its busy state as well as calling the
+  // store, so the press is a render the test has to own.
+  act(() => { confirmButton(spy).onPress!(); });
 
   await waitFor(() => expect(useSession.getState().session).toBeNull());
+  spy.mockRestore();
+});
+
+/**
+ * Signing out is never instant — the store tells the server first and waits up
+ * to SIGN_OUT_GRACE_MS for an answer — and that wait is time somebody spends
+ * looking at this screen. Until now the button spent it looking untouched: no
+ * spinner, no label change, nothing disabled, because `void signOut()` threw
+ * the promise away. Against an Auth service answering in tens of seconds, a
+ * button that sits there unchanged is one people tap again, and again.
+ */
+test("the sign-out button says it is working while it waits", async () => {
+  const spy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+  let finish!: () => void;
+  useSession.setState({ signOut: () => new Promise<void>((resolve) => { finish = resolve; }) });
+
+  render(<Settings />);
+  fireEvent.press(screen.getByText("Sign out"));
+  act(() => { confirmButton(spy).onPress!(); });
+
+  const button = await screen.findByTestId("sign-out-button");
+  expect(screen.getByText("Signing out…")).toBeTruthy();
+  expect(button).toBeDisabled();
+
+  await act(async () => { finish(); });
+  spy.mockRestore();
+});
+
+// A second tap while the first is still in flight must not start a second
+// sign-out — the alert is raised by the same press handler the spinner is
+// meant to be refusing.
+test("a busy sign-out button refuses another tap", async () => {
+  const spy = jest.spyOn(Alert, "alert").mockImplementation(() => {});
+  let finish!: () => void;
+  const signOut = jest.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+  useSession.setState({ signOut });
+
+  render(<Settings />);
+  fireEvent.press(screen.getByText("Sign out"));
+  act(() => { confirmButton(spy).onPress!(); });
+  await screen.findByText("Signing out…");
+
+  fireEvent.press(screen.getByTestId("sign-out-button"));
+
+  expect(spy).toHaveBeenCalledTimes(1);
+  expect(signOut).toHaveBeenCalledTimes(1);
+
+  await act(async () => { finish(); });
   spy.mockRestore();
 });
 

@@ -21,6 +21,17 @@
 export const AUTH_FALLBACK = "Something went wrong. Try again in a moment.";
 
 /**
+ * What a call that outlived its deadline says.
+ *
+ * Not a Supabase message — there is no message, which is the whole problem —
+ * so it is spelled out here rather than mapped. It is deliberately not the
+ * "No connection" sentence: the phone's connection is usually fine and the
+ * service is the thing that went quiet, so telling somebody to check their
+ * wifi sends them off to fix something that is not broken.
+ */
+export const AUTH_TIMEOUT = "That's taking longer than it should. Try again in a moment.";
+
+/**
  * First match wins, so the order is the specificity order. `email not
  * confirmed` has to sit above the generic email entries, and the rate-limit
  * pair has to sit above anything matching on `email`.
