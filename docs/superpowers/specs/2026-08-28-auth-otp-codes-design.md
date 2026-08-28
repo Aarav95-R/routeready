@@ -69,6 +69,35 @@ weight that still has to be read and reasoned about. The `routeready` scheme
 stays registered in `app.config.js` — it costs nothing and a future share link
 will want it.
 
+## Re-entry
+
+This section exists because the first draft of this spec did not have it, and
+the omission produced the one user-trapping state on the branch — found by the
+final whole-branch review, after nine task reviews had each passed.
+
+The spec said where a code is typed. It never said **how somebody gets back to
+typing one after leaving.** A link needs no answer to that: it sits in an inbox
+and can be opened whenever. A code needs a screen, and a screen needs a route.
+
+So, explicitly: every state in which a person is waiting to enter a code must
+be reachable again from a screen they can get to cold, with the app freshly
+launched and no session.
+
+The path that broke: sign up, get pushed to verify, close the app before
+typing. Sign-in then answers `email not confirmed` with "enter the code we sent
+you" — naming an action with no reachable screen — while sign-up answers "there
+is already an account on that email". Both true, neither a way forward.
+
+The fix is that `email not confirmed` on sign-in navigates to the verify screen
+with `type: "signup"`, where "Send a new code" already does the right thing.
+The general rule it stands for: **any sentence that tells somebody to do
+something must be answerable from where they are standing.** A sentence naming
+an unreachable action is worse than a vague one, because it reads as
+instructions.
+
+Recovery and magic-link do not have this problem — both begin from a form on
+the sign-in screen, so re-entering them is just using them again.
+
 ## Verification states
 
 The screen distinguishes three failures, because collapsing them makes people
