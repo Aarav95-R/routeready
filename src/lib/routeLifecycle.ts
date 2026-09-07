@@ -276,7 +276,23 @@ export function routeLifecycleReducer(
         : state;
 
     case "BEGIN_REQUESTED": {
-      if (state.phase !== "start-prompt" || !state.lastAcceptedFix) return state;
+      // Any of the three phases before the drive, not just "start-prompt".
+      //
+      // Reaching "start-prompt" takes three accepted fixes spanning three
+      // seconds, and requiring it here is what put a "Confirming your position"
+      // card between tapping Start and the test beginning — an open-ended wait
+      // with nothing to show for it. The candidate is still how a driver guided
+      // to the start gets their arrival prompt; it is no longer the price of
+      // starting from a car already parked on the line.
+      //
+      // The two checks below are what that wait was really enforcing, and they
+      // are cheaper than it: a fix no older than five seconds, taken within
+      // START_CONFIRM_RADIUS_M of the start. A tap with no fix at all, or one
+      // from half a mile away, is still refused.
+      const startable = state.phase === "preview"
+        || state.phase === "start-candidate"
+        || state.phase === "start-prompt";
+      if (!startable || !state.lastAcceptedFix) return state;
       const fix = state.lastAcceptedFix;
       const fresh = event.at - fix.timestamp >= 0 && event.at - fix.timestamp <= MAX_FIX_AGE_MS;
       if (!fresh || fix.startDistanceM > START_CONFIRM_RADIUS_M) return state;

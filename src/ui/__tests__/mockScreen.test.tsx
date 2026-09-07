@@ -13,10 +13,20 @@ jest.mock("expo-haptics", () => ({
   ImpactFeedbackStyle: { Light: "light", Medium: "medium", Heavy: "heavy" },
   NotificationFeedbackType: { Success: "success", Warning: "warning" },
 }));
+// The sheet is replaced by a plain View, which renders every child whatever
+// position the real sheet would be at — so nothing in this file can observe
+// where the sheet actually sits. The props it was handed are captured instead,
+// because those are what decide that, and getting them wrong once left the
+// marking surface off screen with the whole suite still green.
+type SheetProps = { index?: number; snapPoints?: unknown; enableDynamicSizing?: boolean; onChange?: (i: number) => void };
+const mockSheetProps: { current: SheetProps | null } = { current: null };
 jest.mock("@gorhom/bottom-sheet", () => {
   const { View, ScrollView } = require("react-native");
   const { forwardRef } = require("react");
-  const Sheet = forwardRef(({ children }: any, _ref: any) => <View>{children}</View>);
+  const Sheet = forwardRef(({ children, ...rest }: any, _ref: any) => {
+    mockSheetProps.current = rest;
+    return <View>{children}</View>;
+  });
   Sheet.displayName = "BottomSheet";
   return { __esModule: true, default: Sheet, BottomSheetScrollView: ScrollView };
 });
@@ -121,7 +131,7 @@ test("live preview arrival asks, and marks nothing until it is answered", async 
   expect(screen.getByRole("button", { name: "Begin route" })).toBeTruthy();
   // Nothing is scored against a driver who has not been told the test began.
   expect(useMockTest.getState().phase).toBe("idle");
-  expect(useMockTest.getState().samples).toHaveLength(0);
+  expect(useMockTest.getState().marks).toHaveLength(0);
 });
 
 test("the test begins only once the driver says so", async () => {
@@ -190,14 +200,16 @@ test("standing on the start line does not end the test", async () => {
   expect(useMockTest.getState().phase).toBe("running");
 });
 
-test("inaccurate fixes never become mock-test evidence or advance completion", async () => {
+// Fixes stopped being evidence when the score became the mark sheet, but they
+// still drive the route cursor — an inaccurate one must not walk the drive to
+// its finish.
+test("inaccurate fixes never advance the drive to completion", async () => {
   await beginAtStart();
 
   for (const p of LOOP) {
     await act(async () => { emitFix(p.lat, p.lng, { speedMps: 0, accuracyM: 80 }); });
   }
 
-  expect(useMockTest.getState().samples).toHaveLength(0);
   expect(screen.queryByRole("button", { name: "End route" })).toBeNull();
   expect(mockReplace).not.toHaveBeenCalled();
 });
@@ -288,7 +300,8 @@ test("finishing while still off route flushes the open deviation", async () => {
     { lat: 51.4970, lng: -0.0945 },
   ]);
 
-  await act(async () => { fireEvent.press(screen.getByText("Finish test")); });
+  await act(async () => { mockSheetProps.current?.onChange?.(1); });
+  await act(async () => { fireEvent.press(screen.getByTestId("finish-test")); });
 
   expect(useMockTest.getState().deviations).toHaveLength(1);
   expect(mockReplace).toHaveBeenCalledTimes(1);
@@ -354,45 +367,52 @@ test("exiting the drive to the start leaves without asking", async () => {
 test("tapping Start on the start line never opens the approach", async () => {
   setLastKnownPosition(A.lat, A.lng);
   await mount();
+  // One fix, not three: a third stationary fix at the start confirms the
+  // lifecycle on its own and hands over to the arrival prompt, which is a
+  // different path with its own test above.
   await drive([A]);
 
   await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Start" })); });
 
+  // The defect this guards: Start and "Start directly from here" once shared a
+  // handler, so the collapsed Start opened a bearing-guided approach to a point
+  // the car was already parked on.
   expect(screen.queryByText("Heading to the start")).toBeNull();
-  expect(screen.getByText("Confirming your position")).toBeTruthy();
-  // Nothing is marked while the fix is being confirmed.
-  expect(useMockTest.getState().phase).toBe("idle");
+  expect(useMockTest.getState().phase).toBe("running");
 });
 
-test("the confirmed fix hands the start line straight to the begin prompt", async () => {
+// The "Confirming your position" card used to sit between this tap and the
+// test, waiting on three accepted fixes spanning three seconds, with no way to
+// say how long that would take. One tap now, and nothing to wait for.
+test("Start on the line begins the test in one tap, with nothing to confirm", async () => {
   setLastKnownPosition(A.lat, A.lng);
   await mount();
   await drive([A]);
+
   await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Start" })); });
 
-  await drive([A, A]);
-
   expect(screen.queryByText("Confirming your position")).toBeNull();
-  expect(screen.getByText("Ready to begin?")).toBeTruthy();
+  expect(screen.queryByText("Ready to begin?")).toBeNull();
+  expect(useMockTest.getState().phase).toBe("running");
+  expect(screen.getByTestId("headroom")).toHaveTextContent("15 driving faults left");
 });
 
 // Inside AT_START_M (60 m) so the card collapses to Start, outside
-// START_RADIUS_M (30 m) so the lifecycle will never confirm.
-const DEAD_BAND = { lat: A.lat + 0.000404, lng: A.lng };
+// START_CONFIRM_RADIUS_M (45 m) so the lifecycle will refuse to begin.
+const DEAD_BAND = { lat: A.lat + 0.00047, lng: A.lng };
 
-test("the dead band between the two start radii says why nothing is happening", async () => {
+test("the dead band between the two start radii says why nothing happened", async () => {
   setLastKnownPosition(DEAD_BAND.lat, DEAD_BAND.lng);
   await mount();
-  await drive([DEAD_BAND, DEAD_BAND, DEAD_BAND, DEAD_BAND]);
+  await drive([DEAD_BAND, DEAD_BAND, DEAD_BAND]);
 
   await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Start" })); });
 
+  // Refused — but a button that does nothing is worse than the wait it
+  // replaced, so it says what to do about it.
+  expect(useMockTest.getState().phase).toBe("idle");
+  expect(screen.getByText(/Pull up within 45 m/)).toBeTruthy();
   expect(screen.queryByText("Heading to the start")).toBeNull();
-  expect(screen.getByText(/Pull up within 30 m of the start/)).toBeTruthy();
-
-  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Cancel" })); });
-  expect(screen.queryByText("Confirming your position")).toBeNull();
-  expect(screen.getByRole("button", { name: "Start" })).toBeTruthy();
 });
 
 test("starting unguided from far away still opens the approach", async () => {
@@ -404,4 +424,281 @@ test("starting unguided from far away still opens the approach", async () => {
   await act(async () => { fireEvent.press(screen.getByRole("button", { name: "Start directly from here" })); });
 
   expect(screen.getByText("Heading to the start")).toBeTruthy();
+});
+
+// ── Marking a fault ───────────────────────────────────────────────────────
+//
+// A listed sheet: every category on screen, a minus and a plus on each row.
+// One press is one mark, and the score moves with it.
+
+test("minus on a row records a driving fault and spends headroom", async () => {
+  await beginAtStart();
+  expect(screen.getByTestId("headroom")).toHaveTextContent("15 driving faults left");
+
+  await act(async () => { fireEvent.press(screen.getByTestId("mark-mirrors-minor")); });
+
+  expect(useMockTest.getState().marks).toEqual([
+    expect.objectContaining({ category: "mirrors", level: "minor" }),
+  ]);
+  expect(screen.getByTestId("headroom")).toHaveTextContent("14 driving faults left");
+  expect(screen.getByTestId("count-mirrors")).toHaveTextContent("1");
+});
+
+test("pressing minus again on the same row counts up", async () => {
+  await beginAtStart();
+
+  await act(async () => { fireEvent.press(screen.getByTestId("mark-mirrors-minor")); });
+  await act(async () => { fireEvent.press(screen.getByTestId("mark-mirrors-minor")); });
+  await act(async () => { fireEvent.press(screen.getByTestId("mark-mirrors-minor")); });
+
+  expect(screen.getByTestId("count-mirrors")).toHaveTextContent("3");
+  expect(screen.getByTestId("headroom")).toHaveTextContent("12 driving faults left");
+});
+
+// Credits are RouteReady's own idea: worth a few points of encouragement on
+// the score and nothing at all on the verdict.
+test("plus gives a credit and costs no headroom", async () => {
+  await beginAtStart();
+
+  await act(async () => { fireEvent.press(screen.getByTestId("mark-moveOff-credit")); });
+
+  expect(useMockTest.getState().marks).toEqual([
+    expect.objectContaining({ category: "moveOff", level: "credit" }),
+  ]);
+  expect(screen.getByTestId("headroom")).toHaveTextContent("15 driving faults left");
+  expect(screen.getByTestId("credit-moveOff")).toHaveTextContent("1 done well");
+});
+
+// A serious fault is a different outcome, not a sixteenth driving fault.
+test("the serious button ends the test without spending headroom", async () => {
+  await beginAtStart();
+
+  await act(async () => { fireEvent.press(screen.getByTestId("mark-junctions-major")); });
+
+  expect(screen.getByTestId("headroom")).toHaveTextContent("15 driving faults left");
+  expect(screen.getByTestId("live-detail")).toHaveTextContent("0 driving faults · 1 serious");
+  expect(screen.getByTestId("serious-junctions")).toHaveTextContent("Serious fault");
+});
+
+// Every fault an examiner can give is on the one surface — including the ones
+// that are nothing to do with driving along.
+test("the whole DL25 is on the sheet, not behind a drill-down", async () => {
+  await beginAtStart();
+
+  await act(async () => { fireEvent.press(screen.getByTestId("mark-eyesight-minor")); });
+
+  expect(useMockTest.getState().marks).toEqual([
+    expect.objectContaining({ category: "eyesight", level: "minor" }),
+  ]);
+});
+
+test("undo takes back the last mark whatever it was", async () => {
+  await beginAtStart();
+
+  await act(async () => { fireEvent.press(screen.getByTestId("mark-mirrors-minor")); });
+  await act(async () => { fireEvent.press(screen.getByTestId("mark-junctions-major")); });
+  await act(async () => { fireEvent.press(screen.getByTestId("undo")); });
+
+  expect(useMockTest.getState().marks).toEqual([
+    expect.objectContaining({ category: "mirrors", level: "minor" }),
+  ]);
+});
+
+// ── The meter ─────────────────────────────────────────────────────────────
+
+// The meter reports the mark sheet exactly. It used to add missed observation
+// zones and speeding the phone had detected, which is what made it a claim
+// rather than a report.
+test("driving past an observation zone costs nothing on its own", async () => {
+  mockGetRoute.mockResolvedValue({
+    data: {
+      route: { ...route, observation_zones: [{ ...LOOP[15], radiusM: 60, kind: "roundabout" as const }] },
+      hazards: [],
+    },
+    stale: false,
+  });
+  await beginAtStart();
+  expect(screen.getByTestId("headroom")).toHaveTextContent("15 driving faults left");
+
+  await drive(LOOP);
+
+  // Only the examiner decides whether the observation was good enough.
+  expect(screen.getByTestId("headroom")).toHaveTextContent("15 driving faults left");
+});
+
+// ── The sheet's own snap points ───────────────────────────────────────────
+//
+// @gorhom/bottom-sheet v5 defaults `enableDynamicSizing` to true. With it on,
+// useAnimatedDetents measures the content, pushes an extra content-sized detent
+// into the list and re-sorts the whole thing — so `index` no longer addresses
+// the array passed as `snapPoints`, and until that measurement lands the hook
+// returns no detents at all and the sheet never positions itself. That left the
+// marking surface off the screen with the whole suite green.
+
+test("the sheet opts out of dynamic sizing, so its index addresses its own snap points", async () => {
+  await beginAtStart();
+
+  expect(mockSheetProps.current?.enableDynamicSizing).toBe(false);
+});
+
+// Collapsed, not open: the controls row and the Mapbox attribution are stacked
+// off the collapsed height, so a sheet resting any higher covers Mirrors — the
+// control the score depends on — and the attribution, which the Mapbox licence
+// requires stay visible.
+test("the test opens collapsed, so the map keeps its controls and attribution", async () => {
+  await beginAtStart();
+
+  expect(mockSheetProps.current?.index).toBe(0);
+});
+
+// Two heights, not three. The middle one existed to show an eight-tile grid
+// that no longer exists.
+test("the sheet has two heights: the score, and the whole sheet", async () => {
+  await beginAtStart();
+
+  const snapPoints = mockSheetProps.current?.snapPoints as [number, string];
+  expect(snapPoints).toHaveLength(2);
+  expect(typeof snapPoints[0]).toBe("number");
+  expect(snapPoints[1]).toBe("92%");
+});
+
+// ── Ending the test by hand ───────────────────────────────────────────────
+//
+// Finish used to be the last thing in the sheet's scroll, below all twenty-three
+// category rows. Nobody scrolls the whole DL25 to find a control they need once,
+// so in practice the only way to end a test was to drive the loop closed.
+
+test("finishing is pinned under the score once the sheet is open", async () => {
+  await beginAtStart();
+
+  // Collapsed: the sheet is the score, and nothing else.
+  expect(screen.queryByTestId("finish-test")).toBeNull();
+
+  await act(async () => { mockSheetProps.current?.onChange?.(1); });
+
+  expect(screen.getByTestId("finish-test")).toBeTruthy();
+});
+
+test("finishing by hand scores the test and opens the result", async () => {
+  await beginAtStart();
+  await drive([A, A]);
+  await act(async () => { mockSheetProps.current?.onChange?.(1); });
+
+  await act(async () => { fireEvent.press(screen.getByTestId("finish-test")); });
+
+  expect(useMockTest.getState().phase).toBe("finished");
+  expect(mockReplace).toHaveBeenCalledWith("/route/route-1/result");
+});
+
+test("a hand-finished test carries the marks that were given", async () => {
+  await beginAtStart();
+  await drive([A, A]);
+  await act(async () => { fireEvent.press(screen.getByTestId("mark-mirrors-minor")); });
+  await act(async () => { mockSheetProps.current?.onChange?.(1); });
+
+  await act(async () => { fireEvent.press(screen.getByTestId("finish-test")); });
+
+  expect(useMockTest.getState().result?.minors).toBe(1);
+});
+
+// ── Getting to the start ──────────────────────────────────────────────────
+
+// distToStart comes from getLastKnownPositionAsync, which can be minutes old.
+// When it wrongly puts the driver on the line the card collapses to "Start"
+// alone, and there was then no way to route to a start they are not at.
+test("the drive to the start is offered even from the collapsed card", async () => {
+  setLastKnownPosition(A.lat, A.lng);
+  await mount();
+
+  expect(screen.getByRole("button", { name: "Start" })).toBeTruthy();
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Guide me to the start" }));
+  });
+
+  expect(screen.getByText("Heading to the start")).toBeTruthy();
+  // Still nothing scored: the drive to the start is not the test.
+  expect(useMockTest.getState().phase).toBe("idle");
+});
+
+test("the drive to the start is still offered when far away", async () => {
+  setLastKnownPosition(51.4900, -0.100);
+  await mount();
+
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Guide me to the start" }));
+  });
+
+  expect(screen.getByText("Heading to the start")).toBeTruthy();
+});
+
+// ── Beginning after the drive to the start ────────────────────────────────
+//
+// There was no way in. Arriving handed over on its own and only on its own:
+// three accepted fixes within 30 m at under 5 mph. The watch runs with
+// distanceInterval 5, so a car that has stopped emits nothing — pulling up on
+// the line and waiting is the one thing guaranteed not to produce them. The
+// screen carried a turn banner, Recenter and Exit, and nothing else, so the
+// only way out was to abandon the drive.
+
+test("the drive to the start offers a way into the test", async () => {
+  setLastKnownPosition(51.4980, -0.100);
+  await mount();
+  await act(async () => { fireEvent.press(screen.getByText("Guide me to the start")); });
+
+  expect(screen.getByText("Heading to the start")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Begin mock test" })).toBeTruthy();
+});
+
+test("beginning from the approach starts the test without waiting to arrive", async () => {
+  setLastKnownPosition(A.lat, A.lng);
+  await mount();
+  // From the collapsed card, whose link reads "Not here? Guide me to the start".
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Guide me to the start" }));
+  });
+  await drive([A]);
+
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Begin mock test" }));
+  });
+
+  expect(useMockTest.getState().phase).toBe("running");
+  expect(screen.getByTestId("headroom")).toHaveTextContent("15 driving faults left");
+});
+
+// The same two checks the preview card's Start is subject to.
+test("beginning from too far out is refused, and says so", async () => {
+  setLastKnownPosition(51.4900, -0.100);
+  await mount();
+  await act(async () => { fireEvent.press(screen.getByText("Guide me to the start")); });
+  await drive([{ lat: 51.4900, lng: -0.100 }]);
+
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Begin mock test" }));
+  });
+
+  expect(useMockTest.getState().phase).toBe("idle");
+  expect(screen.getByText(/Pull up within 45 m/)).toBeTruthy();
+});
+
+// ── The score is the mark sheet ───────────────────────────────────────────
+
+test("a drive with nothing marked reaches the result as a clean drive", async () => {
+  await beginAtStart();
+  await drive([...LOOP, A, A]);
+  await act(async () => { fireEvent.press(screen.getByRole("button", { name: "End route" })); });
+
+  const result = useMockTest.getState().result!;
+  expect(result.faults).toEqual([]);
+  expect(mockReplace).toHaveBeenCalledWith("/route/route-1/result");
+});
+
+// Mirrors existed only to answer the observation zones. With those unscored it
+// recorded nothing, and it was the largest control on the map.
+test("the map no longer carries a Mirrors button", async () => {
+  await beginAtStart();
+
+  expect(screen.queryByTestId("mirrors")).toBeNull();
+  // Recenter keeps its place.
+  expect(screen.getByRole("button", { name: "Recenter map" })).toBeTruthy();
 });

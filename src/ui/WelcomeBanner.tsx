@@ -1,6 +1,7 @@
 import { Pressable, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors } from "@/ui/theme";
+import { usePressed } from "@/ui/usePressed";
 import { headline, MAX_DISPLAY_SCALE, subheadline } from "@/ui/type";
 
 /**
@@ -35,6 +36,8 @@ const COPY = {
 export function WelcomeBanner({
   onBrowse, onDismiss,
 }: { onBrowse: () => void; onDismiss: () => void }) {
+  const dismissPress = usePressed();
+  const actionPress = usePressed();
   return (
     <View
       testID="welcome-banner"
@@ -66,7 +69,8 @@ export function WelcomeBanner({
           accessibilityLabel="Dismiss welcome"
           hitSlop={12}
           onPress={onDismiss}
-          style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+          {...dismissPress.pressProps}
+          style={{ opacity: dismissPress.pressed ? 0.6 : 1 }}
         >
           <Ionicons name="close" size={18} color={colors.labelTertiary} />
         </Pressable>
@@ -76,16 +80,17 @@ export function WelcomeBanner({
         testID="welcome-action"
         accessibilityRole="button"
         onPress={onBrowse}
-        style={({ pressed }) => [
-          {
-            marginTop: 14,
-            alignItems: "center",
-            borderRadius: 12,
-            backgroundColor: colors.clay,
-            paddingVertical: 12,
-          },
-          pressed && { opacity: 0.8 },
-        ]}
+        {...actionPress.pressProps}
+        // Not Pressable's own `pressed` — see usePressed. This used to render
+        // as bare white text on the banner, with no clay button behind it.
+        style={{
+          marginTop: 14,
+          alignItems: "center",
+          borderRadius: 12,
+          backgroundColor: colors.clay,
+          paddingVertical: 12,
+          opacity: actionPress.pressed ? 0.8 : 1,
+        }}
       >
         <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...headline, color: "#FFFFFF" }}>
           {COPY.action}

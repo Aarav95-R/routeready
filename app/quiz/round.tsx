@@ -14,6 +14,7 @@ import { ChoiceRow, type ChoiceState } from "@/ui/ChoiceRow";
 import { Group, GroupHeader } from "@/ui/List";
 import { Skeleton } from "@/ui/Skeleton";
 import { colors } from "@/ui/theme";
+import { usePressed } from "@/ui/usePressed";
 import { body, caption, footnote, largeTitle, MAX_DISPLAY_SCALE, subheadline, title2 } from "@/ui/type";
 
 /**
@@ -35,6 +36,8 @@ type Answered = { question: QuizQuestion; correct: boolean };
 
 export default function Round() {
   const router = useRouter();
+  const againPress = usePressed();
+  const ctaPress = usePressed();
 
   const [bank, setBank] = useState<QuizQuestion[] | null>(null);
   const [failure, setFailure] = useState<LoadFailure | null>(null);
@@ -212,10 +215,12 @@ export default function Round() {
                 // round just finished actually changed.
                 void (async () => deal(bank, await loadResults()))();
               }}
-              style={({ pressed }) => ({
+              {...againPress.pressProps}
+              // Not Pressable's own `pressed` — see usePressed.
+              style={{
                 minHeight: 46, borderRadius: 10, alignItems: "center", justifyContent: "center",
-                backgroundColor: pressed ? colors.accentPressed : colors.accent,
-              })}
+                backgroundColor: againPress.pressed ? colors.accentPressed : colors.accent,
+              }}
             >
               <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...body, fontWeight: "600", color: "#FFFFFF" }}>
                 Another round
@@ -330,12 +335,14 @@ export default function Round() {
           accessibilityState={{ disabled: !committed && picked === null }}
           disabled={!committed && picked === null}
           onPress={committed ? next : check}
-          style={({ pressed }) => ({
+          {...ctaPress.pressProps}
+          // Not Pressable's own `pressed` — see usePressed.
+          style={{
             minHeight: 46, borderRadius: 10, alignItems: "center", justifyContent: "center",
             backgroundColor: !committed && picked === null
               ? colors.fill
-              : pressed ? colors.accentPressed : colors.accent,
-          })}
+              : ctaPress.pressed ? colors.accentPressed : colors.accent,
+          }}
         >
           <Text
             testID="round-cta-label"

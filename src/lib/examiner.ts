@@ -57,6 +57,34 @@ export type Mark = {
 
 const byId = new Map(EXAMINER_CATEGORIES.map((c) => [c.id, c]));
 
+export function categoryById(id: string): ExaminerCategory | undefined {
+  return byId.get(id);
+}
+
+export type MarkCounts = { minor: number; major: number; credit: number };
+
+const NO_MARKS: MarkCounts = { minor: 0, major: 0, credit: 0 };
+
+/**
+ * Every level, per category, for the mark sheet's rows.
+ *
+ * `minorCountsByCategory` below answers a narrower question — which categories
+ * are being marked habitually — and is kept because that is a different rule
+ * with its own threshold. This one is what a row draws itself from: the count
+ * between the minus and the plus, the tint on a row that has been marked, and
+ * the tick beside a category that was done well.
+ */
+export function markCountsByCategory(marks: Mark[]): Record<string, MarkCounts> {
+  const counts: Record<string, MarkCounts> = {};
+  for (const m of marks) {
+    const current = counts[m.category] ?? NO_MARKS;
+    counts[m.category] = { ...current, [m.level]: current[m.level] + 1 };
+  }
+  return counts;
+}
+
+export const NO_MARK_COUNTS = NO_MARKS;
+
 // A mark from an unknown category is dropped rather than thrown: a stale mark
 // should never be able to take down the result screen at the end of a drive.
 export function marksToFaults(marks: Mark[]): Fault[] {

@@ -1,0 +1,560 @@
+<title>The Mark Sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --emerald: #1A875E; --amber: #B45309; --red: #B91C1C;
+    --code-bg: #F0F2EC; --frame: #D7D3CB; --pick-ink: #FFFFFF; --rule: #EDEFEA;
+
+    /* Quoted verbatim from src/ui/theme.ts. These never invert: the phone
+       shows the product, and the product has one appearance. */
+    --a-field: #F5F0E8; --a-cell: #FFFFFF; --a-label: #1C1917;
+    --a-label2: #574F49; --a-label3: #6B635B; --a-sep: #E4DFD8;
+    --a-fill: #EBE7E1; --a-accent: #1A875E; --a-accent-ink: #146B4A;
+    --a-danger: #DC2626; --a-warning: #D97706;
+    --a-minor-bg: #FEF3C7; --a-minor-fg: #B45309;
+    --a-major-bg: #FEE2E2; --a-major-fg: #B91C1C;
+    --a-credit-bg: #ECFDF5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+      --line: #26302A; --emerald: #34D399; --amber: #FBBF24; --red: #F87171;
+      --code-bg: #1A211C; --frame: #2C352E; --pick-ink: #0C110E; --rule: #1E2621;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+    --line: #26302A; --emerald: #34D399; --amber: #FBBF24; --red: #F87171;
+    --code-bg: #1A211C; --frame: #2C352E; --pick-ink: #0C110E; --rule: #1E2621;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-direction: column; gap: 34px; }
+
+  .eyebrow { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0; }
+  h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.04; letter-spacing: -0.03em; font-weight: 700; margin: 10px 0 0; text-wrap: balance; }
+  .lede { margin: 16px 0 0; font-size: 17px; color: var(--muted); max-width: 64ch; }
+  h2 { font-size: 21px; letter-spacing: -0.02em; font-weight: 700; margin: 0; text-wrap: balance; }
+  p { margin: 0; max-width: 66ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14.5px; }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 22px; }
+  .sec-head { display: flex; flex-direction: column; gap: 8px; }
+  code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px; background: var(--code-bg); padding: 1.5px 5px; border-radius: 4px; }
+  ul.notes { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 9px; }
+  ul.notes li { max-width: 66ch; }
+  ul.notes li::marker { color: var(--muted); }
+
+  .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(322px, 1fr)); gap: 30px; align-items: start; }
+  .option { display: flex; flex-direction: column; gap: 12px; }
+  .tag { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tag .pick { background: var(--emerald); color: var(--pick-ink); border-radius: 999px; padding: 2.5px 8px; letter-spacing: 0.08em; font-weight: 600; }
+  .tag .alt { border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 8px; letter-spacing: 0.08em; }
+  .tag .was { border: 1px solid var(--red); color: var(--red); border-radius: 999px; padding: 2.5px 8px; letter-spacing: 0.08em; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroller { overflow-x: auto; }
+  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(0,0,0,.12); vertical-align: -1px; margin-right: 7px; }
+
+  .callout { border-left: 3px solid var(--amber); background: color-mix(in srgb, var(--amber) 8%, transparent); border-radius: 0 8px 8px 0; padding: 14px 16px; display: flex; flex-direction: column; gap: 7px; }
+  .callout .h { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
+  .callout p { font-size: 14.5px; max-width: 68ch; }
+
+  /* ══ Phone slice ═════════════════════════════════════════════════════ */
+  .screen {
+    position: relative; width: 322px; max-width: 100%;
+    border: 1px solid var(--frame); border-radius: 20px; overflow: hidden;
+    background: var(--a-cell); color: var(--a-label);
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    letter-spacing: -0.01em; flex: none;
+  }
+  .t-head { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+  .t-sub { font-size: 15px; line-height: 20px; letter-spacing: -0.17px; }
+  .t-foot { font-size: 13px; line-height: 18px; font-weight: 600; }
+  .t-cap { font-size: 13px; line-height: 18px; }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  .grab { width: 36px; height: 4px; border-radius: 2px; background: #D8D1C8; margin: 9px auto 6px; }
+
+  /* Sticky score header */
+  .schead { padding: 4px 16px 12px; border-bottom: 1px solid var(--a-sep); display: flex; flex-direction: column; gap: 9px; background: var(--a-cell); }
+  .schead .row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .big { font-size: 22px; line-height: 27px; font-weight: 700; letter-spacing: -0.46px; }
+  .meter { display: flex; gap: 3px; height: 8px; }
+  .meter i { flex: 1; border-radius: 2px; background: var(--a-fill); }
+  .meter i.on { background: var(--a-minor-fg); }
+  .undo { background: var(--a-fill); border-radius: 8px; height: 34px; min-width: 62px; display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--a-label2); padding: 0 12px; }
+
+  .grouphd { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--a-label3); text-transform: uppercase; letter-spacing: .6px; padding: 15px 16px 6px; }
+
+  /* ── The restaged row ── */
+  .mrow { display: flex; align-items: center; gap: 12px; padding: 9px 16px; border-bottom: 1px solid var(--a-sep); min-height: 66px; }
+  .mrow .lbl { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .mrow .nm { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+  .mrow .ex { font-size: 13px; line-height: 17px; color: var(--a-label3); }
+  .steps { display: flex; align-items: center; gap: 8px; flex: none; }
+  .btn { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; font-size: 24px; font-weight: 700; line-height: 1; }
+  .btn.minus { background: var(--a-minor-bg); color: var(--a-minor-fg); }
+  .btn.plus { background: var(--a-credit-bg); color: var(--a-accent-ink); }
+  .btn.ser { width: 34px; height: 34px; border-radius: 10px; background: var(--a-major-bg); color: var(--a-major-fg); font-size: 13px; }
+  .cnt { min-width: 26px; text-align: center; font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--a-minor-fg); }
+  .cnt.zero { color: var(--a-sep); }
+  .mrow.hot { background: #FFFBF0; }
+  .badge { background: var(--a-minor-bg); color: var(--a-minor-fg); border-radius: 6px; padding: 1px 6px; font-size: 13px; font-weight: 700; }
+  .credit-dot { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--a-accent-ink); }
+
+  /* ── The original row, for the before ── */
+  .orow { display: flex; align-items: center; gap: 12px; padding: 8px 16px; }
+  .orow .txt { flex: 1; min-width: 0; }
+  .orow .onm { font-size: 14px; font-weight: 600; }
+  .orow .oex { font-size: 12px; line-height: 16px; color: var(--a-label3); display: flex; gap: 5px; }
+  .orow .oex b { font-size: 11px; font-weight: 700; flex: none; }
+  .omk { display: flex; gap: 8px; width: 148px; flex: none; }
+  .omk span { flex: 1; height: 44px; border-radius: 10px; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .omk .min { background: var(--a-minor-bg); color: var(--a-minor-fg); }
+  .omk .maj { background: var(--a-major-bg); color: var(--a-major-fg); }
+  .omk .cr { background: var(--a-credit-bg); color: var(--a-accent); font-size: 18px; }
+
+  .anno { display: flex; flex-direction: column; gap: 9px; font-size: 13.5px; }
+  .anno .r { display: flex; gap: 9px; align-items: flex-start; }
+  .anno .n { font-family: "IBM Plex Mono", monospace; font-size: 10px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; flex: none; margin-top: 2px; }
+  .anno .r p { max-width: 46ch; }
+  .split { display: grid; grid-template-columns: 322px minmax(260px, 1fr); gap: 30px; align-items: start; }
+  @media (max-width: 720px) { .split { grid-template-columns: 1fr; } }
+
+  .askrow { display: flex; flex-direction: column; gap: 5px; padding: 13px 0; border-bottom: 1px solid var(--rule); }
+  .askrow:last-child { border-bottom: 0; }
+  .askrow .q { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .askrow .a { font-size: 14.5px; color: var(--muted); max-width: 70ch; }
+  a { color: var(--emerald); }
+  :focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; border-radius: 4px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">RouteReady &middot; design &middot; 30 August 2026</p>
+    <h1>The mark sheet</h1>
+    <p class="lede">
+      Back to a listed sheet: every fault the examiner can give, on screen, with a
+      minus and a plus on each row. Nothing to drill into, nothing to hunt for.
+      This replaces the tile-and-severity flow I proposed last time &mdash; that made
+      the common case fast and the sheet itself worse, which is the wrong way round
+      for the person holding the phone for forty minutes.
+    </p>
+  </header>
+
+  <!-- ══════════════════════ 1 · WHAT WAS WRONG ════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">01 &middot; the original, and what to keep from it</p>
+      <h2>The list was right. The row was not.</h2>
+    </div>
+
+    <div class="split">
+      <div class="screen">
+        <div style="padding:12px 16px 4px" class="t-foot">Examiner &nbsp;&middot;&nbsp; <span style="color:var(--a-minor-fg)">3 min</span> &nbsp;<span style="color:var(--a-major-fg)">0 maj</span> &nbsp;<span style="color:var(--a-accent)">+1</span></div>
+        <div style="padding:8px 16px 2px;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#8A827A">While driving</div>
+        <div class="orow">
+          <div class="txt">
+            <div class="onm">Use of mirrors</div>
+            <div class="oex"><b style="color:#B45309">MIN</b><span>Missed check where nothing was coming</span></div>
+            <div class="oex"><b style="color:#B91C1C">MAJ</b><span>Changing direction or braking hard into someone unseen</span></div>
+          </div>
+          <div class="omk"><span class="min">MIN</span><span class="maj">MAJ</span><span class="cr">+</span></div>
+        </div>
+        <div class="orow">
+          <div class="txt">
+            <div class="onm">Signals</div>
+            <div class="oex"><b style="color:#B45309">MIN</b><span>Late, or left flashing after the turn</span></div>
+            <div class="oex"><b style="color:#B91C1C">MAJ</b><span>A signal that misleads someone into moving</span></div>
+          </div>
+          <div class="omk"><span class="min">MIN</span><span class="maj">MAJ</span><span class="cr">+</span></div>
+        </div>
+        <div class="orow">
+          <div class="txt">
+            <div class="onm">Junctions</div>
+            <div class="oex"><b style="color:#B45309">MIN</b><span>Approaching a touch fast; slightly wide</span></div>
+            <div class="oex"><b style="color:#B91C1C">MAJ</b><span>Emerging into a gap that forces someone to brake</span></div>
+          </div>
+          <div class="omk"><span class="min">MIN</span><span class="maj">MAJ</span><span class="cr">+</span></div>
+        </div>
+      </div>
+
+      <div class="anno">
+        <div class="r"><span class="n">keep</span><p><b>Everything listed, nothing hidden.</b> Twenty-three rows in three DVSA groups. The examiner reads down them, not into them.</p></div>
+        <div class="r"><span class="n">keep</span><p><b>A control per row.</b> No mode, no selection, no second screen. The mark is made where the fault is named.</p></div>
+        <div class="r"><span class="n">fix</span><p><b>Three 12&nbsp;pt lines per row.</b> Two of them are worked examples nobody reads at 30&nbsp;mph. They make the row 90&nbsp;pt tall, so only <b>three rows</b> fit on screen at once &mdash; on a list of twenty-three.</p></div>
+        <div class="r"><span class="n">fix</span><p><b>MIN / MAJ as labels.</b> Abbreviations of DVSA jargon, in 12&nbsp;pt bold, on a 44&nbsp;pt square. Neither says what pressing it does.</p></div>
+        <div class="r"><span class="n">fix</span><p><b>No count on the row.</b> Press MIN four times and the row looks exactly as it did before. The tally is one line at the top, in monospace.</p></div>
+        <div class="r"><span class="n">fix</span><p><b>Three equal buttons.</b> A serious fault ends the test and a credit is worth a few points, yet both are the same size as the fault you give ten of.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ 2 · THE ROW ═══════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">02 &middot; the row, restaged</p>
+      <h2>Minus, count, plus</h2>
+      <p class="small dim">
+        One line of name, a number that changes when you press, and two targets big
+        enough to hit without looking. 66&nbsp;pt tall instead of 90, so nine rows fit
+        where three did.
+      </p>
+    </div>
+
+    <div class="screen" style="width:100%;max-width:520px">
+      <div class="mrow">
+        <div class="lbl"><span class="nm">Use of mirrors</span></div>
+        <div class="steps">
+          <span class="btn ser">S</span>
+          <span class="btn minus">&minus;</span>
+          <span class="cnt">3</span>
+          <span class="btn plus">+</span>
+        </div>
+      </div>
+      <div class="mrow">
+        <div class="lbl"><span class="nm">Signals</span></div>
+        <div class="steps">
+          <span class="btn ser">S</span>
+          <span class="btn minus">&minus;</span>
+          <span class="cnt zero">0</span>
+          <span class="btn plus">+</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Control</th><th>Press it to</th><th>Size</th><th>Why that size</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="sw" style="background:#FEF3C7"></span><b>&minus;</b></td>
+            <td>Record a driving fault on this row</td>
+            <td class="num">48 &times; 48</td>
+            <td>The one pressed most. Amber, the colour a driving fault already has everywhere in the app.</td>
+          </tr>
+          <tr>
+            <td><b>the count</b></td>
+            <td>Nothing &mdash; it reports</td>
+            <td class="num">26 wide</td>
+            <td>Tabular figures so the column does not jitter. Grey at zero, amber once it is not.</td>
+          </tr>
+          <tr>
+            <td><span class="sw" style="background:#ECFDF5"></span><b>+</b></td>
+            <td>Give a credit &mdash; they did this one well</td>
+            <td class="num">48 &times; 48</td>
+            <td>Same size as minus: it is the other half of &ldquo;how did that go&rdquo;, and RouteReady scores it.</td>
+          </tr>
+          <tr>
+            <td><span class="sw" style="background:#FEE2E2"></span><b>S</b></td>
+            <td>Record a serious fault</td>
+            <td class="num">34 &times; 34</td>
+            <td>Deliberately smaller. One of these fails the test, so it should be hard to hit by accident and easy to find on purpose.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <div class="h">Why the count sits between the two buttons</div>
+      <p>
+        It is the stepper shape everyone already knows, and it puts the feedback
+        exactly where the finger is. Press minus, the number under your thumb goes
+        up and the meter at the top drops by one. You never have to look anywhere
+        else to know the press registered &mdash; which is the whole problem with the
+        row it replaces.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ 3 · WHAT PLUS MEANS ═══════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">03 &middot; decision one</p>
+      <h2>What the plus does</h2>
+      <p class="small dim">
+        &ldquo;Plus or minus&rdquo; reads two ways and they score differently, so this
+        is the one thing I do not want to guess at.
+      </p>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <p class="tag"><span class="pick">Recommended</span> A &middot; Plus is a credit</p>
+        <div class="screen" style="width:100%">
+          <div class="mrow">
+            <div class="lbl"><span class="nm">Use of mirrors</span></div>
+            <div class="steps">
+              <span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt">3</span><span class="btn plus">+</span>
+            </div>
+          </div>
+          <div class="mrow">
+            <div class="lbl"><span class="nm">Move off</span><span class="ex"><span class="credit-dot">&#10003; 1 done well</span></span></div>
+            <div class="steps">
+              <span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt zero">0</span><span class="btn plus">+</span>
+            </div>
+          </div>
+        </div>
+        <p class="small">
+          Minus takes a fault, plus gives a credit &mdash; the same pair the original
+          sheet had as <code>MIN</code> and <code>+</code>. Credits are already in
+          the scoring engine: worth up to 10 points of encouragement on the score
+          and nothing at all on the pass/fail verdict, which is deliberate.
+        </p>
+        <p class="small dim">
+          Correcting a mis-tap uses <b>Undo</b> at the top, which removes the last
+          mark whatever it was. That already exists and already works.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="alt">Alternative</span> B &middot; Plus takes one back</p>
+        <div class="screen" style="width:100%">
+          <div class="mrow">
+            <div class="lbl"><span class="nm">Use of mirrors</span></div>
+            <div class="steps">
+              <span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt">3</span><span class="btn plus" style="background:var(--a-fill);color:var(--a-label2)">+</span>
+            </div>
+          </div>
+        </div>
+        <p class="small">
+          A true stepper: minus adds a fault to this row, plus removes one. Every
+          row corrects itself, so a mis-tap never needs the Undo at the top and
+          never needs to be noticed within a few seconds.
+        </p>
+        <p class="small dim">
+          Costs the credit. There would be nowhere left to say &ldquo;they did that
+          one well&rdquo;, so <code>creditCount()</code> and the up-to-10-point bonus
+          would go unused, and the result screen loses the only positive thing it
+          currently says. Choose this if credits are not something you want in a
+          mock test.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ 4 · ROW DENSITY ═══════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">04 &middot; decision two</p>
+      <h2>What happened to the examples</h2>
+      <p class="small dim">
+        Every category carries a written example of what makes it a driving fault
+        and what makes it serious. They are good, and they are the reason only three
+        rows fit on screen.
+      </p>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <p class="tag"><span class="pick">Recommended</span> A &middot; Behind the name</p>
+        <div class="screen" style="width:100%">
+          <div class="mrow">
+            <div class="lbl"><span class="nm">Use of mirrors</span></div>
+            <div class="steps"><span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt">3</span><span class="btn plus">+</span></div>
+          </div>
+          <div style="padding:0 16px 14px;background:#FFFBF0;border-bottom:1px solid var(--a-sep)">
+            <div style="display:flex;gap:8px;padding:10px 0 0"><span style="font-size:13px;font-weight:700;color:var(--a-minor-fg);flex:none">&minus;</span><span class="t-cap" style="color:var(--a-label2)">Missed check where nothing was coming</span></div>
+            <div style="display:flex;gap:8px;padding:6px 0 0"><span style="font-size:13px;font-weight:700;color:var(--a-major-fg);flex:none">S</span><span class="t-cap" style="color:var(--a-label2)">Changing direction or braking hard into someone unseen</span></div>
+          </div>
+          <div class="mrow">
+            <div class="lbl"><span class="nm">Signals</span></div>
+            <div class="steps"><span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt zero">0</span><span class="btn plus">+</span></div>
+          </div>
+        </div>
+        <p class="small">
+          Tapping the <em>name</em> opens that row's two examples; the buttons keep
+          working while it is open. Rows stay 66&nbsp;pt, the whole sheet stays
+          scannable, and the guidance is one tap away at a red light rather than
+          three lines of noise at 30&nbsp;mph.
+        </p>
+        <p class="small dim">
+          The row is the tap target for the examples, so nothing on it does two
+          jobs: name opens, minus marks, plus credits.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="alt">Alternative</span> B &middot; One line, always</p>
+        <div class="screen" style="width:100%">
+          <div class="mrow" style="min-height:78px">
+            <div class="lbl"><span class="nm">Use of mirrors</span><span class="ex">Missed check where nothing was coming</span></div>
+            <div class="steps"><span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt">3</span><span class="btn plus">+</span></div>
+          </div>
+          <div class="mrow" style="min-height:78px">
+            <div class="lbl"><span class="nm">Signals</span><span class="ex">Late, or left flashing after the turn</span></div>
+            <div class="steps"><span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt zero">0</span><span class="btn plus">+</span></div>
+          </div>
+        </div>
+        <p class="small">
+          The driving-fault example stays on the row permanently, at a readable
+          13&nbsp;pt rather than 12. Rows are 78&nbsp;pt, so seven fit instead of nine.
+          The serious example is only in the expanded view.
+        </p>
+        <p class="small dim">
+          Better for somebody marking their first test; slower to scan by the third.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ 5 · THE WHOLE SHEET ═══════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">05 &middot; the whole thing</p>
+      <h2>The sheet, full height</h2>
+      <p class="small dim">
+        The person marking is not driving. Pulled up, the sheet takes the screen and
+        the score stays pinned above the list.
+      </p>
+    </div>
+
+    <div class="split">
+      <div class="screen">
+        <div class="grab"></div>
+        <div class="schead">
+          <div class="row">
+            <span class="big">12 driving faults left</span>
+            <span class="undo">Undo</span>
+          </div>
+          <div class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="row">
+            <span class="t-cap" style="color:var(--a-label3)">3 driving faults &middot; no serious &middot; <span style="color:var(--a-accent-ink);font-weight:600">+1 credit</span></span>
+            <span class="t-cap tnum" style="color:var(--a-label3)">12:04</span>
+          </div>
+        </div>
+
+        <div class="grouphd">While driving</div>
+        <div class="mrow hot">
+          <div class="lbl"><span class="nm">Use of mirrors</span></div>
+          <div class="steps"><span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt">3</span><span class="btn plus">+</span></div>
+        </div>
+        <div class="mrow">
+          <div class="lbl"><span class="nm">Control</span></div>
+          <div class="steps"><span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt zero">0</span><span class="btn plus">+</span></div>
+        </div>
+        <div class="mrow">
+          <div class="lbl"><span class="nm">Move off</span></div>
+          <div class="steps"><span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt zero">0</span><span class="btn plus">+</span></div>
+        </div>
+        <div class="mrow">
+          <div class="lbl"><span class="nm">Signals</span></div>
+          <div class="steps"><span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt zero">0</span><span class="btn plus">+</span></div>
+        </div>
+        <div class="mrow">
+          <div class="lbl"><span class="nm">Junctions</span></div>
+          <div class="steps"><span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt zero">0</span><span class="btn plus">+</span></div>
+        </div>
+        <div class="mrow">
+          <div class="lbl"><span class="nm">Judgement</span></div>
+          <div class="steps"><span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt zero">0</span><span class="btn plus">+</span></div>
+        </div>
+        <div class="mrow" style="border-bottom:none">
+          <div class="lbl"><span class="nm">Positioning</span></div>
+          <div class="steps"><span class="btn ser">S</span><span class="btn minus">&minus;</span><span class="cnt zero">0</span><span class="btn plus">+</span></div>
+        </div>
+      </div>
+
+      <div class="anno">
+        <div class="r"><span class="n">1</span><p><b>The score leads.</b> Headroom in the largest type on the sheet, the fifteen ticks under it, and the detail line below that. It is pinned, so it never scrolls away from the row being marked.</p></div>
+        <div class="r"><span class="n">2</span><p><b>Undo is in the header</b>, reachable from any scroll position. It removes the last mark whatever it was &mdash; a fault, a serious, a credit.</p></div>
+        <div class="r"><span class="n">3</span><p><b>A marked row tints.</b> <span class="sw" style="background:#FFFBF0"></span>A faint amber wash, so the rows that carry the test's story are findable by eye when scrolling back.</p></div>
+        <div class="r"><span class="n">4</span><p><b>Group headers</b> in the type ladder's own footnote size rather than monospace, so the sheet stops looking like a debug panel.</p></div>
+        <div class="r"><span class="n">5</span><p><b>The clock moves here.</b> It is the examiner's number, not the driver's, and the map's status bar keeps its own copy.</p></div>
+        <div class="r"><span class="n">6</span><p><b>Nine rows visible</b>, so &ldquo;While driving&rdquo; &mdash; sixteen of the twenty-three, and where nearly every mark lands &mdash; is two flicks rather than six.</p></div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <div class="h">Where it sits when it is not being used</div>
+      <p>
+        Two resting heights: the score alone (about 105&nbsp;pt, the map keeps the
+        road, the puck, Mirrors and the Mapbox attribution) and full. Marking is
+        one drag from the first &mdash; and the drag can start anywhere on the sheet,
+        not just on the handle. There is no third middle height in this design:
+        the whole point of a listed sheet is that it wants the screen.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ 6 · ACCESSIBILITY ═════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">06 &middot; accessible</p>
+      <h2>Hittable, and readable out loud</h2>
+    </div>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>What</th><th>Was</th><th>Becomes</th></tr></thead>
+        <tbody>
+          <tr><td>Fault button</td><td class="num">44 &times; 44, labelled &ldquo;MIN&rdquo;</td><td class="num">48 &times; 48, a minus sign</td></tr>
+          <tr><td>Rows on screen</td><td class="num">3 of 23</td><td class="num">9 of 23</td></tr>
+          <tr><td>Confirmation a press landed</td><td>Haptic only</td><td>Haptic, the row's count, the meter, and the headroom sentence</td></tr>
+          <tr><td>Level carried by colour alone</td><td>Yes &mdash; MIN and MAJ differ by hue and three letters</td><td>No &mdash; minus, plus and S are different glyphs, sizes and positions</td></tr>
+          <tr><td>Screen-reader label</td><td>&ldquo;minor &mdash; mirrors&rdquo;</td><td>&ldquo;Use of mirrors, 3 driving faults. Add a driving fault.&rdquo;</td></tr>
+          <tr><td>After a press</td><td>Silent</td><td>A live region speaks the new headroom: &ldquo;12 driving faults left&rdquo;</td></tr>
+          <tr><td>Text size turned up</td><td>Row clips</td><td>Name wraps, buttons hold their size, row grows</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small dim">
+      One honest gap: at 48&nbsp;pt the minus and plus are 8&nbsp;pt apart, which is
+      fine for a passenger and tight for anyone with a tremor. If that matters, the
+      S moves into the expanded row and the two main buttons grow to 56&nbsp;pt &mdash;
+      say so and I will draw it that way instead.
+    </p>
+  </section>
+
+  <!-- ══════════════════════ 7 · SCOPE ═════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">07 &middot; boundary</p>
+      <h2>What this does not change</h2>
+    </div>
+    <ul class="notes small">
+      <li>The categories themselves. Twenty-three, in DVSA's own words off the DL25, in three groups. Untouched.</li>
+      <li>Scoring. Fifteen driving faults allowed, one serious fails, credits worth up to ten points and nothing on the verdict.</li>
+      <li>The live meter, which keeps counting what the verdict counts &mdash; marks, missed observation zones and speeding.</li>
+      <li>The map, Mirrors, the message slot, off-route, finish. The sheet is what changes.</li>
+      <li>The eight-tile grid and the severity step go away entirely. They were the wrong shape for this job.</li>
+    </ul>
+  </section>
+
+  <!-- ══════════════════════ 8 · ASKS ══════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">08 &middot; over to you</p>
+      <h2>Two picks</h2>
+      <p class="small dim">Say the letters and I&rsquo;ll build it.</p>
+    </div>
+    <div>
+      <div class="askrow">
+        <span class="q">1 &middot; The plus</span>
+        <span class="a">A (gives a credit &mdash; keeps the scoring engine's bonus) &nbsp;/&nbsp; B (takes back a fault &mdash; every row corrects itself, credits go away)</span>
+      </div>
+      <div class="askrow">
+        <span class="q">2 &middot; The examples</span>
+        <span class="a">A (tap the name to open them &mdash; 9 rows on screen) &nbsp;/&nbsp; B (one line always visible &mdash; 7 rows on screen)</span>
+      </div>
+      <div class="askrow">
+        <span class="q">Also worth confirming</span>
+        <span class="a">The small red <b>S</b> for a serious fault &mdash; keep it on every row, or move it into the expanded view and grow minus/plus to 56&nbsp;pt?</span>
+      </div>
+    </div>
+  </section>
+
+</div>

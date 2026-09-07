@@ -116,3 +116,48 @@ export function toMetadata(a: Answers, name: string): Record<string, unknown> {
     focus: a.focus,
   };
 }
+
+/**
+ * What to write after a provider hands back a session — or null for nothing.
+ *
+ * `signUp()` takes the interview in the same call that makes the account.
+ * Apple and Google do not: they open a session first and leave us holding the
+ * answers, so the write is a second round trip, and this decides whether it is
+ * worth making.
+ *
+ * Returning null rather than `{}` is the point of the function. The common
+ * case is a returning Apple user on the sign-in screen — no interview, and no
+ * name, because Apple hands the name over on first consent and never again —
+ * and that is a call with nothing in it that somebody is nonetheless waiting
+ * on before they get into the app.
+ *
+ * The name has three possible sources and they are ranked, because two of
+ * them can be stale. A name typed on the sign-up card wins: it is the most
+ * recent thing the person said about themselves, and they said it here. A name
+ * already on the account comes next — they may have changed it in Settings
+ * since, and Google sends its account name on *every* sign-in, so an unranked
+ * merge would quietly undo that edit at each sign-in. The provider's name is
+ * the fallback, which in practice is what fills in a brand-new account.
+ *
+ * @param metadata  The interview, on a sign-up. Absent when signing in.
+ * @param providerName  What Apple or Google called them, or "".
+ * @param existing  The account's current `user_metadata`, if it has any.
+ */
+export function profileToWrite(
+  metadata: Record<string, unknown> | undefined,
+  providerName: string,
+  existing: Record<string, unknown> | undefined,
+): Record<string, unknown> | null {
+  const write = { ...metadata };
+
+  if (!write.full_name) {
+    // Trimmed rather than truthy-checked: `selectFullName` already narrows a
+    // stored "   " to "", so a whitespace name is no name, and treating it as
+    // one would block the provider's for good.
+    const stored = typeof existing?.full_name === "string" ? existing.full_name.trim() : "";
+    const offered = providerName.trim();
+    if (!stored && offered) write.full_name = offered;
+  }
+
+  return Object.keys(write).length > 0 ? write : null;
+}

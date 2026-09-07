@@ -1,4 +1,13 @@
-import { AUTH_FALLBACK, authError } from "../authError";
+// The real `socialAuth` is imported below, for its two thrown messages — the
+// needles in the table are matched against them, and importing the constants
+// is what makes that coupling fail here rather than on a phone. Its two native
+// SDKs are stubbed because nothing in this file calls them, and
+// google-signin reads native constants at import.
+jest.mock("expo-apple-authentication", () => ({}));
+jest.mock("@react-native-google-signin/google-signin", () => ({ GoogleSignin: {} }));
+
+import { AUTH_FALLBACK, authError, SOCIAL_UNAVAILABLE } from "../authError";
+import { MISCONFIGURED, NO_TOKEN } from "../socialAuth";
 
 /**
  * The strings on the left are Supabase's own, copied from what it actually
@@ -86,4 +95,53 @@ test("Supabase's combined message names both causes", () => {
 // message, which also contains the word "invalid".
 test("adding the code sentences did not capture a bad password", () => {
   expect(authError("Invalid login credentials")).toMatch(/don't match/i);
+});
+
+/**
+ * ── The provider sheets ───────────────────────────────────────────────────
+ *
+ * Two of these needles match words this project throws rather than words
+ * Supabase does — `socialAuth.ts` owns `NO_TOKEN` and `MISCONFIGURED`, and
+ * the rule that keeps them in step is that the message is a *sentence
+ * fragment* matched as a substring, not a code. These tests are the coupling
+ * made visible: change the thrown wording without changing the needle and one
+ * of them fails here rather than degrading to the fallback on a phone.
+ */
+describe("Apple and Google", () => {
+  test("a sheet that finished with no token names the door that is open", () => {
+    expect(authError("The provider returned no token")).toBe(SOCIAL_UNAVAILABLE);
+    expect(authError(NO_TOKEN)).toBe(SOCIAL_UNAVAILABLE);
+  });
+
+  /**
+   * Supabase's Google path answers every id_token failure with this one
+   * string. Left unmapped it produced "Something went wrong", which is the
+   * least useful sentence in the file and the one a real misconfiguration
+   * actually produced in the field.
+   */
+  test("Google's catch-all rejection is recognised, not left to the fallback", () => {
+    expect(authError("Bad ID token")).toBe(SOCIAL_UNAVAILABLE);
+    expect(authError("Bad ID token")).not.toBe(AUTH_FALLBACK);
+  });
+
+  test("a build shipped without its client IDs says the same thing", () => {
+    expect(authError(MISCONFIGURED)).toBe(SOCIAL_UNAVAILABLE);
+  });
+
+  /**
+   * The provider is switched off in the Supabase project, or the token's
+   * audience is not one the project allows. Both are console settings, and
+   * neither is anything the person tapping the button can act on — so the
+   * sentence sends them to email rather than explaining an audience to them.
+   */
+  test("a provider Supabase will not accept sends them to email instead", () => {
+    expect(authError("Provider is not enabled")).toBe(SOCIAL_UNAVAILABLE);
+    expect(authError("AuthApiError: Unacceptable audience in id_token")).toBe(SOCIAL_UNAVAILABLE);
+  });
+
+  // The rate-limit pair sits below these in the table, and both contain words
+  // the earlier entries do not — this guards the ordering.
+  test("provider entries do not swallow the rate limit", () => {
+    expect(authError("Request rate limit reached")).toMatch(/minute/);
+  });
 });

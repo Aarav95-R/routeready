@@ -1,6 +1,7 @@
 import { useMockTest } from "../mockTestStore";
 import type { Route } from "@/types/db";
 import { HABITUAL_MINOR_THRESHOLD } from "@/lib/examiner";
+import { MIN_ASSESSABLE_SECONDS } from "@/lib/scoring/engine";
 
 const route: Route = {
   id: "r1", centre_id: "c1", name: "Test route",
@@ -10,62 +11,23 @@ const route: Route = {
   observation_zones: [{ lat: 51.51, lng: -0.1, radiusM: 60, kind: "roundabout" }],
   steps: [],
 };
-const sample = (lat: number, mph: number, t: number) => ({ lat, lng: -0.1, speedMps: mph / 2.23694, t });
+
+/** Long enough to be given a verdict. */
+const FULL = (MIN_ASSESSABLE_SECONDS + 60) * 1000;
 
 beforeEach(() => useMockTest.getState().reset());
-
-test("zone entered + tapped → no observation fault", () => {
-  const s = useMockTest.getState();
-  s.start(route, 0);
-  s.onSample(sample(51.5, 28, 0));        // outside zone
-  s.onSample(sample(51.51, 28, 5000));    // inside zone
-  expect(useMockTest.getState().activeZoneIdx).toBe(0);
-  useMockTest.getState().tapMirrors();
-  s.onSample(sample(51.52, 28, 10000));   // left zone
-  const r = useMockTest.getState().finish(10000);
-  expect(r.faults.filter((f) => f.kind === "observation")).toHaveLength(0);
-  expect(r.passed).toBe(true);
-});
-
-test("zone entered + not tapped → minor observation fault", () => {
-  const s = useMockTest.getState();
-  s.start(route, 0);
-  s.onSample(sample(51.51, 28, 1000));
-  s.onSample(sample(51.52, 28, 8000));
-  const r = useMockTest.getState().finish(8000);
-  expect(r.faults).toEqual([expect.objectContaining({ kind: "observation", severity: "minor" })]);
-});
 
 test("finish computes duration and phase", () => {
   const s = useMockTest.getState();
   s.start(route, 0);
-  s.onSample(sample(51.5, 28, 0));
-  const r = useMockTest.getState().finish(90_000);
-  expect(r.durationSeconds).toBe(90);
+  const r = useMockTest.getState().finish(FULL);
+  expect(r.durationSeconds).toBe(FULL / 1000);
   expect(useMockTest.getState().phase).toBe("finished");
   expect(r.assessable).toBe(true);
 });
 
-test("finishing without accepted samples is explicitly unassessable", () => {
-  const s = useMockTest.getState();
-  s.start(route, 0);
-  const result = s.finish(30_000);
-
-  expect(result.assessable).toBe(false);
-  expect(result.passed).toBe(false);
-});
-
-test("tapMirrors outside a zone is a no-op", () => {
-  const s = useMockTest.getState();
-  s.start(route, 0);
-  s.onSample(sample(51.5, 28, 0));
-  useMockTest.getState().tapMirrors();
-  expect(useMockTest.getState().zoneOutcomes).toHaveLength(0);
-});
-
 test("addMark records the mark with its time and place", () => {
   const s = useMockTest.getState();
-  s.reset();
   s.addMark("mirrors", "minor", { lat: 51.5, lng: -0.1 }, 1000);
   expect(useMockTest.getState().marks).toEqual([
     { category: "mirrors", level: "minor", t: 1000, at: { lat: 51.5, lng: -0.1 } },
@@ -74,7 +36,6 @@ test("addMark records the mark with its time and place", () => {
 
 test("undoMark removes the last mark, and does nothing when there are none", () => {
   const s = useMockTest.getState();
-  s.reset();
   expect(() => s.undoMark()).not.toThrow();
   s.addMark("mirrors", "minor", null, 1);
   s.addMark("speed", "major", null, 2);
@@ -84,30 +45,82 @@ test("undoMark removes the last mark, and does nothing when there are none", () 
 
 test("examiner marks reach the result as faults and credits", () => {
   const s = useMockTest.getState();
-  s.reset();
   s.start(route, 0);
   useMockTest.getState().addMark("mirrors", "minor", null, 1);
   useMockTest.getState().addMark("junctions", "major", null, 2);
   useMockTest.getState().addMark("control", "credit", null, 3);
-  const r = useMockTest.getState().finish(60_000);
-  expect(r.minors).toBeGreaterThanOrEqual(1);
+  const r = useMockTest.getState().finish(FULL);
+  expect(r.minors).toBe(1);
   expect(r.majors).toBe(1);
   expect(r.credits).toBe(1);
-  expect(r.passed).toBe(false); // one major fails, credit notwithstanding
+  expect(r.passed).toBe(false); // one serious fails, credit notwithstanding
   expect(r.tags).toContain("Use of mirrors");
 });
 
-test("reset clears marks", () => {
+// ── The score is the mark sheet ───────────────────────────────────────────
+//
+// The store used to hold a second opinion: every GPS sample, a running speeding
+// detector, and which observation zones had been passed through untapped. Both
+// fed the result, and both could overrule the person doing the assessing — a
+// noisy fix five seconds over a seeded limit scored a *serious* fault, which
+// fails a test outright, and never appeared on the sheet to be undone.
+
+test("a drive with nothing marked is a clean drive", () => {
   const s = useMockTest.getState();
-  s.reset();
-  s.addMark("mirrors", "minor", null, 1);
-  useMockTest.getState().reset();
-  expect(useMockTest.getState().marks).toEqual([]);
+  s.start(route, 0);
+  const r = useMockTest.getState().finish(FULL);
+
+  expect(r.faults).toEqual([]);
+  expect(r.passed).toBe(true);
+  expect(r.score).toBe(100);
 });
 
-test("repeated minors on one category surface as a warning", () => {
+test("every fault on the result came from the mark sheet", () => {
   const s = useMockTest.getState();
-  s.reset();
+  s.start(route, 0);
+  useMockTest.getState().addMark("speed", "minor", null, 1);
+  const r = useMockTest.getState().finish(FULL);
+
+  expect(r.faults).toHaveLength(1);
+  expect(r.faults.every((f) => f.kind === "examiner")).toBe(true);
+});
+
+// ── The verdict guard ─────────────────────────────────────────────────────
+//
+// It used to ask whether any GPS samples had arrived, because a drive with no
+// samples produced no auto-faults and so looked identical to a flawless one.
+// With the score coming from a person, that question stopped meaning anything —
+// but an empty sheet still must not be a pass at 100 for a test nobody drove.
+
+test("a test too short to be a test is not given a verdict", () => {
+  const s = useMockTest.getState();
+  s.start(route, 0);
+  const r = useMockTest.getState().finish(60_000);
+
+  expect(r.assessable).toBe(false);
+  expect(r.passed).toBe(false);
+  expect(r.score).toBe(0);
+});
+
+test("the guard is duration alone — no fixes are needed to be assessed", () => {
+  const s = useMockTest.getState();
+  s.start(route, 0);
+  useMockTest.getState().addMark("mirrors", "minor", null, 1);
+  const r = useMockTest.getState().finish(FULL);
+
+  expect(r.assessable).toBe(true);
+  expect(r.minors).toBe(1);
+});
+
+test("the boundary is inclusive", () => {
+  const s = useMockTest.getState();
+  s.start(route, 0);
+  expect(useMockTest.getState().finish(MIN_ASSESSABLE_SECONDS * 1000).assessable).toBe(true);
+});
+
+// ── Habitual faults ───────────────────────────────────────────────────────
+
+test("repeated minors on one category surface as a warning", () => {
   for (let i = 0; i < HABITUAL_MINOR_THRESHOLD; i++) {
     useMockTest.getState().addMark("mirrors", "minor", null, i);
   }
@@ -115,6 +128,15 @@ test("repeated minors on one category surface as a warning", () => {
     { category: "mirrors", label: "Use of mirrors", count: HABITUAL_MINOR_THRESHOLD },
   ]);
 });
+
+test("reset clears marks", () => {
+  const s = useMockTest.getState();
+  s.addMark("mirrors", "minor", null, 1);
+  useMockTest.getState().reset();
+  expect(useMockTest.getState().marks).toEqual([]);
+});
+
+// ── Departures ────────────────────────────────────────────────────────────
 
 test("a drive with no departures records none", () => {
   expect(useMockTest.getState().deviations).toEqual([]);
@@ -132,7 +154,7 @@ test("departures accumulate in the order they happened", () => {
 
 test("starting a new test clears the previous run's departures", () => {
   useMockTest.getState().addDeviation({ atIdx: 40, skippedM: 380, seconds: 47 });
-  useMockTest.getState().start({ observation_zones: [], speed_profile: [] } as never);
+  useMockTest.getState().start(route);
   expect(useMockTest.getState().deviations).toEqual([]);
 });
 

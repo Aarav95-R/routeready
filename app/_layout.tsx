@@ -8,7 +8,7 @@ import {
 import { View } from "react-native";
 import Mapbox from "@rnmapbox/maps";
 import { nextAuthRoute } from "@/lib/authRoute";
-import { useSession } from "@/stores/sessionStore";
+import { selectNeedsInterview, useSession } from "@/stores/sessionStore";
 import { useNetwork } from "@/stores/networkStore";
 import { colors } from "@/ui/theme";
 import { ErrorBoundary } from "@/ui/ErrorBoundary";
@@ -23,6 +23,8 @@ export default function RootLayout() {
     PlusJakartaSans_400Regular, PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold,
   });
   const { session, recovering, initialized, init } = useSession();
+  // Subscribed to separately so the redirect re-runs when the answers land.
+  const needsInterview = useSession(selectNeedsInterview);
   const segments = useSegments();
   const router = useRouter();
 
@@ -30,9 +32,9 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!initialized) return;
-    const next = nextAuthRoute({ session, recovering, segments });
+    const next = nextAuthRoute({ session, recovering, needsInterview, segments });
     if (next) router.replace(next);
-  }, [session, recovering, initialized, segments, router]);
+  }, [session, recovering, needsInterview, initialized, segments, router]);
 
   if (!fontsLoaded || !initialized) return <View className="flex-1 bg-surface" />;
   return (

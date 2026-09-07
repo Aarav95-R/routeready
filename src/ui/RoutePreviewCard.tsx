@@ -30,6 +30,16 @@ export type RoutePreviewCardProps = {
    * is what put a full-screen bearing arrow over a car parked on the start.
    */
   onBeginAtStart: () => void;
+  /**
+   * Offer the drive to the start even from the collapsed card.
+   *
+   * `distToStart` is measured from `getLastKnownPositionAsync`, which can be
+   * minutes old and hundreds of metres out. When it wrongly says the driver is
+   * on the line the card collapses to "Start" alone, and there is then no way
+   * to route to a start they are not actually at. Opt-in rather than always on,
+   * so the screens that share this card adopt it deliberately.
+   */
+  offerGuideAtStart?: boolean;
   onBack: () => void;
 };
 
@@ -44,7 +54,7 @@ export type RoutePreviewCardProps = {
  */
 export function RoutePreviewCard({
   route, isLoop, distToStart, atStart, busy,
-  onGuideToStart, onStartUnguided, onBeginAtStart, onBack,
+  onGuideToStart, onStartUnguided, onBeginAtStart, offerGuideAtStart = false, onBack,
 }: RoutePreviewCardProps) {
   const insets = useSafeAreaInsets();
 
@@ -62,9 +72,24 @@ export function RoutePreviewCard({
       </View>
 
       {atStart ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="Start" disabled={busy} onPress={onBeginAtStart} className="mt-1 min-h-[52px] flex-row items-center justify-center gap-2 rounded-full bg-accent active:bg-accent-pressed">
-          <Ionicons name="navigate" size={18} color="#fff" /><Text className="text-[16px] font-semibold text-white">Start</Text>
-        </Pressable>
+        <>
+          <Pressable accessibilityRole="button" accessibilityLabel="Start" disabled={busy} onPress={onBeginAtStart} className="mt-1 min-h-[52px] flex-row items-center justify-center gap-2 rounded-full bg-accent active:bg-accent-pressed">
+            <Ionicons name="navigate" size={18} color="#fff" /><Text className="text-[16px] font-semibold text-white">Start</Text>
+          </Pressable>
+          {offerGuideAtStart && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Guide me to the start"
+              disabled={busy}
+              onPress={onGuideToStart}
+              className="min-h-[44px] items-center justify-center"
+            >
+              <Text className="text-[13px] font-semibold text-accent-ink">
+                {busy ? "Finding route…" : "Not here? Guide me to the start"}
+              </Text>
+            </Pressable>
+          )}
+        </>
       ) : (
         <>
           <View className="mt-0.5 flex-row items-center gap-2 rounded-xl border border-slate-200 bg-surface px-3 py-2.5">
@@ -73,7 +98,7 @@ export function RoutePreviewCard({
               {distToStart !== null ? `You're ${formatDistance(distToStart)} from the start` : "You're away from the start point"}
             </Text>
           </View>
-          <Pressable disabled={busy} onPress={onGuideToStart} className="min-h-[52px] flex-row items-center justify-center gap-2 rounded-full bg-accent active:bg-accent-pressed">
+          <Pressable accessibilityRole="button" accessibilityLabel="Guide me to the start" disabled={busy} onPress={onGuideToStart} className="min-h-[52px] flex-row items-center justify-center gap-2 rounded-full bg-accent active:bg-accent-pressed">
             <Ionicons name="navigate" size={18} color="#fff" /><Text className="text-[16px] font-semibold text-white">{busy ? "Finding route…" : "Guide me to the start"}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Start directly from here" disabled={busy} onPress={onStartUnguided} className="min-h-[50px] flex-row items-center justify-center gap-2 rounded-full border-[1.5px] border-slate-200 bg-card">

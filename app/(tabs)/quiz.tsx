@@ -15,6 +15,7 @@ import { OfflineBanner } from "@/ui/OfflineBanner";
 import { Skeleton } from "@/ui/Skeleton";
 import { enterFrom } from "@/ui/motion";
 import { colors } from "@/ui/theme";
+import { usePressed } from "@/ui/usePressed";
 import { body, caption, footnote, MAX_DISPLAY_SCALE, largeTitle, subheadline, title2 } from "@/ui/type";
 
 /**
@@ -71,6 +72,7 @@ function StateMark({ state, testID }: { state: string; testID?: string }) {
 
 export default function Quiz() {
   const router = useRouter();
+  const startPress = usePressed();
   const online = useNetwork((s) => s.online);
 
   const [rows, setRows] = useState<QuizQuestion[] | null>(null);
@@ -233,11 +235,15 @@ export default function Quiz() {
               accessibilityLabel="Start the quiz"
               accessibilityHint="Ten questions, multiple choice"
               onPress={() => router.push("/quiz/round")}
-              style={({ pressed }) => ({
+              {...startPress.pressProps}
+              // Not Pressable's own `pressed` — see usePressed. This is the
+              // tab's primary action, and it used to render as bare white
+              // text on the clay hero with its play icon on the wrong line.
+              style={{
                 minHeight: 52, borderRadius: 10, flexDirection: "row", gap: 8,
                 alignItems: "center", justifyContent: "center",
-                backgroundColor: pressed ? colors.accentPressed : colors.accent,
-              })}
+                backgroundColor: startPress.pressed ? colors.accentPressed : colors.accent,
+              }}
             >
               <Ionicons name="play" size={17} color="#FFFFFF" />
               <Text

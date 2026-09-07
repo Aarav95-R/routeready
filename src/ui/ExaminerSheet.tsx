@@ -1,40 +1,63 @@
-import { Platform, Pressable, Text, View } from "react-native";
-import { EXAMINER_CATEGORIES, ExaminerGroup, HABITUAL_MINOR_THRESHOLD, MarkLevel } from "@/lib/examiner";
+import { useCallback, useState } from "react";
+import { Pressable, Text, View } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import {
+  EXAMINER_CATEGORIES, type ExaminerCategory, ExaminerGroup,
+  HABITUAL_MINOR_THRESHOLD, type MarkCounts, MarkLevel, NO_MARK_COUNTS,
+} from "@/lib/examiner";
+import { METER_WARN_AT } from "@/lib/mockLive";
+import { MAX_MINORS } from "@/lib/scoring/engine";
 import { colors } from "@/ui/theme";
+import { caption, footnote, headline, MAX_DISPLAY_SCALE, title2 } from "@/ui/type";
 
-// The design mockup sets group headings and the tally digits in
-// ui-monospace; RN has no generic alias that resolves on both platforms.
-const MONO = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
+/**
+ * The examiner's mark sheet: every fault that can be given, listed, with a
+ * minus and a plus on each row.
+ *
+ * It briefly became something else — eight tiles and a severity step, two taps
+ * per fault — on the theory that marking should cost as little attention as
+ * possible. That optimised for the wrong person. Whoever is marking is in the
+ * passenger seat holding the phone and looking at it; drilling into a category
+ * hides the other twenty-two from someone whose whole job is watching for them.
+ * A list is the right shape. What was wrong was the row.
+ *
+ * ── Every `style` here is a plain object, never `({ pressed }) => ...` ──
+ *
+ * NativeWind 4.2.6 is installed with `jsxImportSource: "nativewind"`, which
+ * wraps every component so it can resolve `className`. It does not invoke the
+ * function form of `style`, so a Pressable given one renders with *no* style at
+ * all. See src/ui/usePressed.ts. Press feedback here is the count moving under
+ * the finger, plus the haptic the caller fires per level.
+ */
 
-// A mark row's three buttons at the spec's 44 pt minimum, laid out with an
-// 8 pt gap: 3 × 44 + 2 × 8 = 148. Named so the row container width and the
-// per-button minimums can't silently drift apart.
-const MARK_BUTTON_MIN = 44;
-const MARK_ROW_GAP = 8;
-const MARK_ROW_WIDTH = 3 * MARK_BUTTON_MIN + 2 * MARK_ROW_GAP;
-const UNDO_MIN_WIDTH = 64;
+// ── The row ──────────────────────────────────────────────────────────────
+//
+// Sized against the narrowest screen this app targets. On a 375 pt-wide phone
+// the row has 343 pt inside its padding; the control cluster below takes 162,
+// leaving 169 for the name. The longest label — "Response to signs and
+// signals" — wraps to two lines there, which is why the row has a minimum
+// height rather than a fixed one.
+const BTN = 46;              // minus and plus
+const SER = 32;              // the serious button, deliberately smaller
+const COUNT_W = 24;
+const CLUSTER_GAP_SM = 4;
+const CLUSTER_GAP_MD = 6;
+const ROW_MIN_H = 66;
+const ROW_PAD_V = 9;
 
-// The bar's own vertical padding, and the height that falls out of it. Exported
-// so the caller's collapsed snap point is computed from these numbers rather
-// than a hand-copied constant that can drift when the bar changes.
-export const EXAMINER_BAR_PAD_V = 12;
-export const EXAMINER_BAR_H = 2 * EXAMINER_BAR_PAD_V + MARK_BUTTON_MIN;
-
-type BarProps = {
-  minors: number;
-  majors: number;
-  credits: number;
-  lastMark: { label: string; level: MarkLevel } | null;
-  bottomInset?: number;
-  onUndo: () => void;
-};
-
-type ListProps = {
-  minorCounts: Record<string, number>;
-  onMark: (category: string, level: MarkLevel) => void;
-};
-
-export type ExaminerWarning = { category: string; label: string; count: number };
+// ── The pinned header ────────────────────────────────────────────────────
+//
+// Only the score and Undo live here. The detail line and the clock are the
+// first rows *inside* the scroll instead, so the collapsed sheet stays short:
+// the map's controls row and the Mapbox attribution are both stacked off this
+// height, and on a 667 pt screen the driver puck leaves it almost no room.
+const HEADER_PAD_TOP = 4;
+const HEADER_PAD_BOTTOM = 12;
+const HEADER_ROW_H = 34;     // the Undo button sets it
+const METER_H = 8;
+const HEADER_GAP = 9;
+export const EXAMINER_HEADER_H =
+  HEADER_PAD_TOP + HEADER_ROW_H + HEADER_GAP + METER_H + HEADER_PAD_BOTTOM; // 67
 
 const GROUP_ORDER: ExaminerGroup[] = ["driving", "manoeuvres", "beforeDriving"];
 const GROUP_LABEL: Record<ExaminerGroup, string> = {
@@ -43,192 +66,353 @@ const GROUP_LABEL: Record<ExaminerGroup, string> = {
   beforeDriving: "Before setting off",
 };
 
-// Mark-level styling lives in one place so the row buttons, the habitual
-// badge, the warning bar, and the collapsed tallies all read the same hex
-// values — changing "minor amber" here is the only edit a colour change
-// needs, anywhere in this file.
-const LEVEL_STYLE: Record<MarkLevel, { bg: string; fg: string; label: string }> = {
-  minor: { bg: "#FEF3C7", fg: "#B45309", label: "MIN" },
-  major: { bg: "#FEE2E2", fg: "#B91C1C", label: "MAJ" },
-  credit: { bg: "#ECFDF5", fg: colors.accent, label: "+" },
+/**
+ * The three levels, in one place.
+ *
+ * The amber and the red are unchanged from the first version of this screen:
+ * they carry meaning and the app already knows them. What changed is that the
+ * level is no longer *only* colour — a minus, a plus and an S are three
+ * different glyphs at three different sizes in three different positions, so
+ * the row still reads for anyone who cannot separate the amber from the red.
+ */
+const LEVEL_STYLE: Record<MarkLevel, { bg: string; fg: string }> = {
+  minor: { bg: "#FEF3C7", fg: "#B45309" },
+  major: { bg: "#FEE2E2", fg: "#B91C1C" },
+  credit: { bg: colors.accentTint, fg: colors.accentInk },
 };
 
-// Groups holds every category so a row is never silently dropped even if a
-// future category arrives with an unexpected group value.
+/** A row that has been marked, so the test's story is findable when scrolling back. */
+const MARKED_TINT = "#FFFBF0";
+
 const GROUPS: { group: ExaminerGroup; categories: typeof EXAMINER_CATEGORIES }[] = GROUP_ORDER.map((group) => ({
   group,
   categories: EXAMINER_CATEGORIES.filter((c) => c.group === group),
 }));
 
-function MarkButton({
-  level, categoryId, onPress,
-}: { level: MarkLevel; categoryId: string; onPress: () => void }) {
-  const style = LEVEL_STYLE[level];
+/**
+ * Fifteen ticks, one per allowed driving fault.
+ *
+ * Not a percentage bar: the allowance is a count of discrete events, and a
+ * driver with three left should see three gaps rather than read a number. A
+ * serious fault is not a sixteenth tick — it is a different outcome — so it
+ * turns the strip red instead of filling it.
+ *
+ * Never green. Green on this app's drive screens means the road: the route
+ * line, and Mirrors when a zone is open. A green "you're fine" strip would be a
+ * second green competing for exactly the glance the route is asking for.
+ */
+function Meter({ minors, stopped }: { minors: number; stopped: boolean }) {
+  const filled = Math.min(minors, MAX_MINORS);
   return (
-    <Pressable
-      testID={`mark-${categoryId}-${level}`}
-      accessibilityRole="button"
-      accessibilityLabel={`${level} — ${categoryId}`}
-      onPress={onPress}
+    <View
+      testID="fault-meter"
+      accessibilityRole="progressbar"
+      accessibilityLabel={`${filled} of ${MAX_MINORS} driving faults used`}
+      accessibilityValue={{ min: 0, max: MAX_MINORS, now: filled }}
+      style={{ flexDirection: "row", gap: 3, height: METER_H }}
+    >
+      {Array.from({ length: MAX_MINORS }, (_, i) => (
+        <View
+          key={i}
+          style={{
+            flex: 1,
+            borderRadius: 2,
+            backgroundColor: i < filled
+              ? (stopped ? colors.danger : (minors >= METER_WARN_AT ? colors.warning : LEVEL_STYLE.minor.fg))
+              : (stopped ? "#F3D6D6" : colors.fill),
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * The pinned score. This is the whole sheet at its collapsed height, which is
+ * why the safe-area inset pads it here — without that, Undo sits inside the
+ * home indicator's edge-gesture strip, and Undo is the only mis-tap recovery
+ * there is. Mis-taps in a moving car are certain.
+ */
+export function ExaminerScoreHeader({
+  minors, remaining, stopped, canUndo, onUndo, onEnd, bottomInset = 0,
+}: {
+  minors: number; remaining: number; stopped: boolean;
+  canUndo: boolean; onUndo: () => void;
+  /**
+   * End the test and score it. Omitted while the sheet is collapsed, so the
+   * collapsed height stays exactly the score and the one control that ends the
+   * drive is never a thumb's width from the map.
+   */
+  onEnd?: () => void;
+  bottomInset?: number;
+}) {
+  return (
+    <View
       style={{
-        minHeight: MARK_BUTTON_MIN,
-        minWidth: MARK_BUTTON_MIN,
-        flex: 1,
-        borderRadius: 10,
-        backgroundColor: style.bg,
-        alignItems: "center",
-        justifyContent: "center",
+        backgroundColor: colors.cell, paddingHorizontal: 16,
+        paddingTop: HEADER_PAD_TOP, paddingBottom: HEADER_PAD_BOTTOM + bottomInset,
+        gap: HEADER_GAP,
       }}
     >
-      <Text style={{ color: style.fg, fontWeight: "700", fontSize: level === "credit" ? 18 : 12 }}>
-        {style.label}
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, minHeight: HEADER_ROW_H }}>
+        <Text
+          testID="headroom"
+          maxFontSizeMultiplier={MAX_DISPLAY_SCALE}
+          numberOfLines={1}
+          // A live region, so a mark made without looking is still confirmed
+          // out loud to anyone using VoiceOver.
+          accessibilityLiveRegion="polite"
+          style={{ ...title2, flex: 1, color: stopped ? LEVEL_STYLE.major.fg : colors.label }}
+        >
+          {remaining === 0 ? "No driving faults left" : `${remaining} driving faults left`}
+        </Text>
+        {canUndo && (
+          <Pressable
+            testID="undo"
+            accessibilityRole="button"
+            accessibilityLabel="Undo last mark"
+            onPress={onUndo}
+            style={{
+              minHeight: HEADER_ROW_H, minWidth: 62, paddingHorizontal: 12, borderRadius: 8,
+              backgroundColor: colors.fill, alignItems: "center", justifyContent: "center",
+            }}
+          >
+            <Text style={{ ...footnote, color: colors.labelSecondary }}>Undo</Text>
+          </Pressable>
+        )}
+      </View>
+      <Meter minors={minors} stopped={stopped} />
+
+      {onEnd !== undefined && (
+        <Pressable
+          testID="finish-test"
+          accessibilityRole="button"
+          accessibilityLabel="Finish test"
+          onPress={onEnd}
+          // Outlined rather than filled: it sits under the score the whole time
+          // the sheet is open, and a solid dark bar there reads as the primary
+          // thing to do rather than the thing you do once at the end.
+          style={{
+            minHeight: 44, borderRadius: 10, marginTop: 2,
+            borderWidth: 1, borderColor: colors.separator,
+            alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <Text style={{ ...footnote, color: colors.labelSecondary }}>Finish test</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+function StepButton({
+  level, category, glyph, size, onMark,
+}: {
+  level: MarkLevel; category: ExaminerCategory; glyph: string; size: number;
+  onMark: (category: string, level: MarkLevel) => void;
+}) {
+  const style = LEVEL_STYLE[level];
+  const label = level === "minor"
+    ? `Add a driving fault to ${category.label}`
+    : level === "major"
+      ? `Record a serious fault for ${category.label}`
+      : `Give a credit for ${category.label}`;
+  return (
+    <Pressable
+      testID={`mark-${category.id}-${level}`}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={() => onMark(category.id, level)}
+      style={{
+        width: size, height: size, borderRadius: size <= SER ? 10 : 14,
+        alignItems: "center", justifyContent: "center",
+        backgroundColor: style.bg,
+      }}
+    >
+      <Text
+        // Not scaled: the glyph is the target, and a turned-up text size would
+        // push it out of a fixed-size button rather than making it easier.
+        maxFontSizeMultiplier={1}
+        style={{
+          color: style.fg, fontWeight: "700",
+          fontSize: size <= SER ? 13 : 24, lineHeight: size <= SER ? 18 : 26,
+        }}
+      >
+        {glyph}
       </Text>
     </Pressable>
   );
 }
 
-// One worked example per level, tagged with the same MIN/MAJ wording and colour
-// as the button it belongs to. Both are shown because no category is inherently
-// minor or major — the incident decides — and the panel is the only place the
-// passenger is told where the line falls, before the mark is made rather than
-// on the result screen after it.
-function Example({ id, level, text }: { id: string; level: "minor" | "major"; text: string }) {
-  const style = LEVEL_STYLE[level];
-  return (
-    <View className="flex-row items-start gap-1.5">
-      <Text style={{ color: style.fg, fontSize: 11, fontWeight: "700", lineHeight: 16 }}>{style.label}</Text>
-      {/* The testID node carries only the example: toHaveTextContent matches a
-          node's whole text subtree, so the MIN/MAJ tag stays a sibling. */}
-      <Text testID={`example-${level}-${id}`} className="flex-1 text-[12px] text-slate-500" style={{ lineHeight: 16 }}>
-        {text}
-      </Text>
-    </View>
-  );
-}
-
-function CategoryRow({
-  id, label, minorExample, majorExample, minorCount, onMark,
+function MarkRow({
+  category, counts, expanded, onToggle, onMark,
 }: {
-  id: string; label: string; minorExample: string; majorExample: string; minorCount: number;
+  category: ExaminerCategory;
+  counts: MarkCounts;
+  expanded: boolean;
+  onToggle: (id: string) => void;
   onMark: (category: string, level: MarkLevel) => void;
 }) {
-  const isHabitual = minorCount >= HABITUAL_MINOR_THRESHOLD;
+  const marked = counts.minor > 0 || counts.major > 0 || counts.credit > 0;
+  const habitual = counts.minor >= HABITUAL_MINOR_THRESHOLD;
   return (
-    <View className="flex-row items-center gap-3 py-2">
-      <View className="flex-1 gap-0.5">
-        <View className="flex-row items-center gap-2">
-          <Text className="text-[14px] font-semibold text-primary">{label}</Text>
-          {isHabitual && (
-            <View testID={`warning-${id}`} style={{ backgroundColor: LEVEL_STYLE.minor.bg, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
-              <Text style={{ color: LEVEL_STYLE.minor.fg, fontSize: 11, fontWeight: "700" }}>×{minorCount}</Text>
+    <View style={{ backgroundColor: marked ? MARKED_TINT : colors.cell }}>
+      <View
+        style={{
+          flexDirection: "row", alignItems: "center", gap: 12,
+          paddingHorizontal: 16, paddingVertical: ROW_PAD_V, minHeight: ROW_MIN_H,
+        }}
+      >
+        {/* The name is the tap target for the examples, so nothing on the row
+            does two jobs: name opens, minus marks, plus credits. */}
+        <Pressable
+          testID={`category-${category.id}`}
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          accessibilityLabel={
+            counts.minor > 0
+              ? `${category.label}, ${counts.minor} driving faults`
+              : category.label
+          }
+          accessibilityHint="Shows what counts as a fault here"
+          onPress={() => onToggle(category.id)}
+          style={{ flex: 1, minHeight: 44, justifyContent: "center", gap: 2 }}
+        >
+          <Text
+            maxFontSizeMultiplier={MAX_DISPLAY_SCALE}
+            style={{ ...headline, color: habitual ? LEVEL_STYLE.minor.fg : colors.label }}
+          >
+            {category.label}
+          </Text>
+          {counts.major > 0 && (
+            <Text testID={`serious-${category.id}`} style={{ ...caption, fontWeight: "600", color: LEVEL_STYLE.major.fg }}>
+              {counts.major === 1 ? "Serious fault" : `${counts.major} serious faults`}
+            </Text>
+          )}
+          {counts.major === 0 && counts.credit > 0 && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <Ionicons name="checkmark" size={13} color={LEVEL_STYLE.credit.fg} />
+              <Text testID={`credit-${category.id}`} style={{ ...caption, fontWeight: "600", color: LEVEL_STYLE.credit.fg }}>
+                {counts.credit} done well
+              </Text>
             </View>
           )}
-        </View>
-        <Example id={id} level="minor" text={minorExample} />
-        <Example id={id} level="major" text={majorExample} />
-      </View>
-      <View className="flex-row" style={{ width: MARK_ROW_WIDTH, gap: MARK_ROW_GAP }}>
-        <MarkButton level="minor" categoryId={id} onPress={() => onMark(id, "minor")} />
-        <MarkButton level="major" categoryId={id} onPress={() => onMark(id, "major")} />
-        <MarkButton level="credit" categoryId={id} onPress={() => onMark(id, "credit")} />
-      </View>
-    </View>
-  );
-}
+        </Pressable>
 
-// Floats above the sheet, over the map — there is no room for the habitual
-// warning inside the one-row collapsed bar. Takes a single warning because
-// only the caller (mock.tsx) decides which one to show, and only one fits.
-export function ExaminerWarningPill({ warning }: { warning: ExaminerWarning }) {
-  return (
-    // The caller bounds the width; wrapped lines centre rather than ragging
-    // left, so a two-line pill still reads as one centred label over the map.
-    <View style={{ backgroundColor: LEVEL_STYLE.minor.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, flexDirection: "row", flexWrap: "wrap", justifyContent: "center" }}>
-      {/* toHaveTextContent does an exact match by default (see
-          @testing-library/react-native's matches()), so the pinned testID
-          carries only the label — the count and explanation are a sibling
-          Text, outside that node's text-content subtree. */}
-      <Text testID="warning-bar" style={{ color: LEVEL_STYLE.minor.fg, fontSize: 12, fontWeight: "700" }}>
-        {warning.label}
-      </Text>
-      <Text style={{ color: LEVEL_STYLE.minor.fg, fontSize: 12, fontWeight: "600" }}>
-        {" "}×{warning.count} — an examiner would likely call this major
-      </Text>
-    </View>
-  );
-}
-
-/**
- * The collapsed bar: a single row of tallies and Undo. Rendered by the caller
- * *outside* its scroll view — pinned above the category list, not the first
- * thing in it — because Undo has to stay reachable while the passenger is
- * scrolled down to "Before setting off". Mis-taps in a moving car are certain.
- *
- * `bottomInset` is the safe-area inset. It pads the bar rather than the scroll
- * content because at the collapsed snap point the bar *is* the whole sheet, so
- * this is what lifts Undo clear of the home indicator's edge-gesture strip.
- */
-export function ExaminerBar({
-  minors, majors, credits, lastMark, bottomInset = 0, onUndo,
-}: BarProps) {
-  return (
-    <View
-      className="bg-card px-4"
-      style={{ paddingTop: EXAMINER_BAR_PAD_V, paddingBottom: EXAMINER_BAR_PAD_V + bottomInset }}
-    >
-      <View className="flex-row items-center justify-between">
-        <Text className="text-[13px] font-semibold text-primary">Examiner</Text>
-        <View className="flex-row items-center gap-3">
-          <Text testID="tally-minors" style={{ color: LEVEL_STYLE.minor.fg, fontWeight: "700", fontSize: 12, fontFamily: MONO }}>
-            {minors} min
-          </Text>
-          <Text testID="tally-majors" style={{ color: LEVEL_STYLE.major.fg, fontWeight: "700", fontSize: 12, fontFamily: MONO }}>
-            {majors} maj
-          </Text>
-          <Text testID="tally-credits" style={{ color: LEVEL_STYLE.credit.fg, fontWeight: "700", fontSize: 12, fontFamily: MONO }}>
-            +{credits}
-          </Text>
-          {lastMark && (
-            <Pressable
-              testID="undo"
-              accessibilityRole="button"
-              onPress={onUndo}
-              style={{ minHeight: MARK_BUTTON_MIN, minWidth: UNDO_MIN_WIDTH, borderRadius: 8, backgroundColor: "#F1F5F9", alignItems: "center", justifyContent: "center", paddingHorizontal: 12 }}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: CLUSTER_GAP_MD, flexShrink: 0 }}>
+          <StepButton level="major" category={category} glyph="S" size={SER} onMark={onMark} />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: CLUSTER_GAP_SM }}>
+            <StepButton level="minor" category={category} glyph="−" size={BTN} onMark={onMark} />
+            <Text
+              testID={`count-${category.id}`}
+              maxFontSizeMultiplier={1}
+              style={{
+                ...headline, width: COUNT_W, textAlign: "center",
+                fontVariant: ["tabular-nums"], fontWeight: "700",
+                color: counts.minor > 0 ? LEVEL_STYLE.minor.fg : colors.separator,
+              }}
             >
-              <Text className="text-[12px] font-semibold text-slate-600">Undo</Text>
-            </Pressable>
-          )}
+              {counts.minor}
+            </Text>
+            <StepButton level="credit" category={category} glyph="+" size={BTN} onMark={onMark} />
+          </View>
         </View>
       </View>
+
+      {expanded && (
+        <View
+          style={{
+            paddingHorizontal: 16, paddingBottom: 14, paddingTop: 10, gap: 6,
+            backgroundColor: MARKED_TINT,
+          }}
+        >
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Text style={{ ...caption, fontWeight: "700", color: LEVEL_STYLE.minor.fg, width: 14 }}>−</Text>
+            <Text testID={`example-minor-${category.id}`} style={{ ...caption, flex: 1, color: colors.labelSecondary }}>
+              {category.minorExample}
+            </Text>
+          </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Text style={{ ...caption, fontWeight: "700", color: LEVEL_STYLE.major.fg, width: 14 }}>S</Text>
+            <Text testID={`example-major-${category.id}`} style={{ ...caption, flex: 1, color: colors.labelSecondary }}>
+              {category.majorExample}
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 /**
- * The expanded content: grouped category rows. The caller's bottom sheet
- * supplies the scroll container, so this stays a plain View tree.
+ * The list itself. The caller's bottom sheet supplies the scroll container, so
+ * this stays a plain View tree.
+ *
+ * The detail line and the clock are the first thing in it rather than in the
+ * pinned header: at the collapsed height the sheet is the header alone, and
+ * every point it grows pushes the map's controls row towards the driver puck.
  */
-export function ExaminerCategoryList({ minorCounts, onMark }: ListProps) {
+export function ExaminerMarkList({
+  counts, minors, majors, credits, clock, onMark,
+}: {
+  counts: Record<string, MarkCounts>;
+  minors: number; majors: number; credits: number;
+  clock: string;
+  onMark: (category: string, level: MarkLevel) => void;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  // One row open at a time: two examples already push the next heading down,
+  // and twenty-three would make the sheet unusable as a list.
+  const toggle = useCallback(
+    (id: string) => setExpandedId((current) => (current === id ? null : id)),
+    []
+  );
+
   return (
-    <View className="bg-card px-4 pb-4 gap-4">
+    <View style={{ backgroundColor: colors.cell }}>
+      <View
+        style={{
+          flexDirection: "row", alignItems: "baseline", justifyContent: "space-between",
+          gap: 10, paddingHorizontal: 16, paddingBottom: 12,
+        }}
+      >
+        <Text testID="live-detail" style={{ ...caption, flex: 1, color: colors.labelTertiary }}>
+          {minors === 1 ? "1 driving fault" : `${minors} driving faults`}
+          {majors > 0
+            ? ` · ${majors === 1 ? "1 serious" : `${majors} serious`}`
+            : " · no serious"}
+          {credits > 0 ? ` · +${credits} credit` : ""}
+        </Text>
+        <Text style={{ ...caption, color: colors.labelTertiary, fontVariant: ["tabular-nums"] }}>{clock}</Text>
+      </View>
+
       {GROUPS.map(({ group, categories }) => (
-        <View key={group} className="gap-1">
-          <Text className="text-[11px] font-semibold uppercase tracking-wider text-slate-400" style={{ fontFamily: MONO }}>
+        <View key={group}>
+          <Text
+            style={{
+              ...footnote, color: colors.labelTertiary, textTransform: "uppercase",
+              letterSpacing: 0.6, paddingHorizontal: 16, paddingTop: 15, paddingBottom: 6,
+            }}
+          >
             {GROUP_LABEL[group]}
           </Text>
-          <View>
-            {categories.map((c) => (
-              <CategoryRow
-                key={c.id}
-                id={c.id}
-                label={c.label}
-                minorExample={c.minorExample}
-                majorExample={c.majorExample}
-                minorCount={minorCounts[c.id] ?? 0}
+          {categories.map((c, i) => (
+            <View key={c.id}>
+              <MarkRow
+                category={c}
+                counts={counts[c.id] ?? NO_MARK_COUNTS}
+                expanded={expandedId === c.id}
+                onToggle={toggle}
                 onMark={onMark}
               />
-            ))}
-          </View>
+              {/* Inset from the leading edge, never full-bleed — see the note on
+                  `separator` in theme.ts. The last row of a group has none: the
+                  next group's header is the division there. */}
+              {i < categories.length - 1 && (
+                <View style={{ height: 1, marginLeft: 16, backgroundColor: colors.separator }} />
+              )}
+            </View>
+          ))}
         </View>
       ))}
     </View>

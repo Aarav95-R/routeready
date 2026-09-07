@@ -11,6 +11,21 @@ jest.mock("@react-native-async-storage/async-storage", () => require("@react-nat
 // suites use — still wins over this one for its own file.
 jest.mock("@/lib/supabase", () => ({ supabase: {} }));
 
+// Same fix, one module further out. `@react-native-google-signin/google-signin`
+// reads its native constants at *import* time — `TurboModuleRegistry.getEnforcing`
+// throws outside a real binary — and sessionStore now imports socialAuth, which
+// imports it. So five screen suites that have nothing to do with Google went red
+// simply for mounting a screen that touches the session store.
+//
+// The package ships its own jest setup, but it mocks a path inside its `jest/build`
+// tree rather than the `src/` this project's resolver actually loads, so it does
+// not help here. Mocking the entry point does, and it is the same shape as the
+// supabase mock above. Suites that test this module for real — socialAuth's own,
+// and authError's — declare their own file-level mock, which still wins over this.
+jest.mock("@react-native-google-signin/google-signin", () => ({
+  GoogleSignin: { configure: jest.fn(), signIn: jest.fn(), signOut: jest.fn() },
+}));
+
 // useSafeAreaInsets() throws without a <SafeAreaProvider> ancestor. Screens
 // that call it directly (the centres screen among them) render standalone
 // under test, so every suite gets the library's own frame-0 stand-in rather

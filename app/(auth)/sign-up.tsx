@@ -7,22 +7,19 @@ import { useRouter } from "expo-router";
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withTiming } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { listCentres } from "@/services/centresRepo";
-import type { Centre } from "@/types/db";
-import {
-  canAdvance, EMPTY_ANSWERS, EXPERIENCE_OPTIONS, FOCUS_OPTIONS, TOTAL_STEPS,
-  toggleFocus, toMetadata, WINDOW_OPTIONS, type Answers, type Focus,
-} from "@/lib/onboarding";
+import { EMPTY_ANSWERS, TOTAL_STEPS, toMetadata, type Answers } from "@/lib/onboarding";
 import { MIN_PASSWORD, passwordStrength } from "@/lib/passwordStrength";
 import { AuthAction } from "@/ui/AuthAction";
 import { AuthField } from "@/ui/AuthField";
 import { Group } from "@/ui/List";
-import { ChoiceRow, QuestionCard } from "@/ui/QuestionCard";
+import { QuestionCard } from "@/ui/QuestionCard";
+import { InterviewCards } from "@/ui/InterviewCards";
+import { SocialAuthButtons } from "@/ui/SocialAuthButtons";
 import { StrengthMeter } from "@/ui/StrengthMeter";
 import { ENTER_MS, stepBack, stepForward, timing } from "@/ui/motion";
 import { colors } from "@/ui/theme";
-import { body, caption, footnote, MAX_DISPLAY_SCALE } from "@/ui/type";
-import { useSession } from "@/stores/sessionStore";
+import { caption, footnote, MAX_DISPLAY_SCALE } from "@/ui/type";
+import { useSession, type SocialProvider } from "@/stores/sessionStore";
 
 /**
  * Sign-up, as five cards rather than one form.
@@ -53,23 +50,15 @@ import { useSession } from "@/stores/sessionStore";
 /** How long a selection is allowed to be seen before the card moves on. */
 const SETTLE_MS = ENTER_MS;
 
-const FOCUS_ICONS: Record<Focus, React.ComponentProps<typeof Ionicons>["name"]> = {
-  roundabout: "sync-outline",
-  junction: "git-merge-outline",
-  narrow: "swap-horizontal-outline",
-  zebra: "walk-outline",
-};
-
 export default function SignUp() {
   const router = useRouter();
   const signUp = useSession((s) => s.signUp);
+  const signInWithProvider = useSession((s) => s.signInWithProvider);
 
   const [step, setStep] = useState(0);
   const [goingBack, setGoingBack] = useState(false);
   const [answers, setAnswers] = useState<Answers>(EMPTY_ANSWERS);
 
-  const [centres, setCentres] = useState<Centre[]>([]);
-  const [query, setQuery] = useState("");
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -77,22 +66,12 @@ export default function SignUp() {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Which provider sheet is open, or null. */
+  const [social, setSocial] = useState<SocialProvider | null>(null);
   const confirmRef = useRef<TextInput>(null);
 
   const reduced = useReducedMotion();
   const progress = useSharedValue(1 / TOTAL_STEPS);
-
-  useEffect(() => {
-    // `test_centres` grants select to anon, so this works with no session. The
-    // cache is national rather than per-user — `clearUserCache` only clears
-    // `cache:progress:` — so a device that has ever loaded the list shows it
-    // instantly, offline included.
-    let live = true;
-    listCentres()
-      .then((c) => { if (live) setCentres(c.data); })
-      .catch(() => { if (live) setCentres([]); });
-    return () => { live = false; };
-  }, []);
 
   useEffect(() => {
     const target = (step + 1) / TOTAL_STEPS;
@@ -134,16 +113,32 @@ export default function SignUp() {
     return () => sub.remove();
   }, [step, goBack, cancelSettle]);
 
-  /** A choice on a single-answer card: acknowledge it, let it be seen, move on. */
-  const chooseAndAdvance = (patch: Partial<Answers>) => {
-    Haptics.selectionAsync();
-    setAnswers((a) => ({ ...a, ...patch }));
-    cancelSettle();
-    settling.current = setTimeout(advance, reduced ? 0 : SETTLE_MS);
-  };
-
   const strength = passwordStrength(password);
-  const canCreate = email.includes("@") && password.length >= MIN_PASSWORD && confirm === password;
+  const canCreate = email.includes("@") && password.length >= MIN_PASSWORD && confirm === password && social === null;
+
+  /**
+   * The same four answers, through a provider instead of an email.
+   *
+   * `toMetadata` is passed exactly as `create` passes it below, which is the
+   * whole point of putting these buttons on this card rather than on the
+   * sign-in screen alone: a social sign-up answers the interview like any
+   * other, and the store writes those answers to the account the moment the
+   * session opens.
+   *
+   * Unlike `create`, there is nowhere to navigate. A password sign-up has a
+   * code to enter, so it pushes to `verify`; a provider hands back a live
+   * session, and the root layout takes it from there.
+   */
+  const continueWith = async (provider: SocialProvider) => {
+    if (social || busy) return;
+    setError(null);
+    setSocial(provider);
+    const failure = await signInWithProvider(provider, toMetadata(answers, name));
+    setSocial(null);
+    if (!failure) return;
+    setError(failure);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  };
 
   const create = async () => {
     if (!canCreate || busy) return;
@@ -161,84 +156,19 @@ export default function SignUp() {
 
   const bar = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
 
-  const shown = query
-    ? centres.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()))
-    : centres;
-
   const card = () => {
-    if (step === 0) {
+    if (step < 4) {
       return (
-        <QuestionCard title="Where are you taking it?" subtitle="So we can show you the roads examiners actually drive.">
-          <View style={{ marginHorizontal: 16, marginBottom: 12, minHeight: 40, borderRadius: 11, backgroundColor: colors.cell, borderWidth: 1, borderColor: colors.separator, flexDirection: "row", alignItems: "center", paddingHorizontal: 12, gap: 8 }}>
-            <Ionicons name="search" size={15} color={colors.labelTertiary} />
-            <TextInput
-              accessibilityLabel="Search test centres"
-              style={{ ...body, flex: 1, color: colors.label, paddingVertical: 9 }}
-              placeholder="Search test centres" placeholderTextColor={colors.labelTertiary}
-              value={query} onChangeText={setQuery} autoCorrect={false}
-            />
-          </View>
-          {shown.map((c) => (
-            <ChoiceRow
-              key={c.id} testID={`centre-${c.id}`} label={c.name} sub={c.address ?? undefined}
-              selected={answers.centreId === c.id}
-              onPress={() => chooseAndAdvance({ centreId: c.id })}
-            />
-          ))}
-          <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...caption, color: colors.labelTertiary, textAlign: "center", paddingTop: 8 }}>
-            You can change this any time.
-          </Text>
-        </QuestionCard>
-      );
-    }
-
-    if (step === 1) {
-      return (
-        <QuestionCard title="When's your test?" subtitle="We'll count down with you. Roughly is fine.">
-          {WINDOW_OPTIONS.map((o) => (
-            <ChoiceRow
-              key={o.id} testID={`window-${o.id}`} label={o.label} sub={o.sub}
-              selected={answers.testWindow === o.id}
-              onPress={() => chooseAndAdvance({ testWindow: o.id })}
-            />
-          ))}
-        </QuestionCard>
-      );
-    }
-
-    if (step === 2) {
-      return (
-        <QuestionCard title="How much have you driven?" subtitle="This sets where we start you. It isn't a judgement.">
-          {EXPERIENCE_OPTIONS.map((o) => (
-            <ChoiceRow
-              key={o.id} testID={`experience-${o.id}`} label={o.label} sub={o.sub}
-              selected={answers.experience === o.id}
-              onPress={() => chooseAndAdvance({ experience: o.id })}
-            />
-          ))}
-        </QuestionCard>
-      );
-    }
-
-    if (step === 3) {
-      const chosen = answers.focus.length;
-      return (
-        <QuestionCard title="What trips you up?" subtitle="Pick up to two. We'll put those routes first.">
-          {FOCUS_OPTIONS.map((o) => (
-            <ChoiceRow
-              key={o.id} testID={`focus-${o.id}`} label={o.label} sub={o.sub} icon={FOCUS_ICONS[o.id]} multi
-              selected={answers.focus.includes(o.id)}
-              onPress={() => {
-                Haptics.selectionAsync();
-                setAnswers((a) => ({ ...a, focus: toggleFocus(a.focus, o.id) }));
-              }}
-            />
-          ))}
-          <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...caption, color: colors.labelTertiary, textAlign: "center", paddingVertical: 10 }}>
-            {chosen === 0 ? "Choose one or two" : chosen === 1 ? "One more, or carry on" : "That's two — tap another and the first one drops"}
-          </Text>
-          <AuthAction label="Continue" enabled={canAdvance(3, answers)} onPress={advance} />
-        </QuestionCard>
+        <InterviewCards
+          step={step} answers={answers} setAnswers={setAnswers}
+          onAdvance={() => {
+            // Cards 0–2 settle before moving; card 3's button is deliberate
+            // and should not sit there for a beat doing nothing.
+            if (step === 3) { advance(); return; }
+            cancelSettle();
+            settling.current = setTimeout(advance, reduced ? 0 : SETTLE_MS);
+          }}
+        />
       );
     }
 
@@ -282,6 +212,18 @@ export default function SignUp() {
         <View style={{ paddingTop: 18 }}>
           <AuthAction label="Create account" busyLabel="Creating account…" busy={busy} enabled={canCreate} onPress={create} />
         </View>
+
+        {/* Same divider as the sign-in screen, so the two doors read as the
+            same choice in both places. */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 11, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 14 }}>
+          <View style={{ height: 1, flex: 1, backgroundColor: colors.separator }} />
+          <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...caption, color: colors.labelTertiary }}>or</Text>
+          <View style={{ height: 1, flex: 1, backgroundColor: colors.separator }} />
+        </View>
+        <SocialAuthButtons onPress={continueWith} busy={social} />
+        <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...caption, color: colors.labelTertiary, textAlign: "center", paddingTop: 12 }}>
+          {"We'll keep the answers you just gave."}
+        </Text>
       </QuestionCard>
     );
   };

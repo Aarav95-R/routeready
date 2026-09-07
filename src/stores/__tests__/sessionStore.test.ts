@@ -12,14 +12,28 @@ jest.mock("@/lib/supabase", () => ({
       signOut: jest.fn().mockResolvedValue({ error: null }),
       verifyOtp: jest.fn(),
       resend: jest.fn(),
+      signInWithIdToken: jest.fn(),
     },
     functions: { invoke: jest.fn() },
   },
 }));
+// Mocked whole rather than through `requireActual`: the real module imports
+// two native SDKs at its top, and nothing in this suite is testing them —
+// socialAuth's own suite does. The factory's `CANCELLED` is the same symbol
+// the store sees, because both read it from this one mocked instance.
+jest.mock("@/lib/socialAuth", () => ({
+  CANCELLED: Symbol("cancelled"),
+  appleAvailable: jest.fn(),
+  appleCredential: jest.fn(),
+  googleCredential: jest.fn(),
+}));
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { supabase } from "@/lib/supabase";
+import { appleCredential, CANCELLED, googleCredential } from "@/lib/socialAuth";
 import { authError, AUTH_TIMEOUT } from "@/lib/authError";
-import { SESSION_RESTORE_DEADLINE_MS, SIGN_IN_DEADLINE_MS, selectUserId, useSession } from "../sessionStore";
+import {
+  SESSION_RESTORE_DEADLINE_MS, SIGN_IN_DEADLINE_MS, selectNeedsInterview, selectUserId, useSession,
+} from "../sessionStore";
 
 const signedIn = { user: { id: "u1", email: "a@b.com" } } as never;
 
@@ -593,4 +607,305 @@ test("nothing asks Supabase to redirect anywhere", async () => {
   expect(JSON.stringify((supabase.auth.signUp as jest.Mock).mock.calls)).not.toMatch(/redirect/i);
   expect(JSON.stringify((supabase.auth.signInWithOtp as jest.Mock).mock.calls)).not.toMatch(/redirect/i);
   expect(JSON.stringify((supabase.auth.resetPasswordForEmail as jest.Mock).mock.calls)).not.toMatch(/redirect/i);
+});
+
+/**
+ * ══ Apple and Google ══════════════════════════════════════════════════════
+ *
+ * Both providers hand back an OpenID `id_token` on the device, which goes
+ * straight to `signInWithIdToken`. No browser, no redirect, no deep link —
+ * which is the whole reason this shape was chosen over `signInWithOAuth`,
+ * since that one leaves the app and comes back through a URL, and puts
+ * `site_url` back on the critical path of signing in.
+ */
+describe("signInWithProvider", () => {
+  const credential = { idToken: "provider-token", fullName: "" };
+
+  // Cleared first, then re-armed. This suite has no global reset — the tests
+  // above assert on results rather than on call counts, so they never needed
+  // one — and several of these do count calls, which would otherwise pick up
+  // every `updateUser` the password tests made earlier in the file.
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useSession.setState({ session: null, recovering: false });
+    (supabase.auth.updateUser as jest.Mock).mockResolvedValue({ error: null });
+    (supabase.auth.getSession as jest.Mock).mockResolvedValue({ data: { session: signedIn } });
+  });
+
+  test("a successful Apple sign-in opens the session", async () => {
+    (appleCredential as jest.Mock).mockResolvedValueOnce(credential);
+    (supabase.auth.signInWithIdToken as jest.Mock).mockResolvedValueOnce({ data: { session: signedIn }, error: null });
+
+    expect(await useSession.getState().signInWithProvider("apple")).toBeNull();
+    expect(supabase.auth.signInWithIdToken).toHaveBeenCalledWith({ provider: "apple", token: "provider-token" });
+    expect(useSession.getState().session).toBe(signedIn);
+  });
+
+  test("Google goes through the same door", async () => {
+    (googleCredential as jest.Mock).mockResolvedValueOnce(credential);
+    (supabase.auth.signInWithIdToken as jest.Mock).mockResolvedValueOnce({ data: { session: signedIn }, error: null });
+
+    await useSession.getState().signInWithProvider("google");
+    expect(supabase.auth.signInWithIdToken).toHaveBeenCalledWith({ provider: "google", token: "provider-token" });
+  });
+
+  /**
+   * Backing out of the sheet is the most ordinary thing anybody does on it,
+   * and it has to leave the screen exactly as it was: no sentence, no haptic,
+   * no session. Returning a sentence here would accuse somebody of a failure
+   * they did not have, every single time they changed their mind.
+   */
+  test("a cancelled sheet says nothing and opens nothing", async () => {
+    (appleCredential as jest.Mock).mockResolvedValueOnce(CANCELLED);
+
+    expect(await useSession.getState().signInWithProvider("apple")).toBeNull();
+    expect(supabase.auth.signInWithIdToken).not.toHaveBeenCalled();
+    expect(useSession.getState().session).toBeNull();
+  });
+
+  /**
+   * ── The deadline goes on the exchange, not on the sheet ─────────────────
+   *
+   * This is the one thing that would be easy to get wrong by copying `signIn`
+   * wholesale. `SIGN_IN_DEADLINE_MS` is a budget for a network round trip,
+   * and the provider sheet is not one — it is a person reading a consent
+   * screen, typing an Apple ID password, and waiting on a 2FA code from
+   * another device. Fifteen seconds is a perfectly normal amount of time to
+   * spend there, and a deadline over it would cancel sign-ins that were about
+   * to succeed, at the exact moment the person finished typing.
+   */
+  test("a person taking their time on the sheet is not a timeout", async () => {
+    jest.useFakeTimers();
+    try {
+      let finish: (c: unknown) => void = () => {};
+      (appleCredential as jest.Mock).mockReturnValueOnce(new Promise((r) => { finish = r; }));
+      (supabase.auth.signInWithIdToken as jest.Mock).mockResolvedValueOnce({ data: { session: signedIn }, error: null });
+
+      const attempt = useSession.getState().signInWithProvider("apple");
+      await jest.advanceTimersByTimeAsync(SIGN_IN_DEADLINE_MS * 3);
+      finish(credential);
+
+      expect(await attempt).toBeNull();
+      expect(useSession.getState().session).toBe(signedIn);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // The exchange, by contrast, is an ordinary call to the same Auth service
+  // every other action here talks to, and gets the same budget.
+  test("an Auth service that goes quiet during the exchange says so", async () => {
+    jest.useFakeTimers();
+    try {
+      (appleCredential as jest.Mock).mockResolvedValueOnce(credential);
+      (supabase.auth.signInWithIdToken as jest.Mock).mockReturnValueOnce(new Promise(() => {}));
+
+      const attempt = useSession.getState().signInWithProvider("apple");
+      await jest.advanceTimersByTimeAsync(SIGN_IN_DEADLINE_MS);
+
+      expect(await attempt).toBe(AUTH_TIMEOUT);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("a refused token comes back as a sentence, not a Supabase message", async () => {
+    (appleCredential as jest.Mock).mockResolvedValueOnce(credential);
+    (supabase.auth.signInWithIdToken as jest.Mock).mockResolvedValueOnce({
+      data: { session: null }, error: { message: "Provider is not enabled" },
+    });
+
+    expect(await useSession.getState().signInWithProvider("apple")).toBe(authError("Provider is not enabled"));
+    expect(useSession.getState().session).toBeNull();
+  });
+
+  // A throw out of the sheet — a build with no client IDs, a credential with
+  // no token in it — is mapped like every other auth failure rather than
+  // escaping the store, where the screen would clear `busy` on the line after
+  // the await and leave the spinner running for good.
+  test("a throw out of the sheet is a sentence, not an escaped rejection", async () => {
+    (googleCredential as jest.Mock).mockRejectedValueOnce(new Error("Google sign-in is not configured in this build"));
+    await expect(useSession.getState().signInWithProvider("google")).resolves.toEqual(expect.any(String));
+  });
+
+  /**
+   * ── The write that follows ──────────────────────────────────────────────
+   *
+   * The interview happens before the account exists, so on a social sign-up
+   * the answers are still in the screen's hands when the session opens. This
+   * is the second round trip that puts them on the account.
+   */
+  test("the interview's answers are written to the new account", async () => {
+    (appleCredential as jest.Mock).mockResolvedValueOnce({ idToken: "t", fullName: "Aarav Raheja" });
+    (supabase.auth.signInWithIdToken as jest.Mock).mockResolvedValueOnce({
+      data: { session: { user: { id: "u1", user_metadata: {} } } }, error: null,
+    });
+
+    await useSession.getState().signInWithProvider("apple", { home_centre_id: "c-1" });
+
+    expect(supabase.auth.updateUser).toHaveBeenCalledWith({
+      data: { home_centre_id: "c-1", full_name: "Aarav Raheja" },
+    });
+  });
+
+  // A returning Apple user brings no name and no interview. Skipping the call
+  // rather than sending an empty one is a round trip they are not made to
+  // wait through on every sign-in.
+  test("nothing to write means no second round trip", async () => {
+    (appleCredential as jest.Mock).mockResolvedValueOnce(credential);
+    (supabase.auth.signInWithIdToken as jest.Mock).mockResolvedValueOnce({
+      data: { session: { user: { id: "u1", user_metadata: { full_name: "Aarav" } } } }, error: null,
+    });
+
+    await useSession.getState().signInWithProvider("apple");
+    expect(supabase.auth.updateUser).not.toHaveBeenCalled();
+  });
+
+  /**
+   * ── Handing Apple's code to the server ──────────────────────────────────
+   *
+   * The code buys a refresh token, and the refresh token is the only thing
+   * App Store guideline 5.1.1(v) can be satisfied with when the account is
+   * later deleted. It expires in about five minutes, so this is the one
+   * chance to spend it.
+   */
+  test("Apple's authorization code is sent on to be exchanged", async () => {
+    (appleCredential as jest.Mock).mockResolvedValueOnce({ idToken: "t", fullName: "", authorizationCode: "code-1" });
+    (supabase.auth.signInWithIdToken as jest.Mock).mockResolvedValueOnce({
+      data: { session: { user: { id: "u1", user_metadata: { full_name: "Aarav" } } } }, error: null,
+    });
+
+    await useSession.getState().signInWithProvider("apple");
+    expect(supabase.functions.invoke).toHaveBeenCalledWith("link-apple", {
+      body: { authorizationCode: "code-1" },
+    });
+  });
+
+  test("no code means no call", async () => {
+    (appleCredential as jest.Mock).mockResolvedValueOnce(credential);
+    (supabase.auth.signInWithIdToken as jest.Mock).mockResolvedValueOnce({
+      data: { session: { user: { id: "u1", user_metadata: { full_name: "Aarav" } } } }, error: null,
+    });
+
+    await useSession.getState().signInWithProvider("apple");
+    expect(supabase.functions.invoke).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The same trade the profile write makes, for the same reason. They are
+   * already signed in; the session is open and the root layout is on its way
+   * to the tabs. Failing sign-in because a follow-up call failed would strand
+   * somebody on the sign-in screen holding a valid session — and the cost of
+   * the failure is a deletion that cannot notify Apple, months from now, not
+   * anything this person can see or fix.
+   */
+  test("a failed exchange does not fail the sign-in", async () => {
+    (appleCredential as jest.Mock).mockResolvedValueOnce({ idToken: "t", fullName: "", authorizationCode: "code-1" });
+    (supabase.auth.signInWithIdToken as jest.Mock).mockResolvedValueOnce({
+      data: { session: { user: { id: "u1", user_metadata: { full_name: "Aarav" } } } }, error: null,
+    });
+    (supabase.functions.invoke as jest.Mock).mockRejectedValueOnce(new Error("Network request failed"));
+
+    expect(await useSession.getState().signInWithProvider("apple")).toBeNull();
+    expect(useSession.getState().session).not.toBeNull();
+  });
+
+  /**
+   * They are signed in. The session is open, `onAuthStateChange` has already
+   * fired, and the root layout is on its way to the tabs. Failing the whole
+   * sign-in over a profile write would strand somebody on the sign-in screen
+   * holding a valid session — and telling them to try again would only send
+   * them back through a sheet that is going to succeed.
+   */
+  test("a failed profile write does not fail the sign-in", async () => {
+    (appleCredential as jest.Mock).mockResolvedValueOnce({ idToken: "t", fullName: "Aarav" });
+    (supabase.auth.signInWithIdToken as jest.Mock).mockResolvedValueOnce({
+      data: { session: { user: { id: "u1", user_metadata: {} } } }, error: null,
+    });
+    (supabase.auth.updateUser as jest.Mock).mockRejectedValueOnce(new Error("Network request failed"));
+
+    expect(await useSession.getState().signInWithProvider("apple")).toBeNull();
+    expect(useSession.getState().session).not.toBeNull();
+  });
+});
+
+/**
+ * ══ The interview gate ════════════════════════════════════════════════════
+ *
+ * Keyed on the answers being absent rather than on how the account was made.
+ * A social sign-in from the sign-in screen never passes card 5, and an account
+ * made before the interview existed never saw it either — both owe the same
+ * four answers, and neither can be told apart from the other by looking.
+ */
+describe("selectNeedsInterview", () => {
+  const state = (session: unknown) => ({ session }) as never;
+
+  test("a session with no answers owes them", () => {
+    expect(selectNeedsInterview(state({ user: { user_metadata: {} } }))).toBe(true);
+  });
+
+  test("a session with a centre does not", () => {
+    expect(selectNeedsInterview(state({ user: { user_metadata: { home_centre_id: "c-1" } } }))).toBe(false);
+  });
+
+  /**
+   * Nobody signed in owes anything — the gate must never fire ahead of
+   * sign-in, or the sign-in screen itself becomes unreachable. `nextAuthRoute`
+   * guards this too; both, because either one alone locking the app is a
+   * worse bug than the one the gate prevents.
+   */
+  test("nobody signed in owes nothing", () => {
+    expect(selectNeedsInterview(state(null))).toBe(false);
+  });
+
+  // `user_metadata` is a free-form bag Supabase will hand back in any shape.
+  // A missing bag is the same as an empty one, and neither may throw.
+  test("a session with no metadata at all is handled", () => {
+    expect(selectNeedsInterview(state({ user: {} }))).toBe(true);
+    expect(selectNeedsInterview(state({}))).toBe(true);
+  });
+
+  // An explicit null is what `toMetadata` writes when somebody reached card 5
+  // without choosing a centre. It is an absent answer, not an answer.
+  test("a null centre is not an answer", () => {
+    expect(selectNeedsInterview(state({ user: { user_metadata: { home_centre_id: null } } }))).toBe(true);
+  });
+});
+
+describe("saveInterview", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useSession.setState({ session: null, recovering: false });
+  });
+
+  test("the answers are written and the session re-read", async () => {
+    (supabase.auth.updateUser as jest.Mock).mockResolvedValue({ error: null });
+    const answered = { user: { id: "u1", user_metadata: { home_centre_id: "c-1" } } };
+    (supabase.auth.getSession as jest.Mock).mockResolvedValue({ data: { session: answered } });
+
+    expect(await useSession.getState().saveInterview({ home_centre_id: "c-1" })).toBeNull();
+    expect(supabase.auth.updateUser).toHaveBeenCalledWith({ data: { home_centre_id: "c-1" } });
+    // Re-read rather than patched locally: the gate is computed from
+    // `session`, so that is the thing that has to change for it to open.
+    expect(useSession.getState().session).toBe(answered);
+  });
+
+  /**
+   * Unlike the profile write on a social sign-in, this failure is *not*
+   * swallowed. There the person was already through the door and the write was
+   * a bonus; here the write is the only thing that opens the gate, so a
+   * silent failure would bounce them straight back to the interview they just
+   * finished, with nothing said. They need to be told to try again.
+   */
+  test("a failed write is reported, not swallowed", async () => {
+    (supabase.auth.updateUser as jest.Mock).mockResolvedValue({ error: { message: "Network request failed" } });
+    expect(await useSession.getState().saveInterview({ home_centre_id: "c-1" }))
+      .toBe(authError("Network request failed"));
+  });
+
+  test("a write that rejects is a sentence, not a throw", async () => {
+    (supabase.auth.updateUser as jest.Mock).mockRejectedValueOnce(new Error("Network request failed"));
+    expect(await useSession.getState().saveInterview({ home_centre_id: "c-1" }))
+      .toEqual(expect.any(String));
+  });
 });

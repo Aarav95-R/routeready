@@ -19,6 +19,7 @@ import { Skeleton } from "@/ui/Skeleton";
 import { WelcomeBanner } from "@/ui/WelcomeBanner";
 import { enterFrom } from "@/ui/motion";
 import { colors } from "@/ui/theme";
+import { usePressed } from "@/ui/usePressed";
 import { body, caption, largeTitle, MAX_DISPLAY_SCALE, subheadline } from "@/ui/type";
 
 /**
@@ -37,6 +38,7 @@ import { body, caption, largeTitle, MAX_DISPLAY_SCALE, subheadline } from "@/ui/
 export default function Home() {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const settingsPress = usePressed();
 
   const [loaded, setLoaded] = useState<ProgressEntryWithRoute[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -159,17 +161,18 @@ export default function Home() {
             accessibilityLabel="Settings"
             hitSlop={10}
             onPress={() => router.push("/settings")}
-            style={({ pressed }) => [
-              {
-                height: 36,
-                width: 36,
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: 18,
-                backgroundColor: "rgba(28,25,23,0.06)",
-              },
-              pressed && { opacity: 0.7 },
-            ]}
+            {...settingsPress.pressProps}
+            // Not Pressable's own `pressed` — see usePressed. This used to
+            // render as a bare icon with no disc behind it.
+            style={{
+              height: 36,
+              width: 36,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 18,
+              backgroundColor: "rgba(28,25,23,0.06)",
+              opacity: settingsPress.pressed ? 0.7 : 1,
+            }}
           >
             <Ionicons name="settings-outline" size={19} color={colors.label} />
           </Pressable>

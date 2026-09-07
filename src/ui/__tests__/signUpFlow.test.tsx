@@ -17,15 +17,36 @@ jest.mock("@/services/centresRepo", () => ({
   }),
 }));
 
+// Only `appleAvailable` is reached from this screen; the sheets are the
+// store's business, and the store is stubbed below.
+jest.mock("@/lib/socialAuth", () => ({ appleAvailable: jest.fn().mockResolvedValue(false), googleConfigured: () => true }));
+jest.mock("expo-apple-authentication", () => {
+  const { Pressable, Text } = require("react-native");
+  return {
+    AppleAuthenticationButton: ({ onPress }: { onPress: () => void }) => (
+      <Pressable accessibilityRole="button" accessibilityLabel="Continue with Apple" onPress={onPress}>
+        <Text>Continue with Apple</Text>
+      </Pressable>
+    ),
+    AppleAuthenticationButtonType: { CONTINUE: 1 },
+    AppleAuthenticationButtonStyle: { BLACK: 0 },
+  };
+});
+
 import SignUp from "../../../app/(auth)/sign-up";
 import { useSession } from "@/stores/sessionStore";
+import { appleAvailable } from "@/lib/socialAuth";
 
 const signUp = jest.fn();
+const signInWithProvider = jest.fn();
 
 beforeEach(() => {
   jest.clearAllMocks();
   signUp.mockResolvedValue(null);
-  useSession.setState({ signUp } as never);
+  signInWithProvider.mockResolvedValue(null);
+  // Off unless a test is about it — see the note in signInScreen.test.tsx.
+  (appleAvailable as jest.Mock).mockResolvedValue(false);
+  useSession.setState({ signUp, signInWithProvider } as never);
 });
 
 /** Cards 1–4, leaving the flow on the account card. */
@@ -215,4 +236,79 @@ test("a rejected sign-up keeps the form and states the reason", async () => {
 
   expect(await screen.findByText(/already an account/)).toBeTruthy();
   expect(screen.getByLabelText("Email address")).toBeTruthy();
+});
+
+/**
+ * ── The account card's other door ─────────────────────────────────────────
+ *
+ * The interview comes first for everybody, provider or not. That is the whole
+ * reason these buttons live on card 5 rather than only on the sign-in screen:
+ * a social sign-up answers the same four questions, and the answers ride along
+ * on the same `toMetadata` call a password sign-up uses.
+ */
+describe("continuing with a provider", () => {
+  beforeEach(() => {
+    signInWithProvider.mockResolvedValue(null);
+    (appleAvailable as jest.Mock).mockResolvedValue(true);
+  });
+
+  test("the interview's answers go with the provider sign-in", async () => {
+    render(<SignUp />);
+    await answerEverything();
+
+    fireEvent.press(await screen.findByLabelText("Continue with Apple"));
+    await waitFor(() => expect(signInWithProvider).toHaveBeenCalledWith("apple", {
+      home_centre_id: "c-1",
+      test_window: "not_booked",
+      experience: "ready",
+      focus: ["roundabout"],
+    }));
+  });
+
+  // A name typed on this card outranks whatever the provider offers, and it
+  // travels the same way every other answer does.
+  test("a name typed on the card travels with the answers", async () => {
+    render(<SignUp />);
+    await answerEverything();
+    fireEvent.changeText(screen.getByLabelText("First name (optional)"), "Sam");
+
+    fireEvent.press(await screen.findByLabelText("Continue with Google"));
+    await waitFor(() =>
+      expect(signInWithProvider).toHaveBeenCalledWith("google", expect.objectContaining({ full_name: "Sam" })),
+    );
+  });
+
+  /**
+   * A password sign-up has a code to enter, so `create` pushes to the verify
+   * screen. A provider hands back a live session instead, and the root layout
+   * is what acts on that — so this path navigates nowhere itself.
+   */
+  test("a provider sign-up does not route to the code screen", async () => {
+    render(<SignUp />);
+    await answerEverything();
+
+    fireEvent.press(await screen.findByLabelText("Continue with Apple"));
+    await waitFor(() => expect(signInWithProvider).toHaveBeenCalled());
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  test("a refused provider sign-up states the reason on the card", async () => {
+    signInWithProvider.mockResolvedValue("That sign-in didn't go through. Try again, or use your email.");
+    render(<SignUp />);
+    await answerEverything();
+
+    fireEvent.press(await screen.findByLabelText("Continue with Google"));
+    expect(await screen.findByText(/didn't go through/)).toBeTruthy();
+  });
+
+  // Cancelling is not failing, here as on the sign-in screen: the store
+  // reports it as null, the same as success, and the card says nothing.
+  test("changing your mind leaves the card as it was", async () => {
+    render(<SignUp />);
+    await answerEverything();
+
+    fireEvent.press(await screen.findByLabelText("Continue with Google"));
+    await waitFor(() => expect(signInWithProvider).toHaveBeenCalled());
+    expect(screen.queryByText(/didn't/)).toBeNull();
+  });
 });

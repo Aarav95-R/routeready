@@ -2,6 +2,7 @@ import { Pressable, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors } from "@/ui/theme";
 import { subheadline } from "@/ui/type";
+import { usePressed } from "@/ui/usePressed";
 
 /**
  * One option under a quiz question, and the five things it can be.
@@ -47,6 +48,9 @@ export function ChoiceRow({
   // passing a handler.
   const answered = state === "correct" || state === "wrong" || state === "faded";
   const mark = MARKS[state];
+  // Not Pressable's own `pressed` — see usePressed for why it cannot be used
+  // in this app. These rows used to render with no fill and no border.
+  const { pressed, pressProps } = usePressed();
 
   return (
     <Pressable
@@ -55,21 +59,22 @@ export function ChoiceRow({
       accessibilityState={{ selected: state === "selected", disabled: answered }}
       disabled={answered || !onPress}
       onPress={onPress}
-      style={({ pressed }) => [
-        {
-          minHeight: 44,
-          borderRadius: 10,
-          borderWidth: 1.5,
-          paddingVertical: 13,
-          paddingHorizontal: 14,
-          flexDirection: "row",
-          alignItems: "flex-start",
-          gap: 11,
-        },
-        GROUNDS[state],
-        state === "faded" && { opacity: 0.42 },
-        pressed && !answered && { opacity: 0.7 },
-      ]}
+      {...pressProps}
+      // One flat object rather than an array, so there is a single shape for
+      // NativeWind to resolve. The fade and the press tint cannot both apply:
+      // a faded row is answered, and an answered row does not take presses.
+      style={{
+        minHeight: 44,
+        borderRadius: 10,
+        borderWidth: 1.5,
+        paddingVertical: 13,
+        paddingHorizontal: 14,
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: 11,
+        ...GROUNDS[state],
+        opacity: state === "faded" ? 0.42 : pressed && !answered ? 0.7 : 1,
+      }}
     >
       <View style={{ width: 18, height: 18, marginTop: 1, alignItems: "center", justifyContent: "center" }}>
         {mark ? (

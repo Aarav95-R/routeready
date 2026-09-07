@@ -48,6 +48,17 @@ export const AUTH_TIMEOUT = "That's taking longer than it should. Try again in a
 export const EMAIL_NOT_CONFIRMED = "Confirm your email first — enter the code we sent you.";
 
 /**
+ * What a provider sheet that finished with nothing to sign in with says.
+ *
+ * Two causes reach this: a credential carrying no token, and a build shipped
+ * without its Google client IDs. They are the same thing to the person — the
+ * button did not work — and neither is anything they can act on, so the
+ * sentence names the door that *is* open rather than the one that isn't.
+ * `socialAuth.ts` throws the messages these match.
+ */
+export const SOCIAL_UNAVAILABLE = "That sign-in didn't go through. Try again, or use your email.";
+
+/**
  * First match wins, so the order is the specificity order. `email not
  * confirmed` has to sit above the generic email entries, and the rate-limit
  * pair has to sit above anything matching on `email`.
@@ -67,6 +78,25 @@ const SENTENCES: readonly (readonly [needle: string, sentence: string])[] = [
   ["email not confirmed", EMAIL_NOT_CONFIRMED],
   ["user already registered", "There's already an account on that email. Sign in instead?"],
   ["already been registered", "There's already an account on that email. Sign in instead?"],
+  // ── Apple and Google. The first two are thrown by `socialAuth.ts`, so
+  // those needles are matched against words this project writes rather than
+  // words Supabase does — see NO_TOKEN and MISCONFIGURED there. The rest are
+  // Supabase's own answers to a token it will not accept, and every one of
+  // them is a console setting rather than anything the person did: an
+  // unconfigured provider, or a client ID that is not in the project's
+  // allowed audiences. So they say what to do instead, and nothing about why.
+  // Supabase's Google path collapses every id_token failure into this one
+  // string — bad signature, wrong audience, wrong issuer, expired — so it
+  // cannot be mapped to anything more specific than the general sentence. It
+  // is listed because without it the message is unrecognised and the person
+  // gets "Something went wrong", which says even less. (The Apple path is more
+  // forthcoming, hence the separate, more specific entries below.)
+  ["bad id token", SOCIAL_UNAVAILABLE],
+  ["provider returned no token", SOCIAL_UNAVAILABLE],
+  ["not configured in this build", SOCIAL_UNAVAILABLE],
+  ["provider is not enabled", SOCIAL_UNAVAILABLE],
+  ["unacceptable audience", SOCIAL_UNAVAILABLE],
+  ["bad_oauth_state", SOCIAL_UNAVAILABLE],
   ["rate limit", "Too many tries just now. Give it a minute and go again."],
   ["for security purposes", "Too many tries just now. Give it a minute and go again."],
   ["network request failed", "No connection. We'll be here when you're back."],

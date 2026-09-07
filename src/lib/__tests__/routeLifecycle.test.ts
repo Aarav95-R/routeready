@@ -225,3 +225,29 @@ test("acknowledging an effect removes only that effect", () => {
   expect(state.effects.some((effect) => effect.id === started.id)).toBe(false);
   expect(state.effects.some((effect) => effect.type === "start-ready")).toBe(true);
 });
+
+// The mock test begins on a tap, not after a wait.
+//
+// Reaching "start-prompt" needs three accepted fixes spanning three seconds,
+// and the screen used to sit on a "Confirming your position" card until it
+// arrived. The candidate still exists — it is what opens the arrival prompt for
+// a driver who was guided to the start — but it is no longer the price of
+// starting a test from a car already parked on the line.
+test("begin does not wait for the three-fix start candidate", () => {
+  let state = createRouteLifecycle();
+  state = receive(state, fix(0));
+  expect(state.phase).toBe("start-candidate");
+
+  state = send(state, { type: "BEGIN_REQUESTED", at: BASE + 100 });
+
+  expect(state.phase).toBe("active");
+  expect(state.startedAt).toBe(BASE + 100);
+  expect(state.effects.filter((effect) => effect.type === "started")).toHaveLength(1);
+});
+
+// What the wait was really enforcing is kept: a recent fix, near the start.
+test("begin without any accepted fix is still refused", () => {
+  const state = send(createRouteLifecycle(), { type: "BEGIN_REQUESTED", at: BASE });
+  expect(state.phase).toBe("preview");
+  expect(state.startedAt).toBeNull();
+});

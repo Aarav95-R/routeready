@@ -1,7 +1,7 @@
 import type { Hazard } from "@/types/db";
 import {
   canAdvance, EMPTY_ANSWERS, EXPERIENCE_OPTIONS, FOCUS_OPTIONS, MAX_FOCUS,
-  TOTAL_STEPS, toggleFocus, toMetadata, WINDOW_OPTIONS, type Answers,
+  profileToWrite, TOTAL_STEPS, toggleFocus, toMetadata, WINDOW_OPTIONS, type Answers,
 } from "../onboarding";
 
 const answers = (over: Partial<Answers> = {}): Answers => ({ ...EMPTY_ANSWERS, ...over });
@@ -116,5 +116,71 @@ describe("toMetadata", () => {
 
   test("not booked is stored, so Home knows not to count down", () => {
     expect(toMetadata(answers({ testWindow: "not_booked" }), "")).toMatchObject({ test_window: "not_booked" });
+  });
+});
+
+/**
+ * ── What a provider sign-in writes ────────────────────────────────────────
+ *
+ * A social sign-in arrives with a session already open, so unlike `signUp()`
+ * there is no single call to hang the interview answers on. `profileToWrite`
+ * decides what the follow-up `updateUser` should carry — or that it should
+ * not happen at all, since a round trip writing nothing is still a round trip
+ * somebody is waiting on.
+ */
+describe("profileToWrite", () => {
+  const answered = answers({
+    centreId: "c-1", testWindow: "two_weeks", experience: "progressing",
+    focus: ["roundabout", "junction"],
+  });
+  const interview = toMetadata(answered, "");
+
+  test("the interview's answers are written after a social sign-up", () => {
+    expect(profileToWrite(interview, "", undefined)).toMatchObject({
+      home_centre_id: "c-1",
+      test_window: "two_weeks",
+      experience: "progressing",
+      focus: ["roundabout", "junction"],
+    });
+  });
+
+  /**
+   * Signing in on the sign-in screen carries no interview and no stored name,
+   * so the provider's name is the only thing there is to write.
+   */
+  test("a returning social sign-in writes the provider's name", () => {
+    expect(profileToWrite(undefined, "Aarav Raheja", undefined)).toEqual({ full_name: "Aarav Raheja" });
+  });
+
+  /**
+   * The whole point of returning null: a returning Apple user brings no name
+   * (Apple hands it over once, ever) and no interview, so there is nothing to
+   * write and no call to make.
+   */
+  test("nothing to write means no round trip", () => {
+    expect(profileToWrite(undefined, "", { full_name: "Aarav" })).toBeNull();
+  });
+
+  /**
+   * A name already on the account outranks the provider's, because the person
+   * may have changed it in Settings since. Apple's arrives only on first
+   * consent anyway, so in practice this guards the Google case, which sends
+   * the Google account's name on every single sign-in.
+   */
+  test("a stored name is never overwritten by the provider's", () => {
+    expect(profileToWrite(undefined, "A. Raheja", { full_name: "Aarav" })).toBeNull();
+  });
+
+  // A typed name outranks both. It is the most recent thing the person said
+  // about themselves, and they said it on the card this call came from.
+  test("a name typed on the sign-up card wins", () => {
+    expect(profileToWrite(toMetadata(answered, "Sam"), "Aarav Raheja", { full_name: "Old" }))
+      .toMatchObject({ full_name: "Sam" });
+  });
+
+  // "" on an account is the same as no name — `selectFullName` already trims
+  // to "" — so it must not block the provider's.
+  test("an empty stored name does not count as a name", () => {
+    expect(profileToWrite(undefined, "Aarav", { full_name: "   " })).toEqual({ full_name: "Aarav" });
   });
 });

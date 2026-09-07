@@ -1,0 +1,590 @@
+<title>Marking Without Looking</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --emerald: #1A875E; --amber: #B45309; --red: #B91C1C;
+    --code-bg: #F0F2EC; --frame: #D7D3CB; --pick-ink: #FFFFFF; --rule: #EDEFEA;
+
+    /* Quoted verbatim from src/ui/theme.ts. These never invert: the phone
+       shows the product, and the product has one appearance. */
+    --a-field: #F5F0E8; --a-cell: #FFFFFF; --a-label: #1C1917;
+    --a-label2: #574F49; --a-label3: #6B635B; --a-sep: #E4DFD8;
+    --a-fill: #EBE7E1; --a-accent: #1A875E; --a-accent-ink: #146B4A;
+    --a-danger: #DC2626; --a-warning: #D97706; --a-drawing: #EDEBE4;
+    --a-minor-bg: #FEF3C7; --a-minor-fg: #B45309;
+    --a-major-bg: #FEE2E2; --a-major-fg: #B91C1C;
+    --a-credit-bg: #ECFDF5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+      --line: #26302A; --emerald: #34D399; --amber: #FBBF24; --red: #F87171;
+      --code-bg: #1A211C; --frame: #2C352E; --pick-ink: #0C110E; --rule: #1E2621;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+    --line: #26302A; --emerald: #34D399; --amber: #FBBF24; --red: #F87171;
+    --code-bg: #1A211C; --frame: #2C352E; --pick-ink: #0C110E; --rule: #1E2621;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-direction: column; gap: 34px; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0;
+  }
+  h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.04; letter-spacing: -0.03em; font-weight: 700; margin: 10px 0 0; text-wrap: balance; }
+  .lede { margin: 16px 0 0; font-size: 17px; color: var(--muted); max-width: 64ch; }
+  h2 { font-size: 21px; letter-spacing: -0.02em; font-weight: 700; margin: 0; text-wrap: balance; }
+  p { margin: 0; max-width: 66ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14.5px; }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 22px; }
+  .sec-head { display: flex; flex-direction: column; gap: 8px; }
+  code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px; background: var(--code-bg); padding: 1.5px 5px; border-radius: 4px; }
+  ul.notes { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 9px; }
+  ul.notes li { max-width: 66ch; }
+  ul.notes li::marker { color: var(--muted); }
+
+  .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(322px, 1fr)); gap: 30px; align-items: start; }
+  .option { display: flex; flex-direction: column; gap: 12px; }
+  .tag {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .tag .pick { background: var(--emerald); color: var(--pick-ink); border-radius: 999px; padding: 2.5px 8px; letter-spacing: 0.08em; font-weight: 600; }
+  .tag .alt { border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 8px; letter-spacing: 0.08em; }
+  .tag .no { border: 1px solid var(--red); color: var(--red); border-radius: 999px; padding: 2.5px 8px; letter-spacing: 0.08em; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroller { overflow-x: auto; }
+  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(0,0,0,.12); vertical-align: -1px; margin-right: 7px; }
+
+  .callout { border-left: 3px solid var(--amber); background: color-mix(in srgb, var(--amber) 8%, transparent); border-radius: 0 8px 8px 0; padding: 14px 16px; display: flex; flex-direction: column; gap: 7px; }
+  .callout.stop { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 8%, transparent); }
+  .callout .h { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
+  .callout p { font-size: 14.5px; max-width: 68ch; }
+
+  /* ══ Flow strip ══════════════════════════════════════════════════════ */
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+  .step {
+    flex: 1; min-width: 132px; border: 1px solid var(--line); border-radius: 10px;
+    padding: 11px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--paper);
+  }
+  .step .k { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .step .t { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+  .step .d { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  .step.wait { border-style: dashed; border-color: var(--amber); }
+  .step.gone { opacity: .45; text-decoration-line: line-through; text-decoration-color: var(--red); }
+  .arrow { align-self: center; color: var(--muted); font-size: 15px; }
+
+  /* ══ Phone slice ═════════════════════════════════════════════════════ */
+  .screen {
+    position: relative; width: 322px; max-width: 100%; height: 470px;
+    border: 1px solid var(--frame); border-radius: 20px; overflow: hidden;
+    background: var(--a-drawing); color: var(--a-label);
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    letter-spacing: -0.01em; flex: none;
+  }
+  .screen.tall { height: 520px; }
+  .screen .map { position: absolute; inset: 0; }
+  .screen .map svg { width: 100%; height: 100%; display: block; }
+  .brand { position: absolute; left: 8px; font-size: 7px; font-weight: 600; color: #6F6A63; background: rgba(255,255,255,.75); padding: 1px 4px; border-radius: 3px; }
+
+  .t-head { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+  .t-sub { font-size: 15px; line-height: 20px; letter-spacing: -0.17px; }
+  .t-foot { font-size: 13px; line-height: 18px; font-weight: 600; }
+  .t-cap { font-size: 13px; line-height: 18px; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .floaty { box-shadow: 0 4px 14px rgba(28,25,23,.13); }
+
+  .topbar {
+    position: absolute; left: 14px; right: 14px; top: 12px; height: 44px;
+    background: var(--a-cell); border-radius: 12px; padding: 0 12px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--a-danger); flex: none; }
+  .exit-quiet { color: var(--a-label2); border: 1px solid var(--a-sep); border-radius: 999px; height: 28px; padding: 0 12px; display: flex; align-items: center; font-size: 13px; font-weight: 600; }
+  .vrule { width: 1px; height: 18px; background: var(--a-sep); }
+
+  .controls { position: absolute; left: 16px; right: 16px; display: flex; align-items: center; }
+  .controls .side { flex: 1; display: flex; }
+  .controls .side.r { justify-content: flex-end; }
+  .btn-round { width: 48px; height: 48px; border-radius: 50%; background: var(--a-cell); display: grid; place-items: center; }
+  .mirrors { width: 74px; height: 74px; border-radius: 50%; display: grid; place-items: center; align-content: center; background: var(--a-cell); color: var(--a-label2); gap: 1px; }
+  .mirrors.on { background: var(--a-accent); color: #fff; }
+  .mirrors .lbl { font-size: 13px; font-weight: 600; }
+  .btn-mark {
+    height: 56px; min-width: 92px; border-radius: 28px; background: var(--a-label); color: #fff;
+    display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 18px;
+    font-size: 17px; font-weight: 600; letter-spacing: -0.41px;
+  }
+
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--a-cell); border-radius: 16px 16px 0 0; box-shadow: 0 -4px 16px rgba(28,25,23,.12); }
+  .grab { width: 36px; height: 4px; border-radius: 2px; background: #D8D1C8; margin: 10px auto; }
+  .meter { display: flex; gap: 3px; height: 8px; }
+  .meter i { flex: 1; border-radius: 2px; background: var(--a-fill); }
+  .meter i.on { background: var(--a-minor-fg); }
+  .undo { background: var(--a-fill); border-radius: 8px; height: 40px; min-width: 64px; display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--a-label2); padding: 0 14px; }
+
+  /* Grid overlay */
+  .overlay { position: absolute; inset: 0; background: rgba(28,25,23,.34); }
+  .gridcard { position: absolute; left: 0; right: 0; bottom: 0; background: var(--a-cell); border-radius: 18px 18px 0 0; padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+  .gridcard .hd { display: flex; align-items: baseline; justify-content: space-between; }
+  .grow { display: flex; gap: 8px; }
+  .tile { flex: 1; min-height: 62px; border-radius: 12px; background: var(--a-field); padding: 10px 11px; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+  .tile .nm { font-size: 15px; line-height: 19px; font-weight: 600; letter-spacing: -0.17px; }
+  .tile .ct { font-size: 13px; font-weight: 600; color: var(--a-minor-fg); }
+  .tile.hot { background: var(--a-minor-bg); }
+  .tile.hot .nm { color: var(--a-minor-fg); }
+  .allcats { min-height: 44px; border-radius: 10px; background: var(--a-field); display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--a-accent-ink); }
+
+  /* The confirmation line */
+  .confirm {
+    position: absolute; left: 14px; right: 14px; background: var(--a-minor-bg);
+    border-radius: 12px; padding: 10px 12px; display: flex; align-items: center; gap: 10px;
+  }
+  .confirm .rail { width: 6px; align-self: stretch; min-height: 34px; border-radius: 3px; background: var(--a-minor-fg); }
+  .confirm .txt { flex: 1; min-width: 0; }
+  .confirm .t { font-size: 15px; line-height: 19px; font-weight: 600; color: #7C2D12; }
+  .confirm .d { font-size: 13px; color: #7C2D12; opacity: .8; }
+  .confirm .act { display: flex; gap: 6px; flex: none; }
+  .confirm .act span { height: 34px; border-radius: 8px; padding: 0 11px; display: flex; align-items: center; font-size: 13px; font-weight: 700; }
+  .act .esc { background: var(--a-major-bg); color: var(--a-major-fg); }
+  .act .undo2 { background: rgba(255,255,255,.75); color: #7C2D12; }
+
+  .sevbar { min-height: 58px; border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+  .sevbar .t { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -.41px; }
+  .sevbar .d { font-size: 13px; line-height: 17px; }
+  .sevbar.min { background: var(--a-minor-bg); color: var(--a-minor-fg); }
+  .sevbar.maj { background: var(--a-major-bg); color: var(--a-major-fg); }
+  .sevbar.cr { background: var(--a-credit-bg); color: var(--a-accent-ink); }
+
+  .taps { display: inline-flex; align-items: center; gap: 5px; font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .taps b { color: var(--ink); font-size: 13px; }
+
+  .askrow { display: flex; flex-direction: column; gap: 5px; padding: 13px 0; border-bottom: 1px solid var(--rule); }
+  .askrow:last-child { border-bottom: 0; }
+  .askrow .q { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .askrow .a { font-size: 14.5px; color: var(--muted); max-width: 70ch; }
+  a { color: var(--emerald); }
+  :focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; border-radius: 4px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">RouteReady &middot; design &middot; 30 August 2026</p>
+    <h1>Marking without looking</h1>
+    <p class="lede">
+      Two changes to the mock test: get rid of the wait before it starts, and make
+      recording a fault fast enough that the score keeps up with the drive. Both
+      are about the same person &mdash; a parent in the passenger seat, phone in a
+      cradle, eyes mostly on the road.
+    </p>
+  </header>
+
+  <!-- ══════════════════════ 1 · STARTING ══════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">01 &middot; decision one</p>
+      <h2>Getting rid of &ldquo;Confirming your position&rdquo;</h2>
+      <p class="small dim">
+        Starting a mock test currently costs two taps with an open-ended wait
+        between them.
+      </p>
+    </div>
+
+    <div class="flow">
+      <div class="step"><span class="k">tap</span><span class="t">Start</span><span class="d">On the preview card, once you are within 60 m of the start.</span></div>
+      <span class="arrow">&rarr;</span>
+      <div class="step wait"><span class="k">wait</span><span class="t">Confirming your position</span><span class="d">Three accepted fixes spanning at least 3 s, within 30 m, under 5 mph. No progress bar, because nothing knows how long it takes.</span></div>
+      <span class="arrow">&rarr;</span>
+      <div class="step"><span class="k">tap</span><span class="t">Ready to begin?</span><span class="d">A second card, asking the same question the first tap already answered.</span></div>
+      <span class="arrow">&rarr;</span>
+      <div class="step"><span class="k">now</span><span class="t">The test runs</span><span class="d">Clock starts, marks become possible.</span></div>
+    </div>
+
+    <div class="callout">
+      <div class="h">What the wait is actually protecting &mdash; and what it isn't</div>
+      <p>
+        It is not protecting the score. A drive with no GPS reaches
+        <code>finish()</code> with no samples, and the store already refuses to
+        score it: <code>samples.length &gt; 0 ? result : { assessable: false,
+        passed: false, score: 0 }</code>. That guard is what stops a test taken
+        indoors reading as a flawless pass, and it works whether or not this gate
+        exists.
+      </p>
+      <p>
+        What the gate does buy is a promise that the clock starts on the start
+        line rather than in the kitchen. That is worth keeping &mdash; but it can be
+        stated instead of enforced, which is what the options below do.
+      </p>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <p class="tag"><span class="pick">Recommended</span> A &middot; One tap, and say what is missing</p>
+        <div class="flow" style="margin-bottom:2px">
+          <div class="step"><span class="k">tap</span><span class="t">Begin mock test</span><span class="d">The only gate. The card already knows you are at the start.</span></div>
+          <span class="arrow">&rarr;</span>
+          <div class="step"><span class="k">now</span><span class="t">The test runs</span><span class="d">If the fix has not landed yet, the message slot says so and the meter says &ldquo;not scoring yet&rdquo;.</span></div>
+          <div class="step gone" style="flex-basis:100%"><span class="k">removed</span><span class="t">Confirming your position &nbsp;·&nbsp; Ready to begin?</span></div>
+        </div>
+        <div class="screen" style="height:250px">
+          <div class="map"><svg viewBox="0 0 322 250" role="img" aria-label="Map with the begin card"><rect width="322" height="250" fill="#EDEBE4"/><path d="M-10 70 H332 M232 -10 V260" stroke="#E2DFD6" stroke-width="13" fill="none"/><path d="M232 40 V150" stroke="#1A875E" stroke-width="7" fill="none" stroke-linecap="round"/></svg></div>
+          <div style="position:absolute;left:0;right:0;bottom:0;background:var(--a-cell);border-radius:18px 18px 0 0;padding:14px 16px 18px;display:flex;flex-direction:column;gap:9px">
+            <div style="display:flex;align-items:center;gap:7px">
+              <span style="width:8px;height:8px;border-radius:50%;background:var(--a-accent)"></span>
+              <span class="t-foot" style="color:var(--a-accent-ink)">You&rsquo;re on the start line</span>
+            </div>
+            <span class="t-head">Route 1 &middot; Watford Way</span>
+            <span class="t-cap" style="color:var(--a-label3)">17.0 km &middot; 26 min &middot; loop</span>
+            <div style="min-height:52px;border-radius:10px;background:var(--a-accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;letter-spacing:-.41px;margin-top:4px">Begin mock test</div>
+            <span class="t-cap" style="color:var(--a-label3);text-align:center">The clock starts now. Nothing before this counts.</span>
+          </div>
+        </div>
+        <p class="small">
+          The card only offers this wording when you are already inside the start
+          radius, which it can tell from the last known fix &mdash; that is the same
+          condition that collapses it to a single &ldquo;Start&rdquo; button today.
+          Further away it still offers <b>Guide me to the start</b>, unchanged.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="alt">Alternative</span> B &middot; Keep one prompt, drop the wait</p>
+        <div class="flow" style="margin-bottom:2px">
+          <div class="step"><span class="k">tap</span><span class="t">Start</span><span class="d">Opens the begin prompt immediately, no fix required.</span></div>
+          <span class="arrow">&rarr;</span>
+          <div class="step"><span class="k">tap</span><span class="t">Begin route</span><span class="d">The existing prompt, reached at once instead of after a wait.</span></div>
+          <div class="step gone" style="flex-basis:100%"><span class="k">removed</span><span class="t">Confirming your position</span></div>
+        </div>
+        <p class="small">
+          The smallest possible change: the start prompt stops being gated on the
+          lifecycle reaching <code>start-prompt</code> and opens on the tap. Two
+          taps rather than one, but it keeps the &ldquo;are you ready&rdquo; beat
+          that some people will want before an assessed drive begins.
+        </p>
+        <p class="small dim">
+          Worth knowing: the second card currently carries the route name and
+          length, which is the last chance to notice you picked the wrong route.
+          Option A moves that onto the begin card itself rather than losing it.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <div class="h">The one thing that must not change</div>
+      <p>
+        Whichever option, <code>beginTest()</code> must still be the only place the
+        store is told anything. Nothing is marked, timed or sampled before that
+        tap &mdash; a fault cannot be scored against a driver who has not been told
+        the test has begun. Removing the gate shortens the road to that tap; it
+        does not move the tap.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ 2 · THE COST TODAY ════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">02 &middot; where we are</p>
+      <h2>What a fault costs right now</h2>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Step</th><th>Action</th><th>Target</th><th>Eyes off the road</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td>Drag the sheet up from its resting height</td><td>A 36&times;4 pt handle, or a swipe anywhere on the sheet</td><td>Yes &mdash; a drag has to be aimed and followed</td></tr>
+          <tr><td class="num">2</td><td>Tap the category</td><td>~150&times;56 pt tile</td><td>Yes</td></tr>
+          <tr><td class="num">3</td><td>Tap the severity</td><td>~294&times;58 pt bar</td><td>Briefly</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small">
+      The drag is the new cost, and it is my doing. The sheet used to rest open on
+      the marking grid; it now rests collapsed because at the marking height it
+      covered the Mirrors button and the Mapbox attribution &mdash; Mirrors decides
+      part of the score, and the attribution is a condition of the Mapbox licence.
+      That was the right call for the driving surface and the wrong one for the
+      passenger, and this section is the fix.
+    </p>
+
+    <div class="callout stop">
+      <div class="h">A constraint that rules one obvious answer out</div>
+      <p>
+        The tempting fix is to put a row of quick-mark chips in the collapsed
+        sheet. It cannot go there. The controls row is stacked off the collapsed
+        sheet's height, and the driver puck sits at 62% of the screen &mdash; so
+        every point added to the sheet pushes the row up into the puck:
+      </p>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>Phone</th><th>Puck artwork edge</th><th>Controls row top</th><th>Clearance</th></tr></thead>
+          <tbody>
+            <tr><td>iPhone SE &middot; today</td><td class="num">224.5 pt</td><td class="num">225 pt</td><td class="num" style="color:var(--red)">&minus;0.5 pt</td></tr>
+            <tr><td>iPhone 17 &middot; today</td><td class="num">294.8 pt</td><td class="num">259 pt</td><td class="num">35.8 pt</td></tr>
+            <tr><td>iPhone SE &middot; with chips</td><td class="num">224.5 pt</td><td class="num">279 pt</td><td class="num" style="color:var(--red)">&minus;54.5 pt</td></tr>
+            <tr><td>iPhone 17 &middot; with chips</td><td class="num">294.8 pt</td><td class="num">313 pt</td><td class="num" style="color:var(--red)">&minus;18.2 pt</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Note the first row: on an iPhone SE the controls row already overlaps the
+        puck artwork by half a point. A comment I wrote in <code>mock.tsx</code>
+        claims 17.5 pt of clearance there &mdash; it was computed from an estimate of
+        the meter height that turned out to be 18 pt short. The comment needs
+        correcting whichever option wins, and the bottom of a 667 pt screen has no
+        spare room at all.
+      </p>
+      <p>
+        <b>So the marking control must add no height.</b> Both options below reuse
+        space that already exists.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ 3 · HOW A FAULT IS MARKED ═════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">03 &middot; decision two</p>
+      <h2>How a fault gets marked</h2>
+      <p class="small dim">
+        The controls row has three columns so Mirrors stays centred under the puck.
+        The left column is empty &mdash; Finish moved into the sheet. That is where
+        marking goes, and it costs nothing in height.
+      </p>
+    </div>
+
+    <div class="options">
+
+      <div class="option">
+        <p class="tag"><span class="pick">Recommended</span> A &middot; One tap marks it</p>
+        <div class="screen tall">
+          <div class="map"><svg viewBox="0 0 322 520" role="img" aria-label="Map with a Mark button in the controls row"><rect width="322" height="520" fill="#EDEBE4"/><path d="M-10 90 H332 M232 -10 V530" stroke="#E2DFD6" stroke-width="13" fill="none"/><path d="M232 40 V300" stroke="#1A875E" stroke-width="7" fill="none" stroke-linecap="round"/><circle cx="232" cy="300" r="13" fill="#fff" opacity=".9"/><path d="M232 291 l8 18 -8 -5 -8 5 z" fill="#1C1917"/></svg></div>
+          <div class="topbar floaty">
+            <div style="display:flex;align-items:center;gap:8px"><i class="dot"></i><span class="t-foot">Mock test</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span class="t-foot tnum">12:04</span><i class="vrule"></i><span class="exit-quiet">Exit</span></div>
+          </div>
+          <div class="controls" style="bottom:150px">
+            <div class="side"><span class="btn-mark floaty">Mark</span></div>
+            <div class="mirrors floaty"><span aria-hidden="true">&#9673;</span><span class="lbl">Mirrors</span></div>
+            <div class="side r"><span class="btn-round floaty" style="color:#1A875E">&#10138;</span></div>
+          </div>
+          <div class="brand" style="bottom:113px">Mapbox &middot; &copy; OpenStreetMap</div>
+          <div class="sheet" style="height:105px">
+            <div class="grab"></div>
+            <div style="padding:0 16px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <div>
+                <div class="t-head">12 driving faults left</div>
+                <div class="t-cap" style="color:var(--a-label3)">3 marked</div>
+              </div>
+              <span class="undo">Undo</span>
+            </div>
+            <div style="padding:9px 16px 0"><div class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+          </div>
+        </div>
+        <p class="taps"><b>2</b> taps &middot; no drag &middot; smallest target 56 pt</p>
+        <p class="small">
+          <b>Mark</b> opens the grid. Tapping a category <em>records a driving
+          fault immediately</em> and closes it &mdash; the meter drops by one there and
+          then. Most marks on a real test are driving faults, so the common case is
+          two taps and no decision.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag">A &middot; continued</p>
+        <div class="screen tall">
+          <div class="map"><svg viewBox="0 0 322 520" role="img" aria-label="The category grid open over the map"><rect width="322" height="520" fill="#EDEBE4"/><path d="M-10 90 H332 M232 -10 V530" stroke="#E2DFD6" stroke-width="13" fill="none"/></svg></div>
+          <div class="overlay"></div>
+          <div class="gridcard">
+            <div class="hd"><span class="t-head">Mark a fault</span><span class="t-cap" style="color:var(--a-label3)">Cancel</span></div>
+            <div class="grow"><div class="tile hot"><span class="nm">Use of mirrors</span><span class="ct">3 marked</span></div><div class="tile"><span class="nm">Junctions</span></div></div>
+            <div class="grow"><div class="tile"><span class="nm">Positioning</span></div><div class="tile"><span class="nm">Use of speed</span></div></div>
+            <div class="grow"><div class="tile"><span class="nm">Move off</span></div><div class="tile"><span class="nm">Signals</span></div></div>
+            <div class="grow"><div class="tile"><span class="nm">Progress</span></div><div class="tile"><span class="nm">Awareness</span></div></div>
+            <div class="allcats">All 23 categories &nbsp;&rsaquo;</div>
+          </div>
+        </div>
+        <p class="small">
+          The grid is a sheet over the map rather than the map's own furniture, so
+          it can be as tall as it needs without any of the puck arithmetic above.
+          It closes the moment a tile is tapped &mdash; it is never on screen while
+          the car is being driven for more than a second or two.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag">A &middot; and how &ldquo;serious&rdquo; still gets said</p>
+        <div class="screen tall">
+          <div class="map"><svg viewBox="0 0 322 520" role="img" aria-label="Map with the mark confirmation offering serious and undo"><rect width="322" height="520" fill="#EDEBE4"/><path d="M-10 90 H332 M232 -10 V530" stroke="#E2DFD6" stroke-width="13" fill="none"/><path d="M232 40 V300" stroke="#1A875E" stroke-width="7" fill="none" stroke-linecap="round"/><circle cx="232" cy="300" r="13" fill="#fff" opacity=".9"/><path d="M232 291 l8 18 -8 -5 -8 5 z" fill="#1C1917"/></svg></div>
+          <div class="topbar floaty">
+            <div style="display:flex;align-items:center;gap:8px"><i class="dot"></i><span class="t-foot">Mock test</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span class="t-foot tnum">12:11</span><i class="vrule"></i><span class="exit-quiet">Exit</span></div>
+          </div>
+          <div class="confirm floaty" style="top:64px">
+            <span class="rail"></span>
+            <div class="txt"><div class="t">Use of mirrors</div><div class="d">Driving fault &middot; 11 left</div></div>
+            <div class="act"><span class="esc">Serious</span><span class="undo2">Undo</span></div>
+          </div>
+          <div class="controls" style="bottom:150px">
+            <div class="side"><span class="btn-mark floaty">Mark</span></div>
+            <div class="mirrors floaty"><span aria-hidden="true">&#9673;</span><span class="lbl">Mirrors</span></div>
+            <div class="side r"><span class="btn-round floaty" style="color:#1A875E">&#10138;</span></div>
+          </div>
+          <div class="brand" style="bottom:113px">Mapbox &middot; &copy; OpenStreetMap</div>
+          <div class="sheet" style="height:105px">
+            <div class="grab"></div>
+            <div style="padding:0 16px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <div><div class="t-head">11 driving faults left</div><div class="t-cap" style="color:var(--a-label3)">4 marked</div></div>
+              <span class="undo">Undo</span>
+            </div>
+            <div style="padding:9px 16px 0"><div class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+          </div>
+        </div>
+        <p class="small">
+          The fault is already recorded and the meter has already moved. For about
+          eight seconds the message slot offers <b>Serious</b> &mdash; which upgrades
+          the mark in place &mdash; and <b>Undo</b>. Escalation is the exception, so it
+          costs the extra tap rather than the common case paying for it.
+        </p>
+        <p class="small dim">
+          This is the one real trade in the whole document: a mis-tapped tile is a
+          recorded fault for a few seconds rather than a discarded choice. Undo is
+          right there, the haptic fires on every mark, and the meter is visible &mdash;
+          but if you would rather nothing be recorded until severity is chosen,
+          that is option B.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="alt">Alternative</span> B &middot; Keep the severity step, lose only the drag</p>
+        <div class="screen tall">
+          <div class="map"><svg viewBox="0 0 322 520" role="img" aria-label="The severity step after choosing a category"><rect width="322" height="520" fill="#EDEBE4"/><path d="M-10 90 H332 M232 -10 V530" stroke="#E2DFD6" stroke-width="13" fill="none"/></svg></div>
+          <div class="overlay"></div>
+          <div class="gridcard">
+            <div class="hd"><span class="t-head" style="font-size:22px;line-height:28px;font-weight:700;letter-spacing:-.46px">Use of mirrors</span></div>
+            <div class="sevbar min"><span class="t">Driving fault</span><span class="d">Missed check where nothing was coming</span></div>
+            <div class="sevbar maj"><span class="t">Serious</span><span class="d">Changing direction into someone unseen</span></div>
+            <div class="sevbar cr"><span class="t">Did it well</span><span class="d">A credit, not a fault</span></div>
+            <div style="text-align:center;font-size:13px;font-weight:600;color:var(--a-label3);padding:6px">Cancel</div>
+          </div>
+        </div>
+        <p class="taps"><b>3</b> taps &middot; no drag &middot; smallest target 56 pt</p>
+        <p class="small">
+          Exactly today's two-step, reached from the <b>Mark</b> button instead of
+          from a drag. Nothing is recorded until severity is chosen, and each
+          category still shows where the line falls between a driving fault and a
+          serious one &mdash; the wording DVSA would use, written per category in
+          <code>examiner.ts</code>.
+        </p>
+        <p class="small dim">
+          Costs one more tap on every fault than A, and the passenger has to make a
+          judgement in the moment rather than after.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="no">Not recommended</span> C &middot; Long-press for serious</p>
+        <p class="small">
+          Tap the tile for a driving fault, hold it for a serious one. One tap for
+          everything, no confirmation bar, no second step.
+        </p>
+        <p class="small dim">
+          Rejected on two counts. A long press is invisible &mdash; nothing on the tile
+          says it exists, and this is a surface used a handful of times a month by
+          someone who is not the app's owner. And a hold has no failure mode: a
+          press that was a hair too short silently records the wrong severity, and
+          the difference between a driving fault and a serious one is the difference
+          between a pass and a fail.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══════════════════════ 4 · ACCESSIBILITY ═════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">04 &middot; accessible, in both senses</p>
+      <h2>Reachable in a moving car, and usable with assistive tech</h2>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead><tr><th>What</th><th>Today</th><th>Becomes</th></tr></thead>
+        <tbody>
+          <tr><td>Smallest marking target</td><td class="num">36 &times; 4 pt (the sheet handle)</td><td class="num">92 &times; 56 pt (Mark)</td></tr>
+          <tr><td>Steps to record a fault</td><td>drag + 2 taps</td><td><b>2 taps</b> (A) or 3 (B)</td></tr>
+          <tr><td>Score visible while marking</td><td>No &mdash; the sheet covers it</td><td>Yes &mdash; the meter is behind the grid and updates under it</td></tr>
+          <tr><td>Level carried by colour alone</td><td>Yes, on the MIN/MAJ chips</td><td>No &mdash; every level is worded (&ldquo;Driving fault&rdquo;, &ldquo;Serious&rdquo;)</td></tr>
+          <tr><td>Screen-reader label on a tile</td><td>&ldquo;Use of mirrors, 3 marked&rdquo;</td><td>Unchanged &mdash; already right</td></tr>
+          <tr><td>Announcement after a mark</td><td>None</td><td>The confirmation is an <code>accessibilityLiveRegion</code>, so the new headroom is spoken</td></tr>
+          <tr><td>Text size turned up</td><td>Tiles clip at 2 lines</td><td>Tiles grow; the grid is a sheet, so it can scroll</td></tr>
+          <tr><td>Feedback per level</td><td>Haptic differs by level</td><td>Unchanged &mdash; and now the only thing distinguishing a fast double-mark</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small dim">
+      One thing this does not fix: the app has no larger-text or high-contrast mode
+      of its own, and the drive screens cap display type at 110%. That cap exists so
+      a turned-up text size cannot push the manoeuvre banner off the screen, and it
+      is worth revisiting on its own rather than as part of this change.
+    </p>
+  </section>
+
+  <!-- ══════════════════════ 5 · SCOPE ═════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">05 &middot; boundary</p>
+      <h2>What none of this touches</h2>
+    </div>
+    <ul class="notes small">
+      <li>Scoring. <code>aggregate()</code> stays a pure function of the faults handed to it, and the live meter keeps counting exactly what the verdict counts &mdash; marks, missed observation zones and speeding.</li>
+      <li>The no-evidence guard. A drive with no samples stays unassessable however it was started.</li>
+      <li>Finish, off-route detection, the return leg and deviation recording.</li>
+      <li>The drive to the start, and the preview card when you are far from it.</li>
+      <li>The practice screen, which shares the preview card and start prompt. Option A changes wording only when the caller is the mock test, so practice is untouched.</li>
+    </ul>
+  </section>
+
+  <!-- ══════════════════════ 6 · ASKS ══════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">06 &middot; over to you</p>
+      <h2>Two picks</h2>
+      <p class="small dim">Say the letters and I&rsquo;ll build it.</p>
+    </div>
+    <div>
+      <div class="askrow">
+        <span class="q">1 &middot; Starting</span>
+        <span class="a">A (one tap, &ldquo;Begin mock test&rdquo;, both gates gone) &nbsp;/&nbsp; B (keep the begin prompt, drop only the wait)</span>
+      </div>
+      <div class="askrow">
+        <span class="q">2 &middot; Marking</span>
+        <span class="a">A (one tap records a driving fault, Serious and Undo offered after) &nbsp;/&nbsp; B (Mark button, then category, then severity &mdash; nothing recorded until severity)</span>
+      </div>
+    </div>
+  </section>
+
+</div>

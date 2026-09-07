@@ -1,0 +1,217 @@
+/*
+ * The app's own palette, from src/ui/theme.ts. Warm stone neutrals, one green
+ * that means "road / go", and clay for anything about the person.
+ *
+ * Light only, and deliberately so — the app declares `userInterfaceStyle:
+ * "light"` for the same reason: theme.ts is a single warm-stone set with no
+ * dark twin, and a page that guessed at one would not be the app's colours.
+ */
+
+:root {
+  --ground: #F5F0E8;
+  --cell: #FFFFFF;
+  --ink: #1C1917;
+  --ink-2: #574F49;
+  --ink-3: #6B635B;
+  --line: #E4DFD8;
+  --fill: #EBE7E1;
+  --accent: #1A875E;
+  --accent-ink: #146B4A;
+  --accent-tint: #E7F2ED;
+  --clay: #B8624A;
+  --clay-ink: #7A3A28;
+  --clay-tint: #F7E6DB;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.wrap {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 5rem;
+}
+
+/* ── Masthead ─────────────────────────────────────────────────────────── */
+
+header.mast {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 2.25rem;
+}
+
+.mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: var(--accent);
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.mark svg { width: 26px; height: 26px; fill: #FFFFFF; }
+
+.mast h1 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.mast p {
+  margin: 0.1rem 0 0;
+  font-size: 0.9rem;
+  color: var(--ink-3);
+}
+
+/* ── Type ─────────────────────────────────────────────────────────────── */
+
+h1.title {
+  font-size: clamp(1.9rem, 5vw, 2.5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0 0 0.6rem;
+}
+
+.updated {
+  color: var(--ink-3);
+  font-size: 0.9rem;
+  margin: 0 0 2.25rem;
+}
+
+h2 {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 2.75rem 0 0.75rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--line);
+}
+
+h2:first-of-type { border-top: none; padding-top: 0; margin-top: 2rem; }
+
+h3 {
+  font-size: 1.02rem;
+  font-weight: 700;
+  margin: 1.85rem 0 0.5rem;
+}
+
+p, ul, ol { margin: 0 0 1.1rem; }
+ul, ol { padding-left: 1.3rem; }
+li { margin-bottom: 0.45rem; }
+li::marker { color: var(--clay); }
+
+strong { font-weight: 700; }
+
+a {
+  color: var(--accent-ink);
+  text-decoration-color: rgba(20, 107, 74, 0.35);
+  text-underline-offset: 0.15em;
+}
+a:hover { text-decoration-color: var(--accent-ink); }
+
+/* ── Blocks ───────────────────────────────────────────────────────────── */
+
+.card {
+  background: var(--cell);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.25rem 1.4rem;
+  margin: 0 0 1.25rem;
+}
+
+.card :last-child { margin-bottom: 0; }
+
+/* The one thing on the page that must not be skimmed past. */
+.safety {
+  background: var(--clay-tint);
+  border: 1px solid #E9C9BB;
+  border-radius: 14px;
+  padding: 1.25rem 1.4rem;
+  margin: 1.5rem 0;
+}
+
+.safety h3 { margin-top: 0; color: var(--clay-ink); }
+.safety :last-child { margin-bottom: 0; }
+
+blockquote {
+  margin: 1.25rem 0;
+  padding: 0.35rem 0 0.35rem 1.1rem;
+  border-left: 3px solid var(--accent);
+  color: var(--ink-2);
+}
+blockquote :last-child { margin-bottom: 0; }
+
+/* Wide content scrolls inside itself; the page body never does. */
+.scroll { overflow-x: auto; margin: 0 0 1.25rem; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 30rem;
+  font-size: 0.94rem;
+  background: var(--cell);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+th { background: var(--fill); font-weight: 700; font-size: 0.86rem; }
+tr:last-child td { border-bottom: none; }
+
+/* ── Nav & footer ─────────────────────────────────────────────────────── */
+
+nav.links { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 2rem 0 0; }
+
+nav.links a {
+  display: inline-block;
+  padding: 0.55rem 1rem;
+  border-radius: 10px;
+  background: var(--cell);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+nav.links a:hover { border-color: var(--accent); color: var(--accent-ink); }
+
+.back {
+  display: inline-block;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+footer {
+  margin-top: 3.5rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 0.88rem;
+}
+
+footer p { margin-bottom: 0.4rem; }

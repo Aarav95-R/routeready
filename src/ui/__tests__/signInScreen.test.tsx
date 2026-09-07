@@ -3,18 +3,43 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react-nativ
 const mockPush = jest.fn();
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, back: jest.fn(), replace: jest.fn() }) }));
 
+// Only `appleAvailable` is reached from this screen — the sheets themselves
+// are the store's business, and the store is stubbed below.
+jest.mock("@/lib/socialAuth", () => ({ appleAvailable: jest.fn().mockResolvedValue(true), googleConfigured: () => true }));
+jest.mock("expo-apple-authentication", () => {
+  const { Pressable, Text } = require("react-native");
+  return {
+    AppleAuthenticationButton: ({ onPress }: { onPress: () => void }) => (
+      <Pressable accessibilityRole="button" accessibilityLabel="Continue with Apple" onPress={onPress}>
+        <Text>Continue with Apple</Text>
+      </Pressable>
+    ),
+    AppleAuthenticationButtonType: { CONTINUE: 1 },
+    AppleAuthenticationButtonStyle: { BLACK: 0 },
+  };
+});
+
 import SignIn from "../../../app/(auth)/sign-in";
 import { useSession } from "@/stores/sessionStore";
+import { appleAvailable } from "@/lib/socialAuth";
 import { EMAIL_NOT_CONFIRMED } from "@/lib/authError";
 
 const signIn = jest.fn();
 const sendMagicLink = jest.fn();
+const signInWithProvider = jest.fn();
 
 beforeEach(() => {
   jest.clearAllMocks();
   signIn.mockResolvedValue(null);
   sendMagicLink.mockResolvedValue(null);
-  useSession.setState({ signIn, sendMagicLink } as never);
+  signInWithProvider.mockResolvedValue(null);
+  // Off by default, and switched on only by the tests that are about it. The
+  // check is asynchronous, so a `true` here would land a state update after
+  // every synchronous test in this file had finished asserting — `false`
+  // matches the initial state, React drops the update, and the tests that do
+  // care await the button anyway.
+  (appleAvailable as jest.Mock).mockResolvedValue(false);
+  useSession.setState({ signIn, sendMagicLink, signInWithProvider } as never);
 });
 
 const fill = (email = "sam@example.com", password = "hunter2hunter2") => {
@@ -122,4 +147,75 @@ test("there is a way to make an account from here", () => {
   render(<SignIn />);
   fireEvent.press(screen.getByRole("button", { name: "Create an account" }));
   expect(mockPush).toHaveBeenCalledWith("/(auth)/sign-up");
+});
+
+/**
+ * ── Apple and Google ──────────────────────────────────────────────────────
+ *
+ * The screen's whole job here is to say which provider was tapped and to
+ * render whatever sentence comes back. Everything else — the sheet, the token
+ * exchange, the profile write — is the store's, and is tested there.
+ */
+describe("the provider buttons", () => {
+  beforeEach(() => {
+    signInWithProvider.mockResolvedValue(null);
+    (appleAvailable as jest.Mock).mockResolvedValue(true);
+  });
+
+  test("tapping Google asks the store for Google", async () => {
+    render(<SignIn />);
+    fireEvent.press(await screen.findByLabelText("Continue with Google"));
+    await waitFor(() => expect(signInWithProvider).toHaveBeenCalledWith("google"));
+  });
+
+  test("tapping Apple asks the store for Apple", async () => {
+    render(<SignIn />);
+    fireEvent.press(await screen.findByLabelText("Continue with Apple"));
+    await waitFor(() => expect(signInWithProvider).toHaveBeenCalledWith("apple"));
+  });
+
+  /**
+   * Nothing navigates on success. A session opening is what moves the person
+   * on, and the root layout is what watches for it — the same rule the code
+   * screen already follows.
+   */
+  test("a successful provider sign-in navigates nowhere itself", async () => {
+    render(<SignIn />);
+    fireEvent.press(await screen.findByLabelText("Continue with Google"));
+    await waitFor(() => expect(signInWithProvider).toHaveBeenCalled());
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The most important one on this screen. Backing out of a provider sheet is
+   * the most ordinary thing anybody does there, and the store reports it the
+   * same way it reports success — null — precisely so that nothing here has
+   * to tell a person off for changing their mind.
+   */
+  test("changing your mind leaves the screen exactly as it was", async () => {
+    render(<SignIn />);
+    fireEvent.press(await screen.findByLabelText("Continue with Google"));
+    await waitFor(() => expect(signInWithProvider).toHaveBeenCalled());
+    expect(screen.queryByText(/didn't/)).toBeNull();
+  });
+
+  test("a refused provider sign-in states the reason it was given", async () => {
+    signInWithProvider.mockResolvedValue("That sign-in didn't go through. Try again, or use your email.");
+    render(<SignIn />);
+    fireEvent.press(await screen.findByLabelText("Continue with Google"));
+    expect(await screen.findByText(/didn't go through/)).toBeTruthy();
+  });
+
+  // Typing a password is the fastest way to clear the sentence, and it works
+  // for a provider failure for the same reason it works for a refused
+  // password: the field's own handler clears it, not the thing that set it.
+  test("the sentence clears as soon as they type", async () => {
+    signInWithProvider.mockResolvedValue("That sign-in didn't go through. Try again, or use your email.");
+    render(<SignIn />);
+    fireEvent.press(await screen.findByLabelText("Continue with Google"));
+    await screen.findByText(/didn't go through/);
+
+    fireEvent.changeText(screen.getByLabelText("Email address"), "sam@example.com");
+    expect(screen.queryByText(/didn't go through/)).toBeNull();
+  });
 });

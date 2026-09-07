@@ -1,6 +1,7 @@
 import { Pressable, Text } from "react-native";
 import { colors } from "@/ui/theme";
 import { headline, MAX_DISPLAY_SCALE } from "@/ui/type";
+import { usePressed } from "@/ui/usePressed";
 
 /**
  * The green action, as it sits inside a grouped-list cell.
@@ -12,20 +13,22 @@ import { headline, MAX_DISPLAY_SCALE } from "@/ui/type";
  * same button said twice.
  */
 export function PrimaryAction({ label, onPress }: { label: string; onPress: () => void }) {
+  // Not Pressable's own `pressed` — see usePressed for why it cannot be used
+  // in this app. This button used to render with no green at all.
+  const { pressed, pressProps } = usePressed();
   return (
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
-      style={({ pressed }) => [
-        {
-          flex: 1,
-          alignItems: "center",
-          borderRadius: 12,
-          backgroundColor: colors.accent,
-          paddingVertical: 14,
-        },
-        pressed && { opacity: 0.8 },
-      ]}
+      {...pressProps}
+      style={{
+        flex: 1,
+        alignItems: "center",
+        borderRadius: 12,
+        backgroundColor: colors.accent,
+        paddingVertical: 14,
+        opacity: pressed ? 0.8 : 1,
+      }}
     >
       <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...headline, color: "#FFFFFF" }}>
         {label}

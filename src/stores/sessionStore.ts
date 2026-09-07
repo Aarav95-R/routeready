@@ -2,7 +2,9 @@ import { create } from "zustand";
 import type { Session } from "@supabase/supabase-js";
 import type { CodeType } from "@/lib/otpCode";
 import { supabase } from "@/lib/supabase";
-import { authError, AUTH_TIMEOUT } from "@/lib/authError";
+import { authError, AUTH_FALLBACK, AUTH_TIMEOUT } from "@/lib/authError";
+import { profileToWrite } from "@/lib/onboarding";
+import { appleCredential, CANCELLED, googleCredential } from "@/lib/socialAuth";
 import { TIMED_OUT, withTimeout } from "@/lib/withTimeout";
 import { clearOutbox, clearUserCache } from "@/services/cache";
 import { forgetWelcome } from "@/services/welcome";
@@ -14,6 +16,43 @@ import { deleteAccountError } from "@/lib/deleteError";
  * can leak a raw Supabase string by forgetting to ask for one — which is
  * exactly what both auth screens used to do.
  */
+
+/** The two providers whose sheets `signInWithProvider` knows how to open. */
+export type SocialProvider = "apple" | "google";
+
+/**
+ * A provider failure, turned into a sentence — and, in development, printed.
+ *
+ * The rule that nothing raw reaches a person is right and stays. But it left
+ * the provider paths undebuggable in the one place they actually break: the
+ * console setup. A misconfigured audience, a provider switched off, a client
+ * ID missing from Supabase's allow list — every one of those arrives here as
+ * an unfamiliar string, falls through to `AUTH_FALLBACK`, and reaches the
+ * screen as "Something went wrong", which is exactly as much as the developer
+ * gets too.
+ *
+ * So the sentence is unchanged and the raw message is printed alongside it,
+ * under `__DEV__` only. It never ships, and it never reaches the screen.
+ *
+ * `stage` says which half failed, because the two have completely different
+ * causes: "sheet" is the device and the provider SDK, "exchange" is Supabase's
+ * view of the token, and knowing which halves the search.
+ */
+function providerFailure(provider: SocialProvider, stage: "sheet" | "exchange", raw: string | null): string {
+  const sentence = authError(raw);
+  if (__DEV__) {
+    console.warn(
+      `[auth] ${provider} sign-in failed at the ${stage} step.\n` +
+      `  raw: ${raw ?? "(no message)"}\n` +
+      `  shown: ${sentence}` +
+      (sentence === AUTH_FALLBACK
+        ? "\n  note: unrecognised message — no sentence is mapped to it in authError.ts"
+        : ""),
+    );
+  }
+  return sentence;
+}
+
 type SessionState = {
   session: Session | null;
   initialized: boolean;
@@ -27,11 +66,13 @@ type SessionState = {
   init: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<string | null>;
   signUp: (email: string, password: string, metadata?: Record<string, unknown>) => Promise<string | null>;
+  signInWithProvider: (provider: SocialProvider, metadata?: Record<string, unknown>) => Promise<string | null>;
   sendMagicLink: (email: string) => Promise<string | null>;
   sendPasswordReset: (email: string) => Promise<string | null>;
   verifyCode: (email: string, token: string, type: CodeType) => Promise<string | null>;
   resendCode: (email: string, type: CodeType) => Promise<string | null>;
   updatePassword: (password: string) => Promise<string | null>;
+  saveInterview: (metadata: Record<string, unknown>) => Promise<string | null>;
   setName: (name: string) => Promise<string | null>;
   signOut: () => Promise<void>;
   deleteAccount: () => Promise<string | null>;
@@ -86,6 +127,30 @@ export function selectFullName(s: SessionState): string {
  */
 export function selectUserId(s: SessionState): string {
   return s.session?.user?.id ?? "";
+}
+
+/**
+ * Whether this account still owes us the four sign-up questions.
+ *
+ * Keyed on the answers being absent rather than on how the account was made,
+ * because the two cannot be told apart later and both owe the same thing: a
+ * provider sign-in from the *sign-in* screen never passes card 5, and an
+ * account created before the interview existed never saw it either.
+ *
+ * `home_centre_id` stands for all four. It is the one `toMetadata` always
+ * writes — the other three can legitimately be null — so its absence is the
+ * only reliable "this interview never happened". An explicit null counts as
+ * absent, because that is what card 5 writes for somebody who reached it
+ * without choosing a centre.
+ *
+ * False with no session, and `nextAuthRoute` checks that independently. Both,
+ * because either one alone deciding to gate a signed-out person would make
+ * the sign-in screen unreachable — a far worse bug than the one this prevents.
+ */
+export function selectNeedsInterview(s: SessionState): boolean {
+  if (!s.session) return false;
+  const metadata = s.session.user?.user_metadata as Record<string, unknown> | undefined;
+  return !metadata?.home_centre_id;
 }
 
 export const useSession = create<SessionState>((set, get) => ({
@@ -171,6 +236,124 @@ export const useSession = create<SessionState>((set, get) => ({
     const { error } = await supabase.auth.signUp({ email, password, options: { data: metadata } });
     return error ? authError(error.message) : null;
   },
+
+  /**
+   * Sign in with Apple or Google, in one action for both.
+   *
+   * The provider hands back an OpenID `id_token` on the device and
+   * `signInWithIdToken` accepts it directly, so nothing here leaves the app.
+   * That is the reason for this shape rather than `signInWithOAuth`, which
+   * would leave for a hosted page and come back through a URL — the deleted
+   * deep-link path, and `site_url` back on the critical path of signing in.
+   *
+   * **The deadline goes on the exchange, not on the sheet.** This is the one
+   * thing that would be wrong if `signIn` above were copied wholesale.
+   * `SIGN_IN_DEADLINE_MS` is a budget for a network round trip; the sheet is
+   * not one. It is a person reading a consent screen, typing an Apple ID
+   * password and waiting on a 2FA code from another device, and fifteen
+   * seconds is an ordinary amount of time to spend there. A deadline over it
+   * would cancel sign-ins that were about to succeed, at the moment the
+   * person finished typing.
+   *
+   * Cancelling returns null — the same as success, and deliberately so. Both
+   * mean "nothing to say to this person": success is reported by `session`
+   * changing, which is what the root layout already watches, and a cancel
+   * leaves the screen exactly as it was. Only a genuine failure gets a
+   * sentence.
+   */
+  signInWithProvider: async (provider, metadata) => {
+    const sheet = Promise.resolve().then(() => (provider === "apple" ? appleCredential() : googleCredential()));
+
+    let credential;
+    try {
+      credential = await sheet;
+    } catch (thrown) {
+      return providerFailure(provider, "sheet", thrown instanceof Error ? thrown.message : null);
+    }
+    if (credential === CANCELLED) return null;
+
+    // Started inside a `then` for the same reason `signIn` is: a synchronous
+    // throw reaching for `.signInWithIdToken()` on a stubbed client never
+    // returns a promise for `withTimeout` to watch.
+    const exchange = Promise.resolve().then(() =>
+      supabase.auth.signInWithIdToken({ provider, token: credential.idToken }),
+    );
+
+    let answer;
+    try {
+      answer = await withTimeout(exchange, SIGN_IN_DEADLINE_MS);
+    } catch (thrown) {
+      return providerFailure(provider, "exchange", thrown instanceof Error ? thrown.message : null);
+    }
+    if (answer === TIMED_OUT) return AUTH_TIMEOUT;
+    if (answer.error) return providerFailure(provider, "exchange", answer.error.message);
+
+    const session = answer.data.session;
+    // Set from the result rather than left to the auth listener, matching
+    // `verifyCode`: both fire in the real client, and waiting on the slower
+    // shows a frame of the sign-in screen to somebody already through it.
+    if (session) set({ session });
+
+    /**
+     * The interview, and the name, written on the way in.
+     *
+     * `signUp()` carries both in the call that makes the account. These
+     * providers do not — they open a session first — so this is the second
+     * round trip that puts them on it, and `profileToWrite` decides whether
+     * there is anything worth sending.
+     *
+     * Apple is the reason it happens here rather than later: it returns the
+     * person's name on the **first** consent for an app and never again, so
+     * this is the only moment it can be saved.
+     *
+     * Every failure past this point is swallowed. They are signed in — the
+     * session is set, and the root layout is already on its way to the tabs.
+     * Failing the whole sign-in over a profile write would strand somebody on
+     * the sign-in screen holding a valid session, and telling them to try
+     * again would only send them back through a sheet that is going to work.
+     */
+    const profile = profileToWrite(
+      metadata,
+      credential.fullName,
+      session?.user?.user_metadata as Record<string, unknown> | undefined,
+    );
+    if (profile) {
+      try {
+        await supabase.auth.updateUser({ data: profile });
+        // Re-read rather than trusting the local copy, for the reason
+        // `setName` does: the greeting on Home renders from `session`, so
+        // that is the thing that has to change when the name does.
+        const { data } = await supabase.auth.getSession();
+        if (data.session) set({ session: data.session });
+      } catch { /* they are in; the name can be set in Settings */ }
+    }
+
+    /**
+     * Hand Apple's authorization code to the server, so that deleting this
+     * account can later tell Apple about it.
+     *
+     * Nothing about signing in needs this — the session above is already open.
+     * It is spent here because it is the only thing that can be traded for an
+     * Apple refresh token, that token is the only thing App Store guideline
+     * 5.1.1(v) can be satisfied with on deletion, and the code expires about
+     * five minutes from now. There is no later.
+     *
+     * Swallowed on failure, on the same trade as the profile write above:
+     * they are signed in, and the cost of losing this is a deletion months
+     * from now that cannot notify Apple — not anything the person in front of
+     * us can see, act on, or be usefully told about.
+     */
+    if (credential.authorizationCode) {
+      try {
+        await supabase.functions.invoke("link-apple", {
+          body: { authorizationCode: credential.authorizationCode },
+        });
+      } catch { /* logged server-side; nothing here is worth failing sign-in for */ }
+    }
+
+    return null;
+  },
+
   sendMagicLink: async (email) => {
     const { error } = await supabase.auth.signInWithOtp({ email });
     return error ? authError(error.message) : null;
@@ -276,6 +459,38 @@ export const useSession = create<SessionState>((set, get) => ({
     set({ recovering: false });
     return null;
   },
+  /**
+   * Write the interview's answers to an account that already exists.
+   *
+   * `signUp()` carries them in the call that makes the account, and
+   * `signInWithProvider` writes them right after the session opens. This is
+   * the third way in: an account that reached the app owing them, sent to the
+   * interview screen by `nextAuthRoute`.
+   *
+   * The failure is reported rather than swallowed, which is the opposite of
+   * what the social profile write does — and deliberately. There, the person
+   * was already through the door and the write was a bonus. Here it is the
+   * only thing that opens the gate, so a silent failure would bounce them
+   * straight back to the interview they just finished with nothing said.
+   *
+   * The session is re-read rather than patched locally, for the same reason
+   * `setName` re-reads: the gate is computed from `session`, so that is the
+   * thing that has to change for it to open.
+   */
+  saveInterview: async (metadata) => {
+    let answer;
+    try {
+      answer = await supabase.auth.updateUser({ data: metadata });
+    } catch (thrown) {
+      return authError(thrown instanceof Error ? thrown.message : null);
+    }
+    if (answer.error) return authError(answer.error.message);
+
+    const { data } = await supabase.auth.getSession();
+    if (data.session) set({ session: data.session });
+    return null;
+  },
+
   // Re-read the session rather than trusting the caller to have it: the
   // greeting on the home screen is rendered from `session`, so it has to be the
   // thing that changes when the name does.

@@ -1,6 +1,19 @@
 # RouteReady — Privacy Policy
 
-**Last updated: 20 August 2026**
+> **This file has a published twin**, and the published one is what Apple and
+> Google actually read:
+> <https://aarav95-r.github.io/routeready-site/privacy.html>
+>
+> It is served from the separate public repo `Aarav95-R/routeready-site` (a
+> working copy sits at `../routeready-site`), so that this repository can stay
+> private while the policy stays reachable at a URL. The `site/` folder here is
+> the editing copy.
+>
+> **Change all three together** — this file, `site/privacy.html`, and the site
+> repo. A policy that disagrees with the one at the URL given to App Store
+> Connect is worse than either version alone.
+
+**Last updated: 29 August 2026**
 
 RouteReady helps learner drivers practise around real UK driving test centres.
 This policy explains what the app collects, why, and what you can do about it.
@@ -22,10 +35,38 @@ Under UK GDPR we are the **data controller** for the information described here.
 When you sign up we collect:
 
 - **Your email address**, which identifies your account and is how you sign in.
-- **Your password**, stored only as a cryptographic hash by our authentication
-  provider. Nobody at RouteReady can see it.
+- **Your password**, if you sign up with one. It is stored only as a
+  cryptographic hash by our authentication provider. Nobody at RouteReady can
+  see it.
 - **Your first name**, if you choose to give one. It is optional, and it is used
   only to greet you in the app.
+
+### If you sign in with Apple or Google
+
+You can create an account with **Sign in with Apple** or **Continue with
+Google** instead of a password. If you do, there is no password at all — the
+provider confirms who you are and hands us a signed token, and we never see
+your Apple or Google credentials.
+
+What we receive from them is the same short list as above:
+
+- **Your email address.**
+- **Your name**, if the provider supplies one. Apple offers it only the first
+  time you ever use Sign in with Apple for this app; Google supplies it each
+  time. We store it only to greet you, and we never overwrite a name you have
+  set yourself.
+
+We do not receive, and never ask for, anything else — no contacts, no calendar,
+no Drive or iCloud content, no profile photo, and no access to your Apple or
+Google account beyond confirming your identity at the moment you sign in.
+
+**Apple's Hide My Email is fully supported.** If you choose it, we only ever
+receive the relay address Apple generates, never your real one, and the app
+works exactly the same.
+
+You can revoke this at any time from your Apple ID or Google account settings.
+Doing so stops you signing in that way; it does not by itself delete your
+RouteReady account, which you can delete in the app as described below.
 
 ### What you tell us at sign-up
 
@@ -85,6 +126,7 @@ We want to be specific, because "we may collect" language usually hides this:
 | What | Why | Legal basis under UK GDPR |
 |---|---|---|
 | Email and password | To create and secure your account | Performance of a contract |
+| Email and name from Apple or Google | To create your account when you choose that way in | Performance of a contract |
 | Name, sign-up answers | To make the app useful to you | Consent — all optional |
 | Mock test results, favourites | To show you your own progress | Performance of a contract |
 | Location, while driving | To navigate and score a practice drive | Performance of a contract |
@@ -96,8 +138,8 @@ field in the app or by deleting your account.
 
 ## Who else is involved
 
-RouteReady uses two service providers. Both are bound by their own contracts and
-neither is permitted to use your data for their own purposes.
+RouteReady uses the service providers below. All are bound by their own
+contracts and none is permitted to use your data for their own purposes.
 
 **Supabase** hosts the database and handles sign-in. Your email, your name if
 you gave one, your sign-up answers, your mock test results and your favourites
@@ -113,6 +155,24 @@ receive your name, email, or anything that identifies your account.
 **Apple** distributes the app and may collect its own data about downloads and
 crashes under its own policy. We do not receive anything from Apple that
 identifies you.
+
+If you use **Sign in with Apple**, Apple additionally acts as your identity
+provider: it confirms who you are and tells us your email address (or a relay
+address, if you chose Hide My Email) and, on first use only, your name. Apple
+does not tell us anything else, and we do not tell Apple anything about what
+you do in the app.
+[apple.com/legal/privacy](https://www.apple.com/legal/privacy/)
+
+If you use **Continue with Google**, Google acts as your identity provider in
+the same way, telling us your email address and your name. We request only the
+basic `email` and `profile` information — nothing from Gmail, Drive, Contacts,
+Calendar or any other Google service — and Google receives nothing from us
+about what you do in the app.
+[policies.google.com/privacy](https://policies.google.com/privacy)
+
+Both of these happen **only if you choose that way of signing in.** If you sign
+up with an email address and password, neither Apple nor Google is involved in
+your account at all.
 
 Some processing by these providers happens outside the UK. Where it does, it is
 covered by the safeguards those providers publish, including the UK

@@ -1,0 +1,903 @@
+<title>Revamping the Mock Test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --emerald: #1A875E; --clay: #B8624A; --amber: #B45309;
+    --red: #B91C1C; --code-bg: #F0F2EC; --frame: #D7D3CB; --pick-ink: #FFFFFF;
+    --rule: #EDEFEA;
+
+    /* Quoted verbatim from src/ui/theme.ts and src/ui/type.ts. These never
+       invert: the phone shows the product, and the product has one
+       appearance. Every mockup below is built from these values only. */
+    --a-field: #F5F0E8; --a-cell: #FFFFFF; --a-label: #1C1917;
+    --a-label2: #574F49; --a-label3: #6B635B; --a-sep: #E4DFD8;
+    --a-fill: #EBE7E1; --a-accent: #1A875E; --a-accent-ink: #146B4A;
+    --a-danger: #DC2626; --a-warning: #D97706; --a-drawing: #EDEBE4;
+    --a-minor-bg: #FEF3C7; --a-minor-fg: #B45309;
+    --a-major-bg: #FEE2E2; --a-major-fg: #B91C1C;
+    --a-credit-bg: #ECFDF5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+      --line: #26302A; --emerald: #34D399; --clay: #E8927A; --amber: #FBBF24;
+      --red: #F87171; --code-bg: #1A211C; --frame: #2C352E; --pick-ink: #0C110E;
+      --rule: #1E2621;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+    --line: #26302A; --emerald: #34D399; --clay: #E8927A; --amber: #FBBF24;
+    --red: #F87171; --code-bg: #1A211C; --frame: #2C352E; --pick-ink: #0C110E;
+    --rule: #1E2621;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-direction: column; gap: 34px; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0;
+  }
+  h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.04; letter-spacing: -0.03em; font-weight: 700; margin: 10px 0 0; text-wrap: balance; }
+  .lede { margin: 16px 0 0; font-size: 17px; color: var(--muted); max-width: 64ch; }
+  h2 { font-size: 21px; letter-spacing: -0.02em; font-weight: 700; margin: 0; text-wrap: balance; }
+  h3 { font-size: 14px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  p { margin: 0; max-width: 66ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14.5px; }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 22px; }
+  .sec-head { display: flex; flex-direction: column; gap: 8px; }
+  code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px; background: var(--code-bg); padding: 1.5px 5px; border-radius: 4px; }
+  ul.notes { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 9px; }
+  ul.notes li { max-width: 66ch; }
+  ul.notes li::marker { color: var(--muted); }
+
+  .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(322px, 1fr)); gap: 30px; align-items: start; }
+  .option { display: flex; flex-direction: column; gap: 12px; }
+  .tag {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .tag .pick { background: var(--emerald); color: var(--pick-ink); border-radius: 999px; padding: 2.5px 8px; letter-spacing: 0.08em; font-weight: 600; }
+  .tag .alt { border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 8px; letter-spacing: 0.08em; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroller { overflow-x: auto; }
+  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(0,0,0,.12); vertical-align: -1px; margin-right: 7px; }
+
+  .callout { border-left: 3px solid var(--amber); background: color-mix(in srgb, var(--amber) 8%, transparent); border-radius: 0 8px 8px 0; padding: 14px 16px; display: flex; flex-direction: column; gap: 7px; }
+  .callout .h { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
+  .callout p { font-size: 14.5px; max-width: 68ch; }
+
+  /* ══ The phone slice: 322 pt wide, the real screen's own colours ══════ */
+  .screen {
+    position: relative; width: 322px; max-width: 100%; height: 512px;
+    border: 1px solid var(--frame); border-radius: 20px; overflow: hidden;
+    background: var(--a-drawing); color: var(--a-label);
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    letter-spacing: -0.01em; flex: none;
+  }
+  .screen.short { height: 320px; }
+  .screen .map { position: absolute; inset: 0; }
+  .screen .map svg { width: 100%; height: 100%; display: block; }
+  .brand { position: absolute; left: 8px; font-size: 7px; font-weight: 600; color: #6F6A63; background: rgba(255,255,255,.75); padding: 1px 4px; border-radius: 3px; }
+
+  /* Type ladder, spelled at the sizes src/ui/type.ts defines */
+  .t-headline { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+  .t-sub { font-size: 15px; line-height: 20px; font-weight: 400; letter-spacing: -0.17px; }
+  .t-foot { font-size: 13px; line-height: 18px; font-weight: 600; }
+  .t-cap { font-size: 13px; line-height: 18px; font-weight: 400; }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  .floaty { box-shadow: 0 4px 14px rgba(28,25,23,.13); }
+
+  /* Chrome pieces reused across mockups */
+  .topbar {
+    position: absolute; left: 14px; right: 14px; top: 12px; height: 40px;
+    background: var(--a-cell); border-radius: 12px; padding: 0 12px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--a-danger); flex: none; }
+  .exit-red { background: var(--a-danger); color: #fff; border-radius: 999px; height: 26px; padding: 0 10px; display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; }
+  .exit-quiet { color: var(--a-label3); border: 1px solid var(--a-sep); border-radius: 999px; height: 26px; padding: 0 11px; display: flex; align-items: center; font-size: 13px; font-weight: 600; }
+  .vrule { width: 1px; height: 18px; background: var(--a-sep); }
+
+  .toast { position: absolute; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,.92); border-radius: 999px; padding: 5px 14px; font-size: 11px; font-weight: 600; color: var(--a-label2); white-space: nowrap; }
+  .pill-warn { position: absolute; left: 16px; right: 16px; display: flex; justify-content: center; }
+  .pill-warn i { font-style: normal; background: var(--a-minor-bg); color: var(--a-minor-fg); border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; text-align: center; line-height: 16px; }
+
+  .controls { position: absolute; left: 16px; right: 16px; display: flex; align-items: center; }
+  .controls .side { flex: 1; display: flex; }
+  .controls .side.r { justify-content: flex-end; }
+  .btn-finish { background: var(--a-label); color: #fff; border-radius: 999px; height: 40px; padding: 0 18px; display: flex; align-items: center; font-size: 13px; font-weight: 600; }
+  .btn-round { width: 44px; height: 44px; border-radius: 50%; background: var(--a-cell); display: grid; place-items: center; }
+  .mirrors {
+    width: 74px; height: 74px; border-radius: 50%; display: grid; place-items: center; align-content: center;
+    background: var(--a-accent); color: #fff; gap: 1px; box-shadow: 0 0 0 6px rgba(26,135,94,.18);
+  }
+  .mirrors.idle { background: #CBD5E1; box-shadow: none; }
+  .mirrors.idle-new { background: var(--a-cell); color: var(--a-label2); box-shadow: 0 4px 14px rgba(28,25,23,.13); }
+  .mirrors .lbl { font-size: 11px; font-weight: 700; }
+
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--a-cell); border-radius: 16px 16px 0 0; box-shadow: 0 -4px 16px rgba(28,25,23,.12); }
+  .grab { width: 36px; height: 4px; border-radius: 2px; background: #D8D1C8; margin: 10px auto; }
+  .barrow { display: flex; align-items: center; justify-content: space-between; padding: 0 16px 14px; gap: 10px; }
+  .tally { font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600; }
+  .undo { background: #F1F5F9; border-radius: 8px; height: 40px; min-width: 64px; display: grid; place-items: center; font-size: 12px; font-weight: 600; color: #475569; padding: 0 12px; }
+
+  /* Category rows, as they are today */
+  .catrow { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+  .catrow .txt { flex: 1; min-width: 0; }
+  .catrow .nm { font-size: 14px; font-weight: 600; }
+  .catrow .ex { font-size: 12px; line-height: 16px; color: var(--a-label3); display: flex; gap: 5px; }
+  .catrow .ex b { font-size: 11px; font-weight: 700; flex: none; }
+  .mk { display: flex; gap: 8px; width: 148px; flex: none; }
+  .mk span { flex: 1; height: 44px; border-radius: 10px; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .mk .min { background: var(--a-minor-bg); color: var(--a-minor-fg); }
+  .mk .maj { background: var(--a-major-bg); color: var(--a-major-fg); }
+  .mk .cr { background: var(--a-credit-bg); color: var(--a-accent); font-size: 18px; }
+
+  /* Proposed: the eight-tile grid */
+  .grid8 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 0 16px 14px; }
+  .tile { background: var(--a-field); border-radius: 12px; min-height: 56px; padding: 9px 11px; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+  .tile .nm { font-size: 15px; line-height: 19px; font-weight: 600; letter-spacing: -0.17px; }
+  .tile .ct { font-size: 12px; font-weight: 700; color: var(--a-minor-fg); }
+  .tile.hot { background: var(--a-minor-bg); }
+  .more { padding: 0 16px 16px; }
+  .more span { display: block; text-align: center; font-size: 13px; font-weight: 600; color: var(--a-accent-ink); padding: 11px; border-radius: 10px; background: var(--a-field); }
+
+  /* Proposed: severity step */
+  .sev { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .sev .q { font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: -0.46px; padding: 2px 0 6px; }
+  .sev .b { min-height: 58px; border-radius: 12px; padding: 10px 14px; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+  .sev .b .t { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+  .sev .b .d { font-size: 13px; line-height: 17px; }
+  .sev .b.min { background: var(--a-minor-bg); color: var(--a-minor-fg); }
+  .sev .b.maj { background: var(--a-major-bg); color: var(--a-major-fg); }
+  .sev .b.cr { background: var(--a-credit-bg); color: var(--a-accent-ink); }
+  .sev .cancel { text-align: center; font-size: 13px; font-weight: 600; color: var(--a-label3); padding: 6px; }
+
+  /* The headroom meter */
+  .meter { display: flex; gap: 3px; height: 8px; }
+  .meter i { flex: 1; border-radius: 2px; background: var(--a-fill); }
+  .meter i.on { background: var(--a-minor-fg); }
+  .meter i.warn { background: var(--a-warning); }
+  .meter.dead i { background: rgba(220,38,38,.22); }
+  .meter.dead i.on { background: var(--a-danger); }
+  .headline-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 0 16px 8px; }
+  .big-left { font-size: 34px; line-height: 38px; font-weight: 700; letter-spacing: -0.9px; }
+  .stopbar { background: var(--a-major-bg); color: var(--a-major-fg); border-radius: 10px; padding: 9px 12px; font-size: 13px; font-weight: 700; margin: 0 16px 10px; }
+
+  /* Annotation callouts pinned beside a mockup */
+  .anno { display: flex; flex-direction: column; gap: 9px; font-size: 13.5px; }
+  .anno .row { display: flex; gap: 9px; align-items: flex-start; }
+  .anno .n { font-family: "IBM Plex Mono", monospace; font-size: 10px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; flex: none; margin-top: 2px; }
+  .anno .row p { max-width: 46ch; }
+  .split { display: grid; grid-template-columns: 322px minmax(260px, 1fr); gap: 30px; align-items: start; }
+  @media (max-width: 720px) { .split { grid-template-columns: 1fr; } }
+
+  .askrow { display: flex; flex-direction: column; gap: 5px; padding: 13px 0; border-bottom: 1px solid var(--rule); }
+  .askrow:last-child { border-bottom: 0; }
+  .askrow .q { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .askrow .a { font-size: 14.5px; color: var(--muted); max-width: 70ch; }
+  a { color: var(--emerald); }
+  :focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; border-radius: 4px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">RouteReady &middot; design &middot; 29 August 2026</p>
+    <h1>Revamping the mock test</h1>
+    <p class="lede">
+      <code>app/route/[id]/mock.tsx</code> is the one screen in the app operated by
+      somebody other than the learner &mdash; a parent or instructor in the passenger
+      seat, marking faults on a moving car&rsquo;s dashboard. It is also the oldest
+      screen still on the pre-restage type and the cool Tailwind greys. Five decisions
+      below, each with the options side by side. Nothing is built yet.
+    </p>
+  </header>
+
+  <!-- ══════════════════════════ 1. TODAY ══════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">01 &middot; where we are</p>
+      <h2>The screen today</h2>
+      <p class="small dim">
+        Six independently positioned layers over the map, and a bottom sheet with two
+        resting heights: 92&nbsp;pt, or 85% of the screen.
+      </p>
+    </div>
+
+    <div class="split">
+      <div class="screen">
+        <div class="map">
+          <svg viewBox="0 0 322 512" role="img" aria-label="Stylised map with a green route line">
+            <rect width="322" height="512" fill="#EDEBE4"/>
+            <path d="M-10 118 H332 M-10 300 H332 M96 -10 V522 M232 -10 V522" stroke="#E2DFD6" stroke-width="13" fill="none"/>
+            <path d="M-10 210 H332 M170 -10 V522" stroke="#E6E3DA" stroke-width="8" fill="none"/>
+            <path d="M60 470 L60 300 L96 300 L96 118 L232 118 L232 250" stroke="#B9B3A8" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M232 250 L232 400 L150 400" stroke="#1A875E" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="232" cy="250" r="14" fill="#fff" opacity=".9"/>
+            <path d="M232 240 l9 20 -9 -6 -9 6 z" fill="#1C1917"/>
+          </svg>
+        </div>
+        <div class="topbar floaty">
+          <div style="display:flex;align-items:center;gap:8px"><i class="dot"></i><span class="t-foot">Mock test</span></div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="t-foot tnum">12:04</span><i class="vrule"></i>
+            <span class="exit-red">&times; Exit</span>
+          </div>
+        </div>
+        <div class="toast floaty" style="top:66px">Observation zone &mdash; check your mirrors</div>
+        <div class="pill-warn" style="top:102px"><i>Use of mirrors &times;3 &mdash; an examiner would likely call this major</i></div>
+        <div class="controls" style="bottom:152px">
+          <div class="side"><span class="btn-finish">Finish test</span></div>
+          <div class="mirrors"><span aria-hidden="true">&#9673;</span><span class="lbl">Mirrors</span></div>
+          <div class="side r"><span class="btn-round floaty" style="color:#1A875E">&#10138;</span></div>
+        </div>
+        <div class="brand" style="bottom:102px">Mapbox &middot; &copy; OpenStreetMap</div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="barrow">
+            <span class="t-foot">Examiner</span>
+            <div style="display:flex;align-items:center;gap:12px">
+              <span class="tally" style="color:#B45309">3 min</span>
+              <span class="tally" style="color:#B91C1C">0 maj</span>
+              <span class="tally" style="color:#1A875E">+1</span>
+              <span class="undo">Undo</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="anno">
+        <div class="row"><span class="n">1</span><p><b>Status bar.</b> A solid <span class="sw" style="background:#DC2626"></span>danger-red Exit pill sits on screen for the whole forty minutes, beside the clock &mdash; the app&rsquo;s loudest colour spent on its rarest action.</p></div>
+        <div class="row"><span class="n">2</span><p><b>Three transient layers</b> stack downward on hand-tuned constants: <code>OFF_ROUTE_BANNER_H&nbsp;96</code>, <code>ZONE_TOAST_TOP_GAP&nbsp;62</code>, <code>PILL_TOP_GAP&nbsp;98</code>. Each one added means another gap to re-tune.</p></div>
+        <div class="row"><span class="n">3</span><p><b>The controls row</b> is pinned at <code>150&nbsp;+&nbsp;insets.bottom</code>. The source comment works out that on an iPhone SE it clears the puck artwork by <b>0.5&nbsp;pt</b>. That is not a margin, it is a coincidence.</p></div>
+        <div class="row"><span class="n">4</span><p><b>Mirrors</b> is <span class="sw" style="background:#CBD5E1"></span><code>slate-300</code> when idle &mdash; a cool grey in an app of warm stone &mdash; and the most-pressed control on the screen.</p></div>
+        <div class="row"><span class="n">5</span><p><b>The collapsed bar</b> reports <code>3 min / 0 maj / +1</code> in monospace. It says what has been counted, never what it means.</p></div>
+        <div class="row"><span class="n">6</span><p><b>Behind the sheet:</b> 23 DVSA categories &times; 3 buttons = <b>69 pressables</b> in one scroll, each 44&nbsp;pt. At 85% the sheet covers Mirrors entirely &mdash; which is why the code force-collapses it whenever a zone opens.</p></div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <div class="h">The through-line</div>
+      <p>
+        Every one of those is the same problem: the marking surface and the driving
+        surface are fighting for one screen, and the fight has been settled with pixel
+        constants. The five decisions below try to settle it with structure instead.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ 2. MARKING ════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">02 &middot; decision one</p>
+      <h2>Where a mark comes from</h2>
+      <p class="small dim">
+        Today: pull the sheet to 85%, scroll 23 rows to find the category, read two
+        example lines, hit one of three 44&nbsp;pt buttons. In a moving car, with the map
+        gone. This is the decision everything else hangs off.
+      </p>
+    </div>
+
+    <div class="options">
+
+      <div class="option">
+        <p class="tag"><span class="pick">Recommended</span> A &middot; The eight that get marked</p>
+        <div class="screen short" style="height:352px;background:var(--a-cell);border-radius:20px">
+          <div class="sheet" style="position:static;box-shadow:none;border-radius:0">
+            <div class="grab"></div>
+            <div class="headline-row">
+              <span class="t-headline">Mark a fault</span>
+              <span class="t-cap" style="color:var(--a-label3)">tap, then how bad</span>
+            </div>
+            <div class="grid8">
+              <div class="tile hot"><span class="nm">Use of mirrors</span><span class="ct">3 marked</span></div>
+              <div class="tile"><span class="nm">Junctions</span></div>
+              <div class="tile"><span class="nm">Positioning</span></div>
+              <div class="tile"><span class="nm">Use of speed</span></div>
+              <div class="tile"><span class="nm">Move off</span></div>
+              <div class="tile"><span class="nm">Signals</span></div>
+              <div class="tile"><span class="nm">Progress</span></div>
+              <div class="tile"><span class="nm">Awareness</span></div>
+            </div>
+            <div class="more"><span>All 23 categories</span></div>
+          </div>
+        </div>
+        <p class="small">
+          Eight tiles at ~150&times;56&nbsp;pt &mdash; roughly <b>four times the target area</b> of
+          today&rsquo;s buttons, no scrolling, no reading. The eight are the ones actually
+          marked on real tests; the remaining fifteen live one tap deeper, in today&rsquo;s
+          grouped list. A tile that has been marked carries its own count, so the
+          habitual-fault warning stops needing a floating pill over the map.
+        </p>
+        <p class="small dim">
+          Cost: the ordering is a claim about which faults are common. It should be
+          seeded from a sensible default and then re-ordered per user from their own
+          history, which we already store.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="alt">Pairs with A</span> B &middot; Then how bad</p>
+        <div class="screen short" style="height:352px;background:var(--a-cell);border-radius:20px">
+          <div class="sheet" style="position:static;box-shadow:none;border-radius:0">
+            <div class="grab"></div>
+            <div class="sev">
+              <span class="q">Use of mirrors</span>
+              <div class="b min"><span class="t">Driving fault</span><span class="d">Missed check where nothing was coming</span></div>
+              <div class="b maj"><span class="t">Serious</span><span class="d">Changing direction into someone unseen</span></div>
+              <div class="b cr"><span class="t">Did it well</span><span class="d">Credit, not a fault</span></div>
+              <span class="cancel">Cancel</span>
+            </div>
+          </div>
+        </div>
+        <p class="small">
+          The second half of A. Three full-width bars, ~58&nbsp;pt tall, each carrying
+          that category&rsquo;s own worked example so the passenger is told where the line
+          falls <em>before</em> marking rather than on the result screen after. Two taps
+          instead of one &mdash; but both are targets you can hit without looking, which
+          the current single tap is not.
+        </p>
+        <p class="small dim">
+          The examples are already written, one per level, for all 23 categories in
+          <code>src/lib/examiner.ts</code>. Today they are 12&nbsp;pt grey lines nobody
+          reads at the wheel.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="alt">Cheapest</span> C &middot; Keep the list, halve the buttons</p>
+        <div class="screen short" style="height:352px;background:var(--a-cell);border-radius:20px">
+          <div class="sheet" style="position:static;box-shadow:none;border-radius:0">
+            <div class="grab"></div>
+            <div style="padding:0 16px">
+              <p class="eyebrow" style="font-size:10.5px;margin:2px 0 4px">While driving</p>
+              <div class="catrow">
+                <div class="txt"><div class="nm">Use of mirrors</div>
+                  <div class="ex"><b style="color:#B45309">MIN</b><span>Missed check where nothing was coming</span></div>
+                  <div class="ex"><b style="color:#B91C1C">MAJ</b><span>Changing direction into someone unseen</span></div>
+                </div>
+                <div class="mk"><span class="min">MIN</span><span class="maj">MAJ</span><span class="cr">+</span></div>
+              </div>
+              <div class="catrow">
+                <div class="txt"><div class="nm">Junctions</div>
+                  <div class="ex"><b style="color:#B45309">MIN</b><span>Approaching a touch fast; slightly wide</span></div>
+                  <div class="ex"><b style="color:#B91C1C">MAJ</b><span>Emerging into a gap that forces a brake</span></div>
+                </div>
+                <div class="mk"><span class="min">MIN</span><span class="maj">MAJ</span><span class="cr">+</span></div>
+              </div>
+              <div class="catrow">
+                <div class="txt"><div class="nm">Signals</div>
+                  <div class="ex"><b style="color:#B45309">MIN</b><span>Late, or left flashing after the turn</span></div>
+                </div>
+                <div class="mk"><span class="min">MIN</span><span class="maj">MAJ</span><span class="cr">+</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="small">
+          Leave the structure alone; restage the type onto the ladder, move the greys to
+          warm stone, and make <b>tap&nbsp;=&nbsp;minor, long-press&nbsp;=&nbsp;major</b> so
+          each row carries two wide buttons instead of three narrow ones. Haptics already
+          differ per level, so the confirmation is there.
+        </p>
+        <p class="small dim">
+          Cost: long-press is invisible. It also does not fix the real problem &mdash;
+          finding one row in twenty-three while the map is covered.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ 3. SNAP POINTS ════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">03 &middot; decision two</p>
+      <h2>Where the sheet rests</h2>
+      <p class="small dim">
+        Two snap points today: 92&nbsp;pt (a one-line tally) or 85% (the map is gone).
+        There is no height at which you can both mark a fault and see the road ahead.
+      </p>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <p class="tag"><span class="pick">Recommended</span> A &middot; Add a middle</p>
+        <div class="screen">
+          <div class="map">
+            <svg viewBox="0 0 322 512" role="img" aria-label="Map with a three-quarter height sheet">
+              <rect width="322" height="512" fill="#EDEBE4"/>
+              <path d="M-10 90 H332 M96 -10 V522 M232 -10 V522" stroke="#E2DFD6" stroke-width="13" fill="none"/>
+              <path d="M232 40 L232 200" stroke="#1A875E" stroke-width="7" fill="none" stroke-linecap="round"/>
+              <circle cx="232" cy="200" r="13" fill="#fff" opacity=".9"/>
+              <path d="M232 191 l8 18 -8 -5 -8 5 z" fill="#1C1917"/>
+            </svg>
+          </div>
+          <div class="topbar floaty">
+            <div style="display:flex;align-items:center;gap:8px"><i class="dot"></i><span class="t-foot">Mock test</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span class="t-foot tnum">12:04</span><i class="vrule"></i><span class="exit-quiet">Exit</span></div>
+          </div>
+          <div class="sheet" style="height:300px">
+            <div class="grab"></div>
+            <div class="headline-row">
+              <span class="t-headline">Mark a fault</span>
+              <span class="undo" style="height:32px;min-width:56px">Undo</span>
+            </div>
+            <div class="grid8">
+              <div class="tile hot"><span class="nm">Use of mirrors</span><span class="ct">3 marked</span></div>
+              <div class="tile"><span class="nm">Junctions</span></div>
+              <div class="tile"><span class="nm">Positioning</span></div>
+              <div class="tile"><span class="nm">Use of speed</span></div>
+              <div class="tile"><span class="nm">Move off</span></div>
+              <div class="tile"><span class="nm">Signals</span></div>
+            </div>
+            <div class="more"><span>All 23 categories</span></div>
+          </div>
+        </div>
+        <p class="small">
+          Three snaps: <b>collapsed</b> (the meter and Undo, ~96&nbsp;pt) &middot;
+          <b>marking</b> (~58%, the eight tiles &mdash; the map keeps the road ahead and the
+          puck) &middot; <b>full</b> (85%, all 23). The middle becomes the default resting
+          height once the test is running, because marking is what this screen is for.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="alt">Alternative</span> B &middot; No sheet at all while driving</p>
+        <div class="screen">
+          <div class="map">
+            <svg viewBox="0 0 322 512" role="img" aria-label="Map with marking as a full-screen overlay trigger">
+              <rect width="322" height="512" fill="#EDEBE4"/>
+              <path d="M-10 90 H332 M-10 330 H332 M96 -10 V522" stroke="#E2DFD6" stroke-width="13" fill="none"/>
+              <path d="M96 40 L96 330 L280 330" stroke="#1A875E" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="96" cy="290" r="13" fill="#fff" opacity=".9"/>
+              <path d="M96 281 l8 18 -8 -5 -8 5 z" fill="#1C1917"/>
+            </svg>
+          </div>
+          <div class="topbar floaty">
+            <div style="display:flex;align-items:center;gap:8px"><i class="dot"></i><span class="t-foot">Mock test</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span class="t-foot tnum">12:04</span><i class="vrule"></i><span class="exit-quiet">Exit</span></div>
+          </div>
+          <div style="position:absolute;left:14px;right:14px;top:60px;background:var(--a-cell);border-radius:12px;padding:11px 13px;display:flex;flex-direction:column;gap:8px" class="floaty">
+            <div style="display:flex;align-items:baseline;justify-content:space-between">
+              <span class="t-foot">12 driving faults left</span>
+              <span class="t-cap tnum" style="color:var(--a-label3)">3 marked</span>
+            </div>
+            <div class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+          <div class="brand" style="bottom:96px">Mapbox &middot; &copy; OpenStreetMap</div>
+          <div style="position:absolute;left:0;right:0;bottom:0;background:var(--a-cell);padding:12px 16px 22px;display:flex;gap:10px;align-items:center" class="floaty">
+            <span class="btn-round" style="background:var(--a-field);color:var(--a-label2)">&#8617;</span>
+            <span style="flex:1;height:54px;border-radius:14px;background:var(--a-label);color:#fff;display:grid;place-items:center;font-size:17px;font-weight:600;letter-spacing:-0.41px">Mark a fault</span>
+            <span class="mirrors idle-new" style="width:54px;height:54px"><span class="lbl" style="font-size:10px">Mirrors</span></span>
+          </div>
+        </div>
+        <p class="small">
+          The map keeps the whole screen. One wide <b>Mark a fault</b> bar opens the
+          category grid as a full-height modal, which closes itself the moment a mark
+          lands. Nothing ever half-covers the road.
+        </p>
+        <p class="small dim">
+          Cost: a modal that eats the screen for two seconds while the car is moving,
+          and a Mirrors button demoted from 74&nbsp;pt to fit the bar beside it &mdash;
+          the one control that is pressed on a five-second deadline.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ 4. MESSAGE SLOT ═══════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">04 &middot; decision three</p>
+      <h2>One message slot instead of three stacked layers</h2>
+      <p class="small dim">
+        The off-route banner, the observation-zone toast and the habitual-fault pill are
+        three absolutely-positioned views that must be told about each other&rsquo;s
+        heights. They can also all be on screen at once, which is three things asking for
+        attention while somebody is turning left.
+      </p>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <p class="tag">Today &middot; three layers, three constants</p>
+        <div class="screen short">
+          <div class="map"><svg viewBox="0 0 322 320" role="img" aria-label="Map with three stacked notification layers"><rect width="322" height="320" fill="#EDEBE4"/><path d="M-10 250 H332 M232 -10 V330" stroke="#E2DFD6" stroke-width="13" fill="none"/></svg></div>
+          <div style="position:absolute;left:12px;right:12px;top:12px;background:#FEF3C7;border-radius:12px;padding:9px 12px" class="floaty">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#B45309">Off route</div>
+            <div class="t-headline" style="color:#7C2D12">Rejoining &mdash; 240 m skipped</div>
+          </div>
+          <div class="topbar floaty" style="top:108px">
+            <div style="display:flex;align-items:center;gap:8px"><i class="dot"></i><span class="t-foot">Mock test</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span class="t-foot tnum">12:04</span><i class="vrule"></i><span class="exit-red">&times; Exit</span></div>
+          </div>
+          <div class="toast floaty" style="top:162px">Observation zone &mdash; check your mirrors</div>
+          <div class="pill-warn" style="top:198px"><i>Use of mirrors &times;3 &mdash; an examiner would likely call this major</i></div>
+        </div>
+        <p class="small dim">
+          Four bands of chrome from the top of the screen down to 240&nbsp;pt. Adding a
+          fifth message means re-deriving every gap below it by hand.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="pick">Recommended</span> One slot, by priority</p>
+        <div class="screen short">
+          <div class="map"><svg viewBox="0 0 322 320" role="img" aria-label="Map with a single message slot under the status bar"><rect width="322" height="320" fill="#EDEBE4"/><path d="M-10 250 H332 M232 -10 V330" stroke="#E2DFD6" stroke-width="13" fill="none"/></svg></div>
+          <div class="topbar floaty" style="height:44px">
+            <div style="display:flex;align-items:center;gap:8px"><i class="dot"></i><span class="t-foot">Mock test</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span class="t-foot tnum">12:04</span><i class="vrule"></i><span class="exit-quiet">Exit</span></div>
+          </div>
+          <div style="position:absolute;left:14px;right:14px;top:64px;background:#FEF3C7;border-radius:12px;padding:10px 13px;display:flex;align-items:center;gap:10px" class="floaty">
+            <span style="width:6px;height:34px;border-radius:3px;background:#B45309;flex:none"></span>
+            <div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:#B45309">Off route</div>
+              <div class="t-sub" style="color:#7C2D12;font-weight:600">Rejoining &mdash; 240 m skipped</div>
+            </div>
+          </div>
+          <div style="position:absolute;left:14px;right:14px;top:124px;display:flex;gap:6px">
+            <span style="flex:1;height:3px;border-radius:2px;background:#B45309"></span>
+            <span style="flex:1;height:3px;border-radius:2px;background:rgba(180,83,9,.25)"></span>
+            <span style="flex:1;height:3px;border-radius:2px;background:rgba(180,83,9,.25)"></span>
+          </div>
+        </div>
+        <p class="small">
+          One slot directly under the status bar, one message at a time, ranked. Three
+          ticks show a message is queued behind the current one. Everything below it has
+          a <b>fixed</b> position again &mdash; the three stacking constants collapse into
+          one slot height.
+        </p>
+      </div>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Rank</th><th>Message</th><th>Holds for</th><th>Why it ranks there</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td><span class="sw" style="background:#FEF3C7"></span>Off route &mdash; rejoining</td><td>Until rejoined</td><td>Changes what the driver should do next. Nothing outranks the road.</td></tr>
+          <tr><td class="num">2</td><td><span class="sw" style="background:#1A875E"></span>Observation zone &mdash; mirrors</td><td>While the zone is live</td><td>Has a deadline. Missing it costs a fault, so it interrupts.</td></tr>
+          <tr><td class="num">3</td><td><span class="sw" style="background:#FEF3C7"></span>Habitual fault warning</td><td>8 s, then it&rsquo;s on the tile</td><td>Advisory. The tile&rsquo;s own count carries it afterwards, permanently.</td></tr>
+          <tr><td class="num">4</td><td><span class="sw" style="background:#EBE7E1"></span>Mark recorded / undone</td><td>3 s</td><td>Confirmation the passenger already felt through the haptic.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ 5. THE METER ══════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">05 &middot; decision four</p>
+      <h2>The tally becomes headroom</h2>
+      <p class="small dim">
+        <code>src/lib/scoring/engine.ts</code> is unambiguous:
+        <code>passed = majors === 0 &amp;&amp; minors &lt;= 15</code>. The screen already
+        knows that during the drive &mdash; and reports <code>3 min &nbsp; 0 maj &nbsp; +1</code>
+        in monospace instead.
+      </p>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <p class="tag"><span class="pick">Recommended</span> A &middot; Fifteen ticks</p>
+        <div class="screen short" style="height:210px;background:var(--a-field)">
+          <div style="position:absolute;left:0;right:0;bottom:0;background:var(--a-cell);border-radius:16px 16px 0 0;padding-bottom:20px">
+            <div class="grab"></div>
+            <div style="padding:0 16px 12px;display:flex;flex-direction:column;gap:9px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between">
+                <span class="t-headline">12 driving faults left</span>
+                <span class="t-cap tnum" style="color:var(--a-label3)">+1 credit</span>
+              </div>
+              <div class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+              <span class="t-cap" style="color:var(--a-label3)">No serious faults</span>
+            </div>
+          </div>
+        </div>
+        <div class="screen short" style="height:210px;background:var(--a-field);margin-top:10px">
+          <div style="position:absolute;left:0;right:0;bottom:0;background:var(--a-cell);border-radius:16px 16px 0 0;padding-bottom:20px">
+            <div class="grab"></div>
+            <div class="stopbar">One serious fault &mdash; a real test would end here</div>
+            <div style="padding:0 16px 12px;display:flex;flex-direction:column;gap:9px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between">
+                <span class="t-headline" style="color:var(--a-major-fg)">3 driving faults left</span>
+                <span class="t-cap tnum" style="color:var(--a-label3)">+1 credit</span>
+              </div>
+              <div class="meter dead"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div>
+            </div>
+          </div>
+        </div>
+        <p class="small">
+          Fifteen ticks, one per allowed driving fault, filled as they land and turning
+          <span class="sw" style="background:#D97706"></span>amber past the tenth. A
+          serious fault is not a sixteenth tick &mdash; it is a different outcome, so it
+          takes its own bar and the strip goes red behind it. Readable in the
+          quarter-second a passenger can spare.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="alt">Alternative</span> B &middot; One number</p>
+        <div class="screen short" style="height:210px;background:var(--a-field)">
+          <div style="position:absolute;left:0;right:0;bottom:0;background:var(--a-cell);border-radius:16px 16px 0 0;padding-bottom:20px">
+            <div class="grab"></div>
+            <div style="padding:0 16px 12px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px">
+              <div style="display:flex;align-items:baseline;gap:9px">
+                <span class="big-left tnum">12</span>
+                <span class="t-sub" style="color:var(--a-label2);padding-bottom:4px">faults<br>left</span>
+              </div>
+              <div style="text-align:right">
+                <div class="t-foot" style="color:var(--a-label3)">0 serious</div>
+                <div class="t-foot tnum" style="color:var(--a-accent-ink)">+1 credit</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="small">
+          The number alone, at 34&nbsp;pt &mdash; the largest thing on the screen after the
+          map. Nothing to decode. Loses the sense of <em>proportion</em> a strip gives
+          you: 12&nbsp;left and 3&nbsp;left look identical until you read the digits, and
+          reading is the thing we are trying to avoid.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout">
+      <div class="h">One honesty problem to settle before this ships</div>
+      <p>
+        A meter that says &ldquo;12 left&rdquo; is claiming to know the verdict. Right now
+        it can&rsquo;t: <code>aggregate()</code> also counts speeding runs and missed
+        observation zones, and those are only computed at <code>finish()</code>. Missed
+        zones are actually known live &mdash; <code>zoneOutcomes</code> is written as each
+        zone closes &mdash; so the gap is speeding alone. Either we run the speeding
+        detector incrementally over <code>samples</code> so the meter is true, or the
+        meter is labelled <b>&ldquo;marked faults&rdquo;</b> and stops implying a verdict.
+        My preference is the first; the second is a one-line fallback if it turns out to
+        be expensive on-device.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ 6. BOTTOM BAR ═════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">06 &middot; decision five</p>
+      <h2>Mirrors, Finish, and the red that never leaves</h2>
+      <p class="small dim">
+        Three controls float in a row 150&nbsp;pt off the bottom, hand-placed to miss the
+        puck by half a point. Two of them are pressed once a drive; one is pressed at
+        every observation zone, on a deadline.
+      </p>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <p class="tag"><span class="pick">Recommended</span> Mirrors owns the bottom, on a clock</p>
+        <div class="screen short" style="height:300px">
+          <div class="map"><svg viewBox="0 0 322 300" role="img" aria-label="Map with a prominent mirrors control"><rect width="322" height="300" fill="#EDEBE4"/><path d="M-10 60 H332 M232 -10 V310" stroke="#E2DFD6" stroke-width="13" fill="none"/><path d="M232 -10 V150" stroke="#1A875E" stroke-width="7" fill="none"/><circle cx="232" cy="150" r="13" fill="#fff" opacity=".9"/><path d="M232 141 l8 18 -8 -5 -8 5 z" fill="#1C1917"/></svg></div>
+          <div class="controls" style="bottom:118px">
+            <div class="side"><span class="btn-round floaty" style="background:var(--a-cell);color:var(--a-label2)">&#8617;</span></div>
+            <div style="position:relative">
+              <svg width="92" height="92" style="position:absolute;left:-9px;top:-9px" aria-hidden="true">
+                <circle cx="46" cy="46" r="42" fill="none" stroke="rgba(26,135,94,.18)" stroke-width="5"/>
+                <circle cx="46" cy="46" r="42" fill="none" stroke="#1A875E" stroke-width="5" stroke-linecap="round" stroke-dasharray="264" stroke-dashoffset="92" transform="rotate(-90 46 46)"/>
+              </svg>
+              <div class="mirrors" style="position:relative;box-shadow:none"><span aria-hidden="true">&#9673;</span><span class="lbl">Mirrors</span></div>
+            </div>
+            <div class="side r"><span class="btn-round floaty" style="color:#1A875E">&#10138;</span></div>
+          </div>
+          <div class="brand" style="bottom:78px">Mapbox &middot; &copy; OpenStreetMap</div>
+          <div class="sheet" style="height:64px">
+            <div class="grab"></div>
+            <div style="padding:0 16px;display:flex;align-items:center;justify-content:space-between">
+              <span class="t-foot">12 faults left</span>
+              <span class="undo" style="height:32px;min-width:56px">Undo</span>
+            </div>
+          </div>
+        </div>
+        <ul class="notes small">
+          <li><b>Mirrors keeps 74&nbsp;pt and gains a ring</b> that drains while the zone is
+            live, so the passenger can see how long they have rather than guessing from a
+            glow.</li>
+          <li><b>Idle is white-on-map, not <code>slate-300</code></b> &mdash; a real control
+            that is currently off, rather than a dead grey disc. Active stays
+            <span class="sw" style="background:#1A875E"></span><code>#1A875E</code>.</li>
+          <li><b>Finish test leaves the row.</b> It is pressed once, at the end, and it
+            currently sits beside the two controls pressed while moving. It belongs in the
+            sheet, under the meter, with the confirm dialog it already has.</li>
+          <li><b>Exit loses its red.</b> A quiet outlined pill in the status bar, same
+            confirm behind it. That frees <span class="sw" style="background:#DC2626"></span><code>#DC2626</code>
+            to mean exactly one thing on this screen: a serious fault.</li>
+          <li><b>The row is stacked off the sheet&rsquo;s height</b> the way the Mapbox logo
+            already is, rather than a tuned literal. That deletes the 0.5&nbsp;pt-clearance
+            comment and the class of bug it documents.</li>
+        </ul>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="alt">Consider</span> Mirrors as the whole bar</p>
+        <div class="screen short" style="height:300px">
+          <div class="map"><svg viewBox="0 0 322 300" role="img" aria-label="Map with mirrors as a full width bar"><rect width="322" height="300" fill="#EDEBE4"/><path d="M-10 60 H332 M232 -10 V310" stroke="#E2DFD6" stroke-width="13" fill="none"/><path d="M232 -10 V150" stroke="#1A875E" stroke-width="7" fill="none"/><circle cx="232" cy="150" r="13" fill="#fff" opacity=".9"/><path d="M232 141 l8 18 -8 -5 -8 5 z" fill="#1C1917"/></svg></div>
+          <div style="position:absolute;right:14px;bottom:170px"><span class="btn-round floaty" style="color:#1A875E">&#10138;</span></div>
+          <div class="brand" style="bottom:150px">Mapbox &middot; &copy; OpenStreetMap</div>
+          <div style="position:absolute;left:14px;right:14px;bottom:96px;height:60px;border-radius:16px;background:var(--a-accent);color:#fff;display:flex;align-items:center;justify-content:center;gap:9px" class="floaty">
+            <span aria-hidden="true" style="font-size:19px">&#9673;</span>
+            <span style="font-size:17px;font-weight:600;letter-spacing:-0.41px">Mirrors checked</span>
+          </div>
+          <div class="sheet" style="height:76px">
+            <div class="grab"></div>
+            <div style="padding:0 16px;display:flex;flex-direction:column;gap:7px">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <span class="t-foot">12 faults left</span>
+                <span class="undo" style="height:30px;min-width:52px">Undo</span>
+              </div>
+              <div class="meter"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+          </div>
+        </div>
+        <p class="small">
+          When a zone is live, a full-width green bar appears where nothing was before
+          &mdash; ~294&times;60&nbsp;pt, impossible to miss or mis-hit &mdash; and vanishes when
+          the zone closes. No permanent grey disc taking up the bottom of the map for the
+          38 minutes it isn&rsquo;t needed.
+        </p>
+        <p class="small dim">
+          Cost: a control that appears and disappears is a control the passenger has to
+          re-find each time, and its arrival is itself a prompt &mdash; which arguably makes
+          the mirror check <em>too</em> easy to pass.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ 7. RESTAGE ════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">07 &middot; underneath all five</p>
+      <h2>The restage</h2>
+      <p class="small dim">
+        This screen predates the type ladder and the warm-neutral palette. Whichever
+        options above are picked, these swaps happen anyway &mdash; they are what makes it
+        sit beside Quiz and Manoeuvres rather than looking like a different app.
+      </p>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead><tr><th>What</th><th>Today</th><th>Becomes</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Font sizes</td>
+            <td class="num">10, 11, 12, 13, 14, 16, 18</td>
+            <td class="num">17 / 15 / 13 &mdash; and 34 if a number leads</td>
+            <td>Seven sizes, none of them on the ladder in <code>src/ui/type.ts</code>. Four of the seven are below 13&nbsp;pt on a screen read at arm&rsquo;s length in a car.</td>
+          </tr>
+          <tr>
+            <td>Face</td>
+            <td>System (no family set)</td>
+            <td><code>FACES[weight]</code> &mdash; Plus Jakarta Sans</td>
+            <td>Every <code>Text</code> here renders in the system face. The tallies are the app&rsquo;s only monospace and would go with it.</td>
+          </tr>
+          <tr>
+            <td>Secondary ink</td>
+            <td><span class="sw" style="background:#64748B"></span><code>text-slate-500</code> #64748B</td>
+            <td><span class="sw" style="background:#574F49"></span><code>labelSecondary</code> #574F49</td>
+            <td>Cool blue-grey against warm stone. The single biggest reason this screen reads as software.</td>
+          </tr>
+          <tr>
+            <td>Idle Mirrors</td>
+            <td><span class="sw" style="background:#CBD5E1"></span><code>bg-slate-300</code></td>
+            <td><span class="sw" style="background:#FFFFFF"></span><code>cell</code> + shadow</td>
+            <td>Same reason, on the most-looked-at control.</td>
+          </tr>
+          <tr>
+            <td>Undo</td>
+            <td><span class="sw" style="background:#F1F5F9"></span>#F1F5F9 on #475569</td>
+            <td><span class="sw" style="background:#EBE7E1"></span><code>fill</code> on <code>labelSecondary</code></td>
+            <td>Two more hard-coded cool greys in <code>ExaminerSheet.tsx</code>.</td>
+          </tr>
+          <tr>
+            <td>Hairlines</td>
+            <td><code>bg-stone-200</code></td>
+            <td><span class="sw" style="background:#E4DFD8"></span><code>separator</code> #E4DFD8</td>
+            <td>Close, but not the palette&rsquo;s own value.</td>
+          </tr>
+          <tr>
+            <td>Fault levels</td>
+            <td>#FEF3C7 / #FEE2E2 / #ECFDF5</td>
+            <td><b>Unchanged</b></td>
+            <td>These are already right and already centralised in <code>LEVEL_STYLE</code>. The amber and red carry meaning; leave them alone.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <div class="h">Two palette rules this design holds to</div>
+      <p>
+        <b>No second green.</b> The route line is <span class="sw" style="background:#1A875E"></span><code>#1A875E</code>
+        and so is Mirrors-when-live, because both mean &ldquo;go, now&rdquo;. The headroom
+        meter therefore never uses green for &ldquo;you&rsquo;re fine&rdquo; &mdash; unfilled
+        ticks are <span class="sw" style="background:#EBE7E1"></span><code>fill</code>, and
+        the strip only takes colour as it fills. Nothing on this screen competes with the
+        road for a green glance.
+      </p>
+      <p>
+        <b>No clay.</b> <span class="sw" style="background:#B8624A"></span><code>#B8624A</code>
+        owns progress and the person&rsquo;s own account, and it appears nowhere on a live
+        drive. The meter is amber-to-red, not clay, even though it is technically progress.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════ 8. SCOPE ══════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">08 &middot; boundary</p>
+      <h2>What none of this touches</h2>
+    </div>
+    <ul class="notes small">
+      <li>The nav loop &mdash; <code>onPosition</code>, <code>navFix</code>, <code>navSnap</code>,
+        the compass smoothing and the camera pushes. Untouched.</li>
+      <li><code>routeLifecycleReducer</code> and the preview &rarr; approach &rarr; at-start
+        &rarr; test &rarr; finish-prompt legs. This redesign only re-dresses the
+        <code>test</code> leg; the other four keep their current cards.</li>
+      <li>Scoring. <code>aggregate()</code> stays a pure function of the faults handed to it.
+        The only open question is whether the <em>speeding</em> detector also runs
+        incrementally so the live meter can be honest.</li>
+      <li>Off-route detection, the return leg, and deviation recording. Only where the
+        banner is drawn changes.</li>
+      <li>The result screen. It has its own restage due, separately.</li>
+    </ul>
+  </section>
+
+  <!-- ══════════════════════════ 9. ASKS ═══════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">09 &middot; over to you</p>
+      <h2>The five picks</h2>
+      <p class="small dim">Say the letters and I&rsquo;ll write the plan against them.</p>
+    </div>
+    <div>
+      <div class="askrow">
+        <span class="q">1 &middot; Marking</span>
+        <span class="a">A + B (eight tiles, then severity) &nbsp;/&nbsp; A alone &nbsp;/&nbsp; C (keep the list, restage it)</span>
+      </div>
+      <div class="askrow">
+        <span class="q">2 &middot; Sheet heights</span>
+        <span class="a">A (three snaps, marking is the default rest) &nbsp;/&nbsp; B (no sheet, full-screen modal)</span>
+      </div>
+      <div class="askrow">
+        <span class="q">3 &middot; Message slot</span>
+        <span class="a">One ranked slot &nbsp;/&nbsp; keep the three layers</span>
+      </div>
+      <div class="askrow">
+        <span class="q">4 &middot; Headroom</span>
+        <span class="a">A (fifteen ticks) &nbsp;/&nbsp; B (one number) &nbsp;/&nbsp; keep the tallies &mdash; and: live speeding detection, or label it &ldquo;marked faults&rdquo;?</span>
+      </div>
+      <div class="askrow">
+        <span class="q">5 &middot; Bottom bar</span>
+        <span class="a">Mirrors with a countdown ring &nbsp;/&nbsp; Mirrors as a full-width bar that appears &mdash; and is Finish moving into the sheet?</span>
+      </div>
+    </div>
+  </section>
+
+</div>

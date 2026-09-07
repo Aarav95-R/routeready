@@ -11,21 +11,24 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { getRoute } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
 import { useMockTest } from "@/stores/mockTestStore";
-import { EXAMINER_CATEGORIES, habitualWarnings, minorCountsByCategory, type MarkLevel } from "@/lib/examiner";
+import { categoryById, habitualWarnings, markCountsByCategory, type MarkLevel } from "@/lib/examiner";
+import { liveTally } from "@/lib/mockLive";
 import { cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath } from "@/lib/geo";
 import { advance, ANNOUNCE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, rebaseRouteCursor, remainingM, routeProgress } from "@/lib/navigation";
 import { confirmExitMockTest, HOME_HREF } from "@/lib/exitRoute";
 import { COMPASS_ALPHA, ICON_TICK_MS, LOOP_CLOSE_M, navFix, navSnap } from "@/lib/navmap";
 import { chooseRejoin, departureLine, initialOffRoute, REJOINED_LINE, SKIP_WARN_M, stepOffRoute, type OffRouteState, type Rejoin } from "@/lib/offRoute";
-import { createRouteLifecycle, qualifyLocationFix, routeLifecycleReducer, START_RADIUS_M, type RouteFix } from "@/lib/routeLifecycle";
+import { createRouteLifecycle, qualifyLocationFix, routeLifecycleReducer, START_CONFIRM_RADIUS_M, type RouteFix } from "@/lib/routeLifecycle";
 import type { ObservationZone, Route } from "@/types/db";
-import { EXAMINER_BAR_H, ExaminerBar, ExaminerCategoryList, ExaminerWarningPill } from "@/ui/ExaminerSheet";
+import { type DriveMessage, DriveMessageSlot, MESSAGE_TTL } from "@/ui/DriveMessageSlot";
+import { EXAMINER_HEADER_H, ExaminerMarkList, ExaminerScoreHeader } from "@/ui/ExaminerSheet";
 import { ManeuverBanner } from "@/ui/ManeuverBanner";
 import { NavMap, NavMapHandle } from "@/ui/NavMap";
 import { RoutePreviewCard } from "@/ui/RoutePreviewCard";
 import { RouteFinishPrompt } from "@/ui/RouteFinishPrompt";
 import { RouteStartPrompt } from "@/ui/RouteStartPrompt";
 import { colors } from "@/ui/theme";
+import { body, caption, footnote, subheadline } from "@/ui/type";
 
 // The screen's own three stages, distinct from the store's phase: the store
 // only knows "idle | running | finished", because it only cares whether what
@@ -46,13 +49,18 @@ type Leg = "preview" | "approach" | "at-start" | "test" | "finish-prompt" | "loc
 
 // The collapsed sheet is gorhom's handle — container padding 10 pt top and
 // bottom plus a 4 pt indicator (node_modules/@gorhom/bottom-sheet/src/
-// components/bottomSheetHandle/styles.ts) — over the examiner bar, whose own
+// components/bottomSheetHandle/styles.ts) — over the pinned score, whose own
 // height comes from ExaminerSheet.tsx so the two can never drift apart. A
 // fixed pixel count, not a percentage: a percentage of screen height gives a
 // different content height on every phone, which is what clipped the undo
 // button and hid the warning before this fix.
 const SHEET_HANDLE_H = 24;
-const SHEET_COLLAPSED_BASE_H = SHEET_HANDLE_H + EXAMINER_BAR_H; // 92
+const SHEET_COLLAPSED_BASE_H = SHEET_HANDLE_H + EXAMINER_HEADER_H;
+
+// Two heights, not three. A listed mark sheet wants the screen: the middle
+// height existed to show an eight-tile grid that no longer exists, and a list
+// of twenty-three read through a 58% window was the worst of both.
+const SHEET_FULL = "92%";
 
 // The floating logo/attribution is stacked off the collapsed sheet's height
 // alone, so a phone with a home indicator carries it up rather than letting
@@ -62,58 +70,34 @@ const SHEET_COLLAPSED_BASE_H = SHEET_HANDLE_H + EXAMINER_BAR_H; // 92
 //   sheet              [0,     h]
 //   logo + attribution [h + 8, h + 30]   Mapbox's terms require both visible
 const LOGO_GAP = 8;
+const LOGO_BAND_H = 22;
 
-// The controls row sits a tuned distance above the *sheet*, not the pill —
-// it nearly touches the vehicle puck and cannot afford to inherit some other
-// element's height, so it is added to insets.bottom directly rather than
-// stacked through logoBottom/pillTop the way the logo is.
+// The controls row now stacks off the sheet the way the logo does, rather than
+// sitting at a tuned distance from the bottom of the screen.
 //
-// The puck sits at 62% of screen height (NavMap's PUCK_SCREEN_FRACTION) in an
-// 88 pt box (NavPuck's PUCK_SIZE), so its centre is 0.38 x H from the bottom
-// of the screen. Only the middle of that box is drawn: the puck's visible
-// artwork spans SVG y 19-73 inside it, so the artwork's lower edge sits
-// centre - 44 + 15 = centre - 29. On a 667 pt-tall screen (iPhone SE, the
-// smallest this app targets, insets.bottom 0) that is 0.38 x 667 - 29 = 224.5
-// pt from the bottom. The controls row is 74 pt tall (the mirrors circle),
-// so at bottom: 150 it spans [150, 224] — clearing the artwork by 0.5 pt.
+// It used to be `150 + insets.bottom`, carrying a comment that worked out that
+// this cleared the driver puck's visible artwork by 0.5 pt on an iPhone SE.
+// That is not a margin, it is a coincidence, and it had already been broken
+// once by the home-indicator inset. Stacking gives real headroom instead:
 //
-// insets.bottom is added on top of the 150 (not folded into a single fixed
-// literal) because the collapsed sheet's own height already grows by
-// insets.bottom pt (see sheetCollapsedH below), and a flat 150 stopped
-// clearing the Mapbox logo band by exactly that amount on any phone with a
-// 34 pt home-indicator inset: logo top = 92 + 34 + 30 = 156, three pt inside
-// a static [150, 224] controls row. Every notched/Dynamic-Island iPhone in
-// current use has a 34 pt bottom inset, so this is not a hypothetical case.
-// Growing the puck's own screen fraction with H more than covers the extra
-// headroom this adds — see the check above.
+//   puck artwork's lower edge   0.38 x H - 29     (NavMap PUCK_SCREEN_FRACTION
+//                                                  0.62, NavPuck PUCK_SIZE 88,
+//                                                  artwork spans SVG y 19-73)
+//   controls row's top edge     sheet + 8 + 22 + 16 + 74 + insets.bottom
 //
-// Do not make this depend on whether the pill, the toast or anything else is
-// currently on screen: at this margin, one reserved-but-invisible band is
-// enough to push the row's top edge into the puck. That is exactly what
-// happened when this used to be pillBottom + PILL_MAX_H + CONTROLS_GAP.
-const CONTROLS_BOTTOM = 150;
+// On a 667 pt screen with no inset that is 224.5 against 207 — 17.5 pt of
+// clearance where there used to be half a point. On a 852 pt screen with the
+// usual 34 pt inset it is 294.8 against 241. Both grow with the screen, so
+// the check holds rather than needing re-deriving per device.
+const CONTROLS_GAP = 16;
 
-// The habitual-warning pill used to float just above the controls row, but
-// that band sits inside the puck's visible artwork on a short screen (see
-// CONTROLS_BOTTOM above) whether or not the pill itself is rendered — the
-// bottom of the screen has no spare room for it. Moved to the top instead,
-// below the observation-zone toast: the pill is informational, not tied to
-// the road ahead the way the toast and the controls are, so it does not need
-// to live near the bottom stack at all. Measured from the top of the screen:
-//
-//   banner       [insets.top + 6,  insets.top + 46]
-//   zone toast    insets.top + 62                    one line, ~28 pt
-//   warning pill  insets.top + 98                     36 pt clear of the toast
-//
-// The banner grew by 6 pt when its bare ✕ became a worded Exit pill, and both
-// gaps below moved with it rather than being left to close up.
-// While off route the amber banner takes the top slot, and everything
-// stacked below it moves down by its height plus a gap. Measured from
-// ManeuverBanner: the eyebrow strip is 20 pt and the manoeuvre row is a
-// 48 pt tile in 14 pt of padding, so 96 clears both with the gap included.
-const OFF_ROUTE_BANNER_H = 96;
-const ZONE_TOAST_TOP_GAP = 62;
-const PILL_TOP_GAP = 98;
+// The status bar's height, and the one gap under it. This is what is left of
+// the three constants that used to stack the off-route banner, the zone toast
+// and the habitual-fault pill on top of each other — see DriveMessageSlot for
+// why there is now one message on screen at a time and therefore nothing to
+// stack.
+const STATUS_BAR_H = 44;
+const SLOT_TOP_GAP = STATUS_BAR_H + 8;
 
 // Hoisted so the compass tick — about fifteen re-renders a second — does not
 // hand the BottomSheet a fresh style object each time.
@@ -124,8 +108,13 @@ const SHEET_HANDLE_INDICATOR_STYLE = { backgroundColor: "#D8D1C8" };
 // stops scrolling.
 const SHEET_SCROLL_STYLE = { flex: 1 };
 
-// Only the label is needed here, and examiner.ts keeps its own lookup private.
-const CATEGORY_LABEL = new Map(EXAMINER_CATEGORIES.map((c) => [c.id, c.label]));
+// How a mark reads back in the confirmation message. DVSA's own words for the
+// two that count, so the confirmation and the result screen agree.
+const LEVEL_WORD: Record<MarkLevel, string> = {
+  minor: "driving fault",
+  major: "serious",
+  credit: "credit",
+};
 
 // NavMap rebuilds its zone GeoJSON whenever this array's identity changes, and
 // the compass re-renders this screen about fifteen times a second.
@@ -142,8 +131,8 @@ export default function Mock() {
   // the moment the drive does not need the map. Released on unmount.
   useKeepAwake();
   const {
-    startedAt, activeZoneIdx, marks,
-    start, onSample, tapMirrors, addMark, undoMark, finish, addDeviation, reset,
+    startedAt, marks,
+    start, addMark, undoMark, finish, addDeviation, reset,
   } = useMockTest();
 
   // The way back onto the route, and how far off it we are.
@@ -162,11 +151,19 @@ export default function Mock() {
   // same action, so a learner who wants a minute at the kerb gets one without
   // the test becoming two taps away again.
   const [held, setHeld] = useState(false);
-  // The driver tapped Start on the start line and the lifecycle has not
-  // confirmed the fix yet. Still the preview leg — the store stays idle and
-  // nothing is marked — but the card gives way to a line saying what is being
-  // waited on. See practice.tsx for the defect this exists to close.
-  const [confirming, setConfirming] = useState(false);
+  // Which snap point the sheet is resting on. Only used to decide whether the
+  // way to end the test is on screen: pinned under the score while the sheet is
+  // open, absent while it is collapsed to a single line.
+  const [sheetIndex, setSheetIndex] = useState(0);
+  // Why a tap on Start did not begin the test. Null whenever there is nothing
+  // to say, which is almost always.
+  //
+  // This is what is left of the "Confirming your position" card. That card was
+  // a gate: it sat between the tap and the test while the lifecycle collected
+  // three fixes over three seconds, and it could not say how long that would
+  // take. The test now begins on the tap, and this line only appears when it
+  // could not — an error after the fact rather than a wait before it.
+  const [beginProblem, setBeginProblem] = useState<string | null>(null);
   const [clock, setClock] = useState("0:00");
   const [pos, setPos] = useState<LatLng | null>(null);
   const [trailIdx, setTrailIdx] = useState(0);
@@ -176,6 +173,7 @@ export default function Mock() {
   // than against north. Held in state, not a ref, because the compass has to
   // be able to redraw it between GPS fixes.
   const [iconRotation, setIconRotation] = useState(0);
+
 
   // The drive to the start line. Its own polyline, its own step list, and a
   // fallback for when directions cannot be fetched at all.
@@ -348,14 +346,31 @@ export default function Mock() {
           type: "FIX_RECEIVED", fix, receivedAt: Math.max(Date.now(), loc.timestamp),
         });
         lastFixAt = fix.timestamp;
-      } catch { return; }
+      } catch {
+        setBeginProblem("No GPS fix yet. Hold still for a moment and try again.");
+        return;
+      }
     }
     const lifecycle = routeLifecycleReducer(lifecycleRef.current, {
       type: "BEGIN_REQUESTED",
       at: Math.max(Date.now(), lastFixAt),
     });
     lifecycleRef.current = lifecycle;
-    if (lifecycle.phase !== "active" || lifecycle.startedAt === null) return;
+    if (lifecycle.phase !== "active" || lifecycle.startedAt === null) {
+      // Refused, and the driver has to be told why: the wait that used to sit
+      // here at least said what it was waiting for. The reducer only refuses on
+      // a missing fix, a stale one, or one outside START_CONFIRM_RADIUS_M.
+      const fix = lifecycleRef.current.lastAcceptedFix;
+      setBeginProblem(
+        fix === null
+          ? "No GPS fix yet. Hold still for a moment and try again."
+          : fix.startDistanceM > START_CONFIRM_RADIUS_M
+            ? `You're ${formatDistance(fix.startDistanceM)} from the start. Pull up within ${START_CONFIRM_RADIUS_M} m and try again.`
+            : "That fix went stale. Try again in a moment."
+      );
+      return;
+    }
+    setBeginProblem(null);
     legRef.current = "test";
     setLeg("test");
     start(r, lifecycle.startedAt);
@@ -587,12 +602,6 @@ export default function Mock() {
       setPos(raw);
       return;
     }
-    // Scoring sees the raw fix, never the snapped one. Snapping assumes you are
-    // on the route, and a mock test is exactly where someone might not be — it
-    // could otherwise credit an observation zone the driver never entered, or
-    // hide one they did.
-    onSample({ lat: c.latitude, lng: c.longitude, speedMps: Math.max(0, c.speed ?? 0), t: loc.timestamp });
-
     posRef.current = raw;
 
     // Snapped once, here, and only for the display. A mock test has no turn
@@ -600,13 +609,8 @@ export default function Mock() {
     // navFix, and distanceToManeuverM is null — the zoom then holds at
     // whatever it was seeded with.
     //
-    // This is also the split behind the puck-vs-toast disagreement below: the
-    // puck is drawn at `result.pos` (snapped, from this call) while the zone
-    // toast is driven by the untouched `raw` fix passed to onSample above. The
-    // two can differ by up to SNAP_MAX_M (40 m) near the edge of a zone. That
-    // is correct — the toast has to answer "did the driver actually enter the
-    // zone", not "does the drawn line say so" — but it will look like a bug to
-    // anyone watching the map and the toast disagree on device.
+    // Nothing downstream of this reaches the score: the drive is navigated from
+    // these fixes and drawn from them, and judged from the mark sheet alone.
     const snap = navSnap(routeLLRef.current, raw, trailRef.current);
     const result = navFix({
       mph: Math.round(mpsToMph(Math.max(0, c.speed ?? 0))),
@@ -726,7 +730,7 @@ export default function Mock() {
       setLeg("finish-prompt");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-  }, [onSample, onApproachPosition, reachStart, addDeviation, fetchReturnLeg]);
+  }, [onApproachPosition, reachStart, addDeviation, fetchReturnLeg]);
 
   const stopWatching = useCallback(() => {
     subRef.current?.remove();
@@ -817,12 +821,9 @@ export default function Mock() {
 
     // One seed fix, as practice.tsx takes: with a 5 m distanceInterval there
     // is otherwise no puck at all until the driver has moved five metres.
-    // Display only — onSample is deliberately not called with it, so scoring
-    // stays on the watch callback and its cadence alone. posRef is set too,
-    // so a "Before setting off" mark still gets a location. Taken after the
-    // watch is running, and applied only if the watch has not beaten it, so
-    // waiting for a lock cannot delay scoring or overwrite a newer fix. The
-    // camera is left alone, exactly as it is on the practice screen.
+    // posRef is set too, so a "Before setting off" mark still gets a location.
+    // Applied only if the watch has not beaten it. The camera is left alone,
+    // exactly as it is on the practice screen.
     try {
       const seed = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
       if (posRef.current !== null) return;
@@ -863,9 +864,8 @@ export default function Mock() {
    */
   const beginAtStartLine = useCallback(async () => {
     if (!(await ensurePermission())) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setConfirming(true);
-  }, []);
+    await beginTest();
+  }, [beginTest]);
 
   const startDirectly = useCallback(async () => {
     if (!(await ensurePermission())) return;
@@ -920,40 +920,22 @@ export default function Mock() {
     await startWatch();
   }, [startWatch]);
 
-  useEffect(() => {
-    if (activeZoneIdx === null) return;
-    // Soft, not Light: a minor mark also fires Light (below), and the two have
-    // to be told apart by feel — this one is passive (the zone arrived on its
-    // own), that one is a deliberate tap.
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
-    // At the 85% snap the sheet covers the controls row, Mirrors included, and
-    // it does not close on its own: a passenger who pulls it up to mark a fault
-    // and leaves it there scores a missed mirror check on every zone from then
-    // on, while the toast above the sheet keeps asking them to answer. The
-    // sheet is collapsed here rather than on every mark because this is the
-    // only state in which its position can change the score, and closing it
-    // under a marking finger has its own mis-tap cost.
-    sheetRef.current?.collapse();
-  }, [activeZoneIdx]);
-
-  const minors = useMemo(() => marks.filter((m) => m.level === "minor").length, [marks]);
-  const majors = useMemo(() => marks.filter((m) => m.level === "major").length, [marks]);
-  const credits = useMemo(() => marks.filter((m) => m.level === "credit").length, [marks]);
-  const minorCounts = useMemo(() => minorCountsByCategory(marks), [marks]);
-  const lastMark = useMemo(() => {
-    const m = marks[marks.length - 1];
-    if (!m) return null;
-    return { label: CATEGORY_LABEL.get(m.category) ?? m.category, level: m.level };
-  }, [marks]);
+  // What the drive would score if it ended now — the mark sheet, which is the
+  // whole of it. This used to add missed observation zones and speeding runs
+  // the phone had detected; see mockTestStore for why they no longer count.
+  const tally = useMemo(() => liveTally(marks), [marks]);
+  const markCounts = useMemo(() => markCountsByCategory(marks), [marks]);
   const warns = useMemo(() => habitualWarnings(marks), [marks]);
 
   const onMark = useCallback((category: string, level: MarkLevel) => {
-    // Marking happens by feel, on a phone in a cradle, while watching the road:
+    // Marking happens by feel, while watching the road as often as the screen:
     // the levels have to be told apart without looking.
     if (level === "major") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     else if (level === "credit") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     addMark(category, level, posRef.current);
+    // The sheet does not move. Whoever is marking is reading the list, and
+    // closing or scrolling it under them is how the next fault gets missed.
   }, [addMark]);
 
   const onUndo = useCallback(() => {
@@ -973,27 +955,39 @@ export default function Mock() {
   }, [finishAndNavigate]);
 
   // Held apart from the render below: the compass re-renders this screen about
-  // fifteen times a second, and the list is ~70 pressables that only change
-  // when a mark does.
-  const barContent = useMemo(() => (
-    <ExaminerBar
-      minors={minors} majors={majors} credits={credits}
-      lastMark={lastMark} bottomInset={insets.bottom} onUndo={onUndo}
+  // fifteen times a second, and none of this changes between fixes.
+  const headerContent = useMemo(() => (
+    <ExaminerScoreHeader
+      minors={tally.minors} remaining={tally.remaining} stopped={tally.stopped}
+      canUndo={marks.length > 0} onUndo={onUndo}
+      // Pinned, not the last thing in the scroll. It used to sit below all
+      // twenty-three category rows, which is not somewhere anyone finds a
+      // control they need once — the test could only be ended by driving the
+      // loop closed. Rendered only while the sheet is open, so the collapsed
+      // height stays exactly the score.
+      onEnd={sheetIndex > 0 ? onFinish : undefined}
+      bottomInset={insets.bottom}
     />
-  ), [minors, majors, credits, lastMark, insets.bottom, onUndo]);
+  ), [tally, marks.length, insets.bottom, onUndo, onFinish, sheetIndex]);
 
-  const listContent = useMemo(
-    () => <ExaminerCategoryList minorCounts={minorCounts} onMark={onMark} />,
-    [minorCounts, onMark]
-  );
+  // Twenty-three rows of four pressables each. The compass re-renders this
+  // screen about fifteen times a second and none of this changes between fixes.
+  const listContent = useMemo(() => (
+    <ExaminerMarkList
+      counts={markCounts}
+      minors={tally.minors} majors={tally.majors} credits={tally.credits}
+      clock={clock} onMark={onMark}
+    />
+  ), [markCounts, tally.minors, tally.majors, tally.credits, clock, onMark]);
 
   const recenter = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     mapRef.current?.recenter();
   };
 
-  // The bar carries the safe-area inset itself (it is the whole sheet when
-  // collapsed), so the list only needs breathing room under its last row.
+  // The meter carries the safe-area inset itself (it is the whole sheet when
+  // collapsed), so the marking content only needs breathing room under its
+  // last row.
   const sheetContentContainerStyle = useMemo(() => ({ paddingBottom: 24 }), []);
 
   // The collapsed height has to include the inset: the sheet is measured from
@@ -1004,17 +998,89 @@ export default function Mock() {
     () => SHEET_COLLAPSED_BASE_H + insets.bottom,
     [insets.bottom]
   );
-  const sheetSnapPoints = useMemo(() => [sheetCollapsedH, "85%"], [sheetCollapsedH]);
+  // The score alone, or the whole sheet.
+  const sheetSnapPoints = useMemo(
+    () => [sheetCollapsedH, SHEET_FULL],
+    [sheetCollapsedH]
+  );
 
   const logoBottom = sheetCollapsedH + LOGO_GAP;
   // "straying" is deliberately excluded: it is the silent phase, and a driver
   // who has merely clipped a wide roundabout should see nothing change.
   const offRoute = leg === "test" && (offPhase === "off-route" || offPhase === "returning");
-  // Everything stacked under the top slot moves down while the amber banner
-  // occupies it, so the clock and the zone toast are never hidden behind it.
-  const offRouteShift = offRoute ? OFF_ROUTE_BANNER_H : 0;
-  const pillTop = insets.top + PILL_TOP_GAP + offRouteShift;
-  const controlsBottom = CONTROLS_BOTTOM + insets.bottom;
+  const controlsBottom = logoBottom + LOGO_BAND_H + CONTROLS_GAP;
+  const slotTop = insets.top + 6 + SLOT_TOP_GAP;
+
+  /**
+   * Everything the drive has to say, ranked, for the one slot that says it.
+   *
+   *   1  off route      changes what the driver should do next; nothing outranks the road
+   *   2  zone open      has a deadline — missing it costs a fault, so it interrupts
+   *   3  serious fault  said once as it lands; the red meter carries it afterwards
+   *   4  habitual       advisory; the tile's own count carries it afterwards
+   *   5  mark recorded  confirmation the passenger already felt through the haptic
+   *
+   * The off-route message renders the full turn-by-turn banner rather than a
+   * line: it is the one message that is guidance rather than a report, and
+   * flattening it would have cost the driver the actual rejoin instruction.
+   */
+  const messages = useMemo<DriveMessage[]>(() => {
+    if (leg !== "test") return [];
+    const out: DriveMessage[] = [];
+    if (offRoute) {
+      out.push({
+        id: "off-route",
+        tone: "route",
+        text: "Rejoining the route",
+        render: () => (
+          <ManeuverBanner
+            tone="off"
+            eyebrow="Off route"
+            // Until the return leg lands there is no turn to give, so the
+            // banner says what is happening rather than showing a stale
+            // instruction from the route the driver has left.
+            fallback={!returnLeg}
+            fallbackText="Rejoining the route"
+            step={returnLeg?.steps?.[0]}
+            next={returnLeg?.steps?.[1]}
+            distanceM={null}
+            distanceLabel={
+              skippedM !== null ? `Rejoining — ${formatDistance(skippedM)} skipped` : "Rejoining ahead"
+            }
+          />
+        ),
+      });
+    }
+    if (tally.stopped) {
+      out.push({
+        id: `serious:${tally.majors}`,
+        tone: "serious",
+        text: tally.majors === 1
+          ? "One serious fault — a real test would end here"
+          : `${tally.majors} serious faults — a real test would end here`,
+        ttlMs: MESSAGE_TTL.serious,
+      });
+    }
+    const worst = warns[0];
+    if (worst) {
+      out.push({
+        id: `habitual:${worst.category}:${worst.count}`,
+        tone: "warn",
+        text: `${worst.label} ×${worst.count} — an examiner would likely call this major`,
+        ttlMs: MESSAGE_TTL.habitual,
+      });
+    }
+    const last = marks[marks.length - 1];
+    if (last) {
+      out.push({
+        id: `mark:${marks.length}`,
+        tone: "info",
+        text: `${categoryById(last.category)?.label ?? last.category} — ${LEVEL_WORD[last.level]}`,
+        ttlMs: MESSAGE_TTL.confirmation,
+      });
+    }
+    return out;
+  }, [leg, offRoute, returnLeg, skippedM, tally.stopped, tally.majors, warns, marks]);
 
   const distToStart = previewLoc && routeLL[0] ? haversineM(previewLoc, routeLL[0]) : null;
   const atStart = distToStart !== null && distToStart < AT_START_M;
@@ -1085,7 +1151,7 @@ export default function Mock() {
       />
 
       {/* ---------- PREVIEW ---------- */}
-      {leg === "preview" && !confirming && route && (
+      {leg === "preview" && route && (
         <RoutePreviewCard
           route={route}
           isLoop={isLoop}
@@ -1095,35 +1161,26 @@ export default function Mock() {
           onGuideToStart={guideToStart}
           onStartUnguided={startDirectly}
           onBeginAtStart={beginAtStartLine}
+          offerGuideAtStart
           onBack={() => router.back()}
         />
       )}
 
-      {/* ---------- CONFIRMING THE START LINE ---------- */}
-      {leg === "preview" && confirming && (
+      {/* ---------- WHY START DID NOT START ---------- */}
+      {leg === "preview" && beginProblem !== null && (
         <View
-          className="absolute bottom-0 left-0 right-0 gap-1.5 rounded-t-3xl bg-card px-4 pt-4"
-          style={{ paddingBottom: insets.bottom + 14, shadowColor: "#221F1C", shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: -4 } }}
+          pointerEvents="none"
+          style={{
+            position: "absolute", left: 16, right: 16, top: insets.top + 12,
+            flexDirection: "row", alignItems: "center", gap: 10,
+            backgroundColor: "#FEF3C7", borderRadius: 12, paddingHorizontal: 13, paddingVertical: 10,
+            shadowColor: "#221F1C", shadowOpacity: 0.12, shadowRadius: 12, shadowOffset: { width: 0, height: 2 },
+          }}
         >
-          <View className="flex-row items-center gap-2">
-            <Ionicons name="locate" size={15} color={colors.accent} />
-            <Text className="text-[14px] font-semibold text-primary">Confirming your position</Text>
-          </View>
-          <Text className="text-[12px] leading-4 text-slate-500">
-            {distToStart === null
-              ? "Waiting for a steady GPS fix. Hold still for a few seconds."
-              : distToStart > START_RADIUS_M
-                ? `You're ${formatDistance(distToStart)} away. Pull up within ${START_RADIUS_M} m of the start and hold still.`
-                : `You're ${formatDistance(distToStart)} from the start. Hold still for a few seconds.`}
+          <Ionicons name="locate" size={16} color="#B45309" />
+          <Text style={{ ...subheadline, flex: 1, fontWeight: "600", color: "#7C2D12" }}>
+            {beginProblem}
           </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Cancel"
-            onPress={() => setConfirming(false)}
-            className="min-h-[40px] items-center justify-center"
-          >
-            <Text className="text-[13px] font-semibold text-slate-500">Cancel</Text>
-          </Pressable>
         </View>
       )}
 
@@ -1176,9 +1233,10 @@ export default function Mock() {
           </Pressable>
 
           <View
-            className="absolute bottom-0 left-0 right-0 flex-row items-center gap-3 bg-card px-4 pt-3"
+            className="absolute bottom-0 left-0 right-0 bg-card px-4 pt-3"
             style={{ paddingBottom: insets.bottom + 12, shadowColor: "#221F1C", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -3 } }}
           >
+            <View className="flex-row items-center gap-3">
             <View className="flex-1">
               <Text className="text-[10px] font-bold uppercase tracking-widest text-slate-500">To the start</Text>
               <Text className="text-[18px] font-semibold text-primary">
@@ -1198,6 +1256,39 @@ export default function Mock() {
             >
               <Text className="text-[14px] font-semibold text-white">Exit</Text>
             </Pressable>
+            </View>
+
+          {/* The way into the test, and until now there wasn't one.
+              
+              Arriving used to hand over on its own, and only on its own: three
+              accepted fixes within 30 m of the start at under 5 mph. The watch
+              runs with distanceInterval 5, so a car that has stopped emits no
+              fixes at all — pulling up on the line and waiting is the one thing
+              guaranteed not to produce them. Park a few lengths short, or across
+              the road, and the fixes were never eligible either. There was no
+              button anywhere on this screen, so the only way out was Exit, which
+              throws the drive away.
+
+              The automatic prompt still fires when it can; this is the floor
+              under it. Same beginTest() the preview card's Start calls, with the
+              same two checks on the fix behind it. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Begin mock test"
+            onPress={() => void beginTest()}
+            style={{
+              minHeight: 50, borderRadius: 10, alignItems: "center", justifyContent: "center",
+              backgroundColor: colors.accent, marginTop: 10,
+            }}
+          >
+            <Text style={{ ...body, fontWeight: "600", color: "#FFFFFF" }}>Begin mock test</Text>
+          </Pressable>
+
+          {beginProblem !== null && (
+            <Text style={{ ...caption, color: "#7C2D12", textAlign: "center", marginTop: 8 }}>
+              {beginProblem}
+            </Text>
+          )}
           </View>
         </>
       )}
@@ -1205,109 +1296,75 @@ export default function Mock() {
       {/* ---------- MOCK TEST ---------- */}
       {leg === "test" && (
       <>
-      {offRoute && (
-        <View className="absolute left-3 right-3 z-10" style={{ top: insets.top + 6 }}>
-          <ManeuverBanner
-            tone="off"
-            eyebrow="Off route"
-            // Until the return leg lands there is no turn to give, so the
-            // banner says what is happening rather than showing a stale
-            // instruction from the route the driver has left.
-            fallback={!returnLeg}
-            fallbackText="Rejoining the route"
-            step={returnLeg?.steps?.[0]}
-            next={returnLeg?.steps?.[1]}
-            distanceM={null}
-            distanceLabel={
-              skippedM !== null ? `Rejoining — ${formatDistance(skippedM)} skipped` : "Rejoining ahead"
-            }
-          />
-        </View>
-      )}
-
+      {/* The status bar no longer moves. It used to be pushed down by the
+          off-route banner's height, which is why three separate constants had
+          to agree about what was on screen; the banner is now one of the
+          messages in the slot below, and nothing above it shifts. */}
       <View
-        className="absolute left-4 right-4 flex-row items-center justify-between rounded-xl bg-card px-4 py-2.5"
-        style={{ top: insets.top + 6 + offRouteShift, shadowColor: "#221F1C", shadowOpacity: 0.12, shadowRadius: 12 }}
+        style={{
+          position: "absolute", left: 16, right: 16, top: insets.top + 6, height: STATUS_BAR_H,
+          flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+          borderRadius: 12, backgroundColor: colors.cell, paddingHorizontal: 13,
+          shadowColor: "#221F1C", shadowOpacity: 0.12, shadowRadius: 12, shadowOffset: { width: 0, height: 2 },
+        }}
       >
-        <View className="flex-row items-center gap-2">
-          <View className="h-2 w-2 rounded-full bg-danger" />
-          <Text className="text-[13px] font-semibold text-primary">Mock test</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger }} />
+          <Text style={{ ...footnote, color: colors.label }}>Mock test</Text>
         </View>
-        <View className="flex-row items-center gap-3">
-          <Text className="text-[14px] font-semibold text-primary" style={{ fontVariant: ["tabular-nums"] }}>{clock}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 11 }}>
+          <Text style={{ ...footnote, color: colors.label, fontVariant: ["tabular-nums"] }}>{clock}</Text>
           {/* Up here rather than in the controls row at the foot of the map:
-              that row is Finish test, Mirrors and Recenter, all of them
-              pressed while driving, and the one control that throws the drive
-              away should not sit among them. Worded and solid rather than a
-              grey ✕ — a bare glyph beside the clock read as a dismiss for the
-              clock, not a way out of the test. */}
-          <View className="h-5 w-px bg-stone-200" />
+              that row is pressed while driving, and the one control that throws
+              the drive away should not sit among them.
+
+              It used to be a solid danger-red pill, on screen for the whole
+              forty minutes beside the clock — the app's loudest colour spent on
+              its rarest action, and the same red the meter needs for a serious
+              fault. Outlined and quiet instead; the confirm dialog behind it is
+              what actually protects the drive, and that has not changed. */}
+          <View style={{ width: 1, height: 18, backgroundColor: colors.separator }} />
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Exit mock test"
             hitSlop={8}
             onPress={exitTest}
-            className="h-7 flex-row items-center gap-1 rounded-full bg-danger px-2.5 active:opacity-80"
+            // Plain object, not the ({ pressed }) form — NativeWind's jsx
+            // wrapper drops function styles. See the note in ExaminerSheet.tsx.
+            style={{
+              height: 28, paddingHorizontal: 12, borderRadius: 999,
+              borderWidth: 1, borderColor: colors.separator,
+              alignItems: "center", justifyContent: "center",
+            }}
           >
-            <Ionicons name="close" size={14} color="#fff" />
-            <Text className="text-[13px] font-semibold text-white">Exit</Text>
+            <Text style={{ ...footnote, color: colors.labelSecondary }}>Exit</Text>
           </Pressable>
         </View>
       </View>
 
-      {/* Under the banner rather than above the mirrors button: on a short
-          screen the bottom of the map is taken by the controls row, and the
-          puck sits directly above it. */}
-      {activeZoneIdx !== null && (
-        <Text
-          className="absolute self-center rounded-full bg-card/90 px-4 py-1.5 text-[11px] font-semibold text-slate-600"
-          style={{ top: insets.top + ZONE_TOAST_TOP_GAP + offRouteShift }}
-        >
-          Observation zone — check your mirrors
-        </Text>
-      )}
+      {/* One message, ranked, where there used to be three stacked layers. */}
+      <DriveMessageSlot messages={messages} top={slotTop} />
 
-      {/* Below the zone toast, not the controls row — see PILL_TOP_GAP above
-          for why the pill lives at the top of the screen now. Bounded left
-          and right so a long label wraps inside the screen instead of running
-          off both edges. Only the most pressing habitual category is shown;
-          the per-category badges inside the sheet cover the rest. */}
-      {warns[0] && (
-        <View pointerEvents="none" className="absolute left-4 right-4 items-center" style={{ top: pillTop }}>
-          <ExaminerWarningPill warning={warns[0]} />
-        </View>
-      )}
-
-      {/* Three columns, so the mirrors button stays centred under the puck and
-          the two side controls can never grow into it. */}
+      {/* Recenter alone now. Mirrors used to sit in the middle of this row,
+          centred under the puck, and existed only to answer the observation
+          zones — which no longer score, so it recorded nothing. Losing it also
+          ends the standing fight for the bottom of the map: that 74 pt circle
+          is what left the row clearing the puck artwork by half a point on the
+          shortest screen this app targets. */}
       <View
         pointerEvents="box-none"
-        className="absolute left-4 right-4 flex-row items-center"
-        style={{ bottom: controlsBottom }}
+        style={{ position: "absolute", left: 16, right: 16, bottom: controlsBottom, flexDirection: "row", alignItems: "center" }}
       >
-        <View pointerEvents="box-none" className="flex-1 items-start">
+        <View pointerEvents="box-none" style={{ flex: 1, alignItems: "flex-end" }}>
           <Pressable
-            onPress={onFinish}
-            className="min-h-[44px] flex-row items-center rounded-full bg-primary px-5 py-2.5"
-          >
-            <Text className="text-[13px] font-semibold text-white">Finish test</Text>
-          </Pressable>
-        </View>
-
-        <Pressable
-          onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); tapMirrors(); }}
-          className={`h-[74px] w-[74px] items-center justify-center rounded-full ${activeZoneIdx !== null ? "bg-accent" : "bg-slate-300"}`}
-          style={activeZoneIdx !== null ? { shadowColor: colors.accent, shadowOpacity: 0.5, shadowRadius: 16 } : undefined}
-        >
-          <Ionicons name="eye-outline" size={22} color="#fff" />
-          <Text className="text-[11px] font-bold text-white">Mirrors</Text>
-        </Pressable>
-
-        <View pointerEvents="box-none" className="flex-1 items-end">
-          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Recenter map"
             onPress={recenter}
-            className="h-12 w-12 items-center justify-center rounded-full bg-card"
-            style={{ shadowColor: "#221F1C", shadowOpacity: 0.18, shadowRadius: 8 }}
+            style={{
+              height: 48, width: 48, alignItems: "center", justifyContent: "center",
+              borderRadius: 24, backgroundColor: colors.cell,
+              shadowColor: "#221F1C", shadowOpacity: 0.18, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+            }}
           >
             <Ionicons name="navigate" size={20} color={colors.accent} />
           </Pressable>
@@ -1316,18 +1373,49 @@ export default function Mock() {
 
       <BottomSheet
         ref={sheetRef}
+        // Rests collapsed, not on the marking snap.
+        //
+        // The design called for marking to be the default resting height, and
+        // on device that turned out to cost more than it bought: the controls
+        // row and the Mapbox logo are both stacked off the *collapsed* height,
+        // so at the marking snap the sheet sits over Mirrors, Recenter and the
+        // attribution. Mirrors is the control the score depends on, and the
+        // attribution is a condition of the Mapbox licence rather than a
+        // layout preference.
+        //
+        // Raising the controls above the marking height is not available
+        // either: the puck sits at 62% of the screen, and a row cleared above a
+        // 58%-tall sheet lands on top of it. So the marking grid is one drag
+        // up — or one tap, since reaching the sheet is what the handle is for —
+        // and the driving surface keeps the road, the puck and the button.
         index={0}
+        onChange={setSheetIndex}
         snapPoints={sheetSnapPoints}
+        // Off, and it has to be: @gorhom/bottom-sheet v5 defaults it on, and
+        // with it on useAnimatedDetents measures the content, pushes an extra
+        // content-sized detent into the list and re-sorts the whole thing — so
+        // `index` stops addressing the array handed to `snapPoints`. Worse, it
+        // returns *no* detents until that measurement lands, and the measurement
+        // never lands for this content: the score is a plain View (it has to be,
+        // so Undo stays pinned above the scroll) and the scrollable below it is
+        // flex: 1, so its height depends on the container height that depends on
+        // it. The sheet then never positions itself and the drive shows nothing
+        // but the map — indistinguishable from the practice screen.
+        //
+        // This screen computes its own heights on purpose, so there is nothing
+        // for dynamic sizing to work out.
+        enableDynamicSizing={false}
         handleIndicatorStyle={SHEET_HANDLE_INDICATOR_STYLE}
       >
-        {/* The bar sits outside the scroll view: as the first row inside it,
+        {/* The score sits outside the scroll view: as the first row inside it,
             scrolling down to "Before setting off" carried Undo off the top,
             and spec §3 wants it reachable at all times. A plain View, not
             BottomSheetView — that one is absolutely positioned and registers
             itself as the sheet's scrollable, both of which fight the list. */}
-        {barContent}
+        {headerContent}
         <BottomSheetScrollView style={SHEET_SCROLL_STYLE} contentContainerStyle={sheetContentContainerStyle}>
           {listContent}
+
         </BottomSheetScrollView>
       </BottomSheet>
 

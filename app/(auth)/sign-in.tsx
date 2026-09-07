@@ -8,11 +8,12 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { AuthAction } from "@/ui/AuthAction";
 import { AuthField } from "@/ui/AuthField";
 import { Group } from "@/ui/List";
+import { SocialAuthButtons } from "@/ui/SocialAuthButtons";
 import { enterFrom } from "@/ui/motion";
 import { EMAIL_NOT_CONFIRMED } from "@/lib/authError";
 import { colors } from "@/ui/theme";
 import { caption, footnote, headline, largeTitle, subheadline, MAX_DISPLAY_SCALE } from "@/ui/type";
-import { useSession } from "@/stores/sessionStore";
+import { useSession, type SocialProvider } from "@/stores/sessionStore";
 
 /**
  * The first screen anyone sees, and until now the only one still dressed in
@@ -39,16 +40,19 @@ export default function SignIn() {
   const router = useRouter();
   const signIn = useSession((s) => s.signIn);
   const sendMagicLink = useSession((s) => s.sendMagicLink);
+  const signInWithProvider = useSession((s) => s.signInWithProvider);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Which provider sheet is open, or null. */
+  const [social, setSocial] = useState<SocialProvider | null>(null);
   const passwordRef = useRef<TextInput>(null);
 
   const clear = () => setError(null);
 
-  const canSubmit = email.trim().length > 0 && password.length > 0;
+  const canSubmit = email.trim().length > 0 && password.length > 0 && social === null;
 
   const submit = async () => {
     if (busy || !canSubmit) return;
@@ -67,6 +71,26 @@ export default function SignIn() {
       router.push({ pathname: "/(auth)/verify", params: { email: email.trim(), type: "signup" } });
       return;
     }
+    setError(failure);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  };
+
+  /**
+   * A provider sheet, and whatever it comes back with.
+   *
+   * Nothing here navigates. A session opening is what moves the person on —
+   * the root layout watches the store for exactly that — and it is also why
+   * a cancel needs no branch of its own: the store returns null for both
+   * "signed in" and "changed their mind", because neither has anything to say
+   * on this screen. Only a real failure gets a sentence and a haptic.
+   */
+  const continueWith = async (provider: SocialProvider) => {
+    if (social || busy) return;
+    clear();
+    setSocial(provider);
+    const failure = await signInWithProvider(provider);
+    setSocial(null);
+    if (!failure) return;
     setError(failure);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   };
@@ -145,11 +169,17 @@ export default function SignIn() {
               <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...caption, color: colors.labelTertiary }}>or</Text>
               <View style={{ height: 1, flex: 1, backgroundColor: colors.separator }} />
             </View>
+            {/* Above the email code rather than below it: these two are the
+                one-tap doors, and the code is the fallback for somebody who
+                has neither account. */}
+            <View style={{ paddingBottom: 14 }}>
+              <SocialAuthButtons onPress={continueWith} busy={social} />
+            </View>
             <Group>
               <Pressable
                 accessibilityRole="button" accessibilityLabel="Email me a sign-in code"
-                disabled={!email.trim()} onPress={emailLink}
-                style={{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, opacity: email.trim() ? 1 : 0.4 }}
+                disabled={!email.trim() || social !== null} onPress={emailLink}
+                style={{ minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, opacity: email.trim() && !social ? 1 : 0.4 }}
               >
                 <Ionicons name="mail-outline" size={17} color={colors.accent} />
                 <Text maxFontSizeMultiplier={MAX_DISPLAY_SCALE} style={{ ...headline, color: colors.accent }}>

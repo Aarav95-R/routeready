@@ -1,0 +1,439 @@
+<title>The Examiner Decides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --paper: #F6F7F4; --card: #FFFFFF; --ink: #0E1613; --muted: #66716A;
+    --line: #E3E7DF; --emerald: #1A875E; --amber: #B45309; --red: #B91C1C;
+    --code-bg: #F0F2EC; --frame: #D7D3CB; --pick-ink: #FFFFFF; --rule: #EDEFEA;
+
+    /* Quoted verbatim from src/ui/theme.ts. These never invert: the phone
+       shows the product, and the product has one appearance. */
+    --a-field: #F5F0E8; --a-cell: #FFFFFF; --a-label: #1C1917;
+    --a-label2: #574F49; --a-label3: #6B635B; --a-sep: #E4DFD8;
+    --a-fill: #EBE7E1; --a-accent: #1A875E; --a-accent-ink: #146B4A;
+    --a-danger: #DC2626; --a-drawing: #EDEBE4;
+    --a-minor-bg: #FEF3C7; --a-minor-fg: #B45309;
+    --a-major-bg: #FEE2E2; --a-major-fg: #B91C1C;
+    --a-credit-bg: #ECFDF5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+      --line: #26302A; --emerald: #34D399; --amber: #FBBF24; --red: #F87171;
+      --code-bg: #1A211C; --frame: #2C352E; --pick-ink: #0C110E; --rule: #1E2621;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0C110E; --card: #141A16; --ink: #E8EEE8; --muted: #93A196;
+    --line: #26302A; --emerald: #34D399; --amber: #FBBF24; --red: #F87171;
+    --code-bg: #1A211C; --frame: #2C352E; --pick-ink: #0C110E; --rule: #1E2621;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 56px 24px 96px; display: flex; flex-direction: column; gap: 34px; }
+
+  .eyebrow { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin: 0; }
+  h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.04; letter-spacing: -0.03em; font-weight: 700; margin: 10px 0 0; text-wrap: balance; }
+  .lede { margin: 16px 0 0; font-size: 17px; color: var(--muted); max-width: 64ch; }
+  h2 { font-size: 21px; letter-spacing: -0.02em; font-weight: 700; margin: 0; text-wrap: balance; }
+  p { margin: 0; max-width: 66ch; }
+  .dim { color: var(--muted); }
+  .small { font-size: 14.5px; }
+
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 22px; }
+  .sec-head { display: flex; flex-direction: column; gap: 8px; }
+  code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px; background: var(--code-bg); padding: 1.5px 5px; border-radius: 4px; }
+  ul.notes { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 9px; }
+  ul.notes li { max-width: 66ch; }
+  ul.notes li::marker { color: var(--muted); }
+
+  .options { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 30px; align-items: start; }
+  .option { display: flex; flex-direction: column; gap: 12px; }
+  .tag { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tag .pick { background: var(--emerald); color: var(--pick-ink); border-radius: 999px; padding: 2.5px 8px; letter-spacing: 0.08em; font-weight: 600; }
+  .tag .alt { border: 1px solid var(--line); border-radius: 999px; padding: 2.5px 8px; letter-spacing: 0.08em; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroller { overflow-x: auto; }
+  .gone { color: var(--red); font-weight: 600; }
+  .stays { color: var(--emerald); font-weight: 600; }
+
+  .callout { border-left: 3px solid var(--amber); background: color-mix(in srgb, var(--amber) 8%, transparent); border-radius: 0 8px 8px 0; padding: 14px 16px; display: flex; flex-direction: column; gap: 7px; }
+  .callout.stop { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 8%, transparent); }
+  .callout .h { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
+  .callout p { font-size: 14.5px; max-width: 68ch; }
+
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+  .step { flex: 1; min-width: 138px; border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--paper); }
+  .step .k { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .step .t { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+  .step .d { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  .step.dead { border-color: var(--red); border-style: dashed; }
+  .step.dead .t { color: var(--red); }
+  .step.new { border-color: var(--emerald); }
+  .arrow { align-self: center; color: var(--muted); font-size: 15px; }
+
+  /* Phone slice */
+  .screen {
+    position: relative; width: 322px; max-width: 100%; height: 420px;
+    border: 1px solid var(--frame); border-radius: 20px; overflow: hidden;
+    background: var(--a-drawing); color: var(--a-label);
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif; letter-spacing: -0.01em; flex: none;
+  }
+  .screen .map { position: absolute; inset: 0; }
+  .screen .map svg { width: 100%; height: 100%; display: block; }
+  .t-head { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -0.41px; }
+  .t-cap { font-size: 13px; line-height: 18px; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .floaty { box-shadow: 0 4px 14px rgba(28,25,23,.13); }
+  .banner { position: absolute; left: 12px; right: 12px; top: 12px; background: var(--a-cell); border-radius: 12px; padding: 10px 13px; }
+  .banner .eb { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--a-label3); }
+  .banner .ins { font-size: 17px; line-height: 22px; font-weight: 600; letter-spacing: -.41px; margin-top: 2px; }
+  .botbar { position: absolute; left: 0; right: 0; bottom: 0; background: var(--a-cell); padding: 12px 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+  .botrow { display: flex; align-items: center; gap: 12px; }
+  .cta { flex: 1; min-height: 50px; border-radius: 10px; background: var(--a-accent); color: #fff; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 17px; font-weight: 600; letter-spacing: -.41px; }
+  .exitpill { min-height: 44px; border-radius: 999px; background: var(--a-danger); color: #fff; display: flex; align-items: center; padding: 0 22px; font-size: 14px; font-weight: 600; }
+
+  .askrow { display: flex; flex-direction: column; gap: 5px; padding: 13px 0; border-bottom: 1px solid var(--rule); }
+  .askrow:last-child { border-bottom: 0; }
+  .askrow .q { font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+  .askrow .a { font-size: 14.5px; color: var(--muted); max-width: 70ch; }
+  a { color: var(--emerald); }
+  :focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; border-radius: 4px; }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">RouteReady &middot; design &middot; 30 August 2026</p>
+    <h1>The examiner decides</h1>
+    <p class="lede">
+      Two corrections. There is no way to begin a test once you have been guided
+      to the start &mdash; I checked, and you are right. And the score should come
+      from the mark sheet alone: what the GPS thinks it saw is not evidence, and
+      right now it can fail a drive the examiner passed.
+    </p>
+  </header>
+
+  <!-- ══════════════════════ 1 · THE DEAD END ══════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">01 &middot; decision one</p>
+      <h2>There is no Begin button after the drive to the start</h2>
+    </div>
+
+    <div class="flow">
+      <div class="step"><span class="k">preview</span><span class="t">Start</span><span class="d">Begins the test on the spot. Works.</span></div>
+      <span class="arrow">or</span>
+      <div class="step"><span class="k">preview</span><span class="t">Guide me to the start</span><span class="d">Opens the drive to the start. Works.</span></div>
+      <span class="arrow">&rarr;</span>
+      <div class="step"><span class="k">approach</span><span class="t">Driving there</span><span class="d">The screen carries a turn banner, Recenter, and Exit. That is all of it.</span></div>
+      <span class="arrow">&rarr;</span>
+      <div class="step dead"><span class="k">arrival</span><span class="t">Nothing to press</span><span class="d">The only way into the test is an automatic hand-over that may never fire.</span></div>
+    </div>
+
+    <div class="callout stop">
+      <div class="h">Why the hand-over may never fire</div>
+      <p>
+        Reaching the arrival prompt needs the lifecycle to see <b>three accepted
+        fixes, spanning three seconds, within 30 m of the start, under 5 mph</b>.
+        Two things make that fragile at exactly the moment it matters:
+      </p>
+      <p>
+        The location watch runs with <code>distanceInterval: 5</code> &mdash; iOS
+        delivers a fix only after five metres of movement. <b>A car that has
+        stopped emits nothing at all.</b> So pulling up on the line and waiting is
+        the one thing guaranteed not to produce the fixes the hand-over needs.
+      </p>
+      <p>
+        And 30 m is tight. Park on the other side of the road, or a few car
+        lengths short, and the fixes are never eligible in the first place.
+      </p>
+      <p>
+        Either way there is no button anywhere on the approach screen, so the only
+        way out is Exit &mdash; which abandons the drive.
+      </p>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <p class="tag"><span class="pick">Recommended</span> A &middot; A Begin bar on the approach</p>
+        <div class="screen">
+          <div class="map"><svg viewBox="0 0 322 420" role="img" aria-label="The drive to the start with a Begin test bar"><rect width="322" height="420" fill="#EDEBE4"/><path d="M-10 120 H332 M96 -10 V430" stroke="#E2DFD6" stroke-width="13" fill="none"/><path d="M96 300 V120 H250" stroke="#1A875E" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="96" cy="300" r="13" fill="#fff" opacity=".9"/><path d="M96 291 l8 18 -8 -5 -8 5 z" fill="#1C1917"/></svg></div>
+          <div class="banner floaty">
+            <div class="eb">Heading to the start</div>
+            <div class="ins">Turn right onto Watford Way</div>
+            <div class="t-cap" style="color:var(--a-label3);margin-top:2px">then the mock test begins</div>
+          </div>
+          <div class="botbar floaty">
+            <div class="botrow">
+              <div style="flex:1">
+                <div class="t-cap" style="color:var(--a-label3);text-transform:uppercase;letter-spacing:.08em;font-weight:700;font-size:10px">To the start</div>
+                <div class="t-head">240 m</div>
+              </div>
+              <span class="exitpill">Exit</span>
+            </div>
+            <div class="botrow">
+              <span class="cta">Begin mock test</span>
+            </div>
+          </div>
+        </div>
+        <p class="small">
+          Always live, from the moment the approach opens. It is the same
+          <code>beginTest()</code> the preview card's Start calls, with the same
+          two checks: a fix no older than five seconds, taken within 45 m of the
+          start. Arrive early, park awkwardly, or stop and wait &mdash; there is
+          always something to press.
+        </p>
+        <p class="small dim">
+          The automatic arrival prompt stays exactly as it is. When it does fire it
+          is still the nicer moment: it speaks, it vibrates, and it names the
+          route. This is the floor under it, not a replacement.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="alt">Alternative</span> B &middot; Make the hand-over easier to hit</p>
+        <p class="small">
+          Leave the screen alone and loosen the rule: accept the arrival at 45 m
+          rather than 30, and drop the three-fix span to one good fix.
+        </p>
+        <p class="small dim">
+          It does not fix the real problem. A stopped car produces no fixes at all,
+          so no threshold reaches the driver who has already parked on the line and
+          is waiting to be let in. Loosening also makes the prompt more likely to
+          fire while still rolling past the start, which is the case the three-fix
+          span exists to prevent. Worth doing <em>as well</em> as A, perhaps; not
+          instead of it.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ 2 · THE SCORE ═════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">02 &middot; decision two</p>
+      <h2>The score is the mark sheet, and nothing else</h2>
+      <p class="small dim">
+        A real test is one examiner's judgement written on a DL25. This one
+        currently blends that with two things a phone guessed.
+      </p>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Counted today</th><th>Where it comes from</th><th>Becomes</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Examiner marks</b></td>
+            <td>The mark sheet. A person watched and pressed.</td>
+            <td class="stays">The whole score</td>
+          </tr>
+          <tr>
+            <td><b>Speeding</b></td>
+            <td><code>detectSpeedingFaults</code> — GPS speed against a stored limit for the nearest route vertex. Over the limit for 5 s is scored a <b>serious fault</b>, which fails the test outright.</td>
+            <td class="gone">Removed</td>
+          </tr>
+          <tr>
+            <td><b>Missed observation</b></td>
+            <td><code>detectObservationFaults</code> — a driving fault for every zone the car passed through without Mirrors being tapped.</td>
+            <td class="gone">Removed</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout stop">
+      <div class="h">Why this is a correctness fix, not just a simplification</div>
+      <p>
+        GPS speed on a phone is noisy, and the limit it is compared against is
+        whatever <code>speed_profile</code> was seeded with for the nearest point
+        on the route. A wrong limit segment, a tunnel, a moment of drift &mdash; and
+        the drive is failed by a serious fault the examiner never saw and cannot
+        undo, because auto-detected faults never appear on the sheet.
+      </p>
+      <p>
+        The same is true in reverse for observation: the driver checks their
+        mirrors properly, the passenger does not happen to press a button, and the
+        result records a fault against a driver who did nothing wrong.
+      </p>
+    </div>
+
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Knock-on</th><th>Today</th><th>Becomes</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>&ldquo;NOT ASSESSED&rdquo;</b></td>
+            <td><code>samples.length &gt; 0</code>, else score 0. It exists because a drive with no GPS produced no auto-faults, which looked identical to a flawless one.</td>
+            <td>Meaningless once every fault is a human tap. A sheet with nothing on it <em>is</em> a clean drive.</td>
+          </tr>
+          <tr>
+            <td><b>The live meter</b></td>
+            <td>Marks + missed zones + speeding so far</td>
+            <td>Marks. It becomes exactly true rather than approximately true.</td>
+          </tr>
+          <tr>
+            <td><b>The result screen</b></td>
+            <td>Faults of three kinds; only examiner ones can be timed</td>
+            <td>Every fault is an examiner mark, so every one gets its time on the drive</td>
+          </tr>
+          <tr>
+            <td><b>Recorded GPS</b></td>
+            <td><code>samples[]</code> grows all drive</td>
+            <td>Read by nothing else. Can stop being collected.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="options">
+      <div class="option">
+        <p class="tag"><span class="pick">Recommended</span> A &middot; Mirrors goes, the zones stay drawn</p>
+        <p class="small">
+          The Mirrors button exists to feed <code>detectObservationFaults</code>.
+          With that gone it records nothing, and it is the largest control on the
+          map. Remove it, and the zone prompt with it. Keep the zones <b>drawn on
+          the route</b>: they are still the places where observation is being
+          looked for, which is useful to see coming.
+        </p>
+        <p class="small dim">
+          The examiner marks &ldquo;Use of mirrors&rdquo; on the sheet, like every
+          other fault. One way to record a thing instead of two.
+        </p>
+        <p class="small">
+          It also gives the bottom of the map back. The controls row currently
+          clears the driver puck by <b>&minus;0.5 pt</b> on an iPhone SE; without
+          the 74 pt Mirrors button that pressure disappears.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="alt">Alternative</span> B &middot; Keep Mirrors as a prompt</p>
+        <p class="small">
+          The zone still lights the button and asks for a mirror check, and tapping
+          it still feels like doing something &mdash; it just no longer scores. Useful
+          as a coaching cue for the learner.
+        </p>
+        <p class="small dim">
+          A control that changes nothing is a control that teaches people their
+          presses do not matter, and this one sits in the most valuable spot on the
+          screen. If the check is worth recording, the examiner should mark it.
+        </p>
+      </div>
+
+      <div class="option">
+        <p class="tag"><span class="alt">Sub-decision</span> What stops an empty test scoring 100?</p>
+        <p class="small">
+          With &ldquo;not assessed&rdquo; gone, opening a mock test and immediately
+          finishing gives a clean sheet: <b>pass, 100</b>. Two ways to feel about it:
+        </p>
+        <p class="small">
+          <b>i.</b> Leave it. A mock test is a tool someone chooses to use; a sheet
+          with nothing on it means nobody was watching, and the person who did that
+          knows.
+        </p>
+        <p class="small">
+          <b>ii.</b> Guard on duration &mdash; a test under, say, five minutes is not
+          offered a verdict. Honest, and it does not depend on GPS.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ 3 · WHAT GOES ═════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">03 &middot; the size of it</p>
+      <h2>What stops existing</h2>
+      <p class="small dim">
+        All of this was built to serve the two detectors. I checked every caller:
+        nothing outside the mock test's own scoring reads any of it.
+      </p>
+    </div>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>Goes</th><th>Where</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr><td><code>samples</code>, <code>onSample</code></td><td>mockTestStore</td><td>Read only by the two detectors and the assessability guard</td></tr>
+          <tr><td><code>speeding</code>, <code>coords</code></td><td>mockTestStore</td><td>The incremental fold I added last week, for the live meter</td></tr>
+          <tr><td><code>activeZoneIdx</code>, <code>zoneOutcomes</code>, <code>tapMirrors</code></td><td>mockTestStore</td><td>Zone bookkeeping</td></tr>
+          <tr><td><code>MirrorsButton.tsx</code></td><td>src/ui</td><td>If option A</td></tr>
+          <tr><td>The zone message</td><td>DriveMessageSlot caller</td><td>Off-route, habitual and confirmation messages all stay</td></tr>
+          <tr><td><code>missedZones</code>, speeding args</td><td><code>liveTally</code></td><td>Collapses to a count of marks</td></tr>
+          <tr><td>&ldquo;Not assessed&rdquo; branch</td><td>result screen</td><td>Unless the duration guard is wanted</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small">
+      <code>detectSpeedingFaults</code> and <code>detectObservationFaults</code>
+      stay in <code>engine.ts</code> with their tests. They are correct functions
+      that nothing calls any more, and deleting them is a separate decision from
+      deciding they should not score a mock test.
+    </p>
+
+    <div class="callout">
+      <div class="h">The one thing genuinely lost</div>
+      <p>
+        Nothing catches a fault the examiner misses. Today, a sustained speed over
+        the limit is recorded whether or not anyone noticed. After this, if the
+        person in the passenger seat does not see it, it did not happen.
+      </p>
+      <p>
+        Which is exactly how a real test works, and is the point of the change &mdash;
+        but it is worth saying out loud, because a mock test will now score higher
+        than it used to for the same drive.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════════════════ 4 · SCOPE ═════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">04 &middot; boundary</p>
+      <h2>What this does not touch</h2>
+    </div>
+    <ul class="notes small">
+      <li>The mark sheet. Twenty-three categories, minus and plus per row, fifteen driving faults and one serious &mdash; all unchanged.</li>
+      <li>The map, the route line, off-route detection, the return leg, and deviation recording. Leaving the route is still not a fault.</li>
+      <li>The practice screen. It has its own store and never used any of this.</li>
+      <li>The pass rule itself: <code>majors === 0 &amp;&amp; minors &lt;= 15</code>.</li>
+      <li>GPS keeps drawing the map and driving the navigation. It stops being <em>evidence</em>; it does not stop being useful.</li>
+    </ul>
+  </section>
+
+  <!-- ══════════════════════ 5 · ASKS ══════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">05 &middot; over to you</p>
+      <h2>Three picks</h2>
+      <p class="small dim">Say the letters and I&rsquo;ll build it.</p>
+    </div>
+    <div>
+      <div class="askrow">
+        <span class="q">1 &middot; Beginning after the drive to the start</span>
+        <span class="a">A (a Begin bar on the approach, always live) &nbsp;/&nbsp; A + B (also loosen the automatic hand-over)</span>
+      </div>
+      <div class="askrow">
+        <span class="q">2 &middot; Mirrors and the observation zones</span>
+        <span class="a">A (remove the button, keep the zones drawn) &nbsp;/&nbsp; B (keep the button as an unscored prompt)</span>
+      </div>
+      <div class="askrow">
+        <span class="q">3 &middot; An empty test</span>
+        <span class="a">i (leave it &mdash; a clean sheet is a pass) &nbsp;/&nbsp; ii (no verdict under five minutes)</span>
+      </div>
+    </div>
+  </section>
+
+</div>
