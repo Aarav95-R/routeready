@@ -104,6 +104,17 @@ test("a locked card keeps the drawing and the summary, and says how to get in", 
   expect(queryByText(/Best/)).toBeNull();
 });
 
+test("a locked card hides history it actually has", () => {
+  // The realistic case: a learner drove this route while subscribed, lapsed,
+  // and now sees it locked. Their old best score must not still be showing.
+  const { queryByText } = render(
+    <RouteCard route={route} progress={[entry(64), entry(82)]} favourite={false} width={320} locked
+      onOpen={jest.fn()} onStart={jest.fn()} onFavourite={jest.fn()} />,
+  );
+  expect(queryByText(/Best/)).toBeNull();
+  expect(queryByText("2 mock tests · best score 82")).toBeNull();
+});
+
 test("a locked card hides the favourite control", () => {
   const { queryByLabelText } = render(
     <RouteCard route={route} favourite={false} width={320} locked

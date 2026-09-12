@@ -71,13 +71,22 @@ export function RouteCard({
         className="overflow-hidden rounded-[20px] bg-card active:scale-[0.98]"
         style={{ shadowColor: "#221F1C", shadowOpacity: 0.1, shadowRadius: 14, shadowOffset: { width: 0, height: 5 } }}
       >
-        <View className="border-b border-slate-100" style={{ backgroundColor: colors.drawing, opacity: locked ? 0.55 : 1 }}>
-          <RouteThumbnail
-            geometry={route.geometry}
-            zones={route.observation_zones}
-            width={width}
-            drawDelayMs={index * 60 + 220}
-          />
+        <View className="border-b border-slate-100" style={{ backgroundColor: colors.drawing }}>
+          {/*
+            Opacity is scoped to the drawing alone, not to this whole panel.
+            Dimming the drawing is the point — "you can see this, you cannot
+            have it yet" — but the badge below is the one element whose job is
+            to say *why* it looks that way, and the star (when present) is a
+            live control. Neither should fade along with the map.
+          */}
+          <View style={{ opacity: locked ? 0.55 : 1 }}>
+            <RouteThumbnail
+              geometry={route.geometry}
+              zones={route.observation_zones}
+              width={width}
+              drawDelayMs={index * 60 + 220}
+            />
+          </View>
           <View className="absolute right-2.5 top-2.5 flex-row items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1">
             {driven && !locked && <View className="h-1.5 w-1.5 rounded-full bg-accent" />}
             <Text
