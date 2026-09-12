@@ -15,7 +15,6 @@ import { Client } from "pg";
 
 const CONNECTION = process.env.SUPABASE_DB_URL;
 
-const SUBSCRIBER = "11111111-1111-1111-1111-111111111111";
 const FREELOADER = "22222222-2222-2222-2222-222222222222";
 
 let failures = 0;
@@ -27,6 +26,14 @@ function check(name: string, ok: boolean, detail = "") {
     failures++;
     console.error(`  FAIL  ${name}${detail ? ` — ${detail}` : ""}`);
   }
+}
+
+// Not a failure: a database with no accounts at all cannot answer "does a
+// subscriber see the locked route", and that absence is not the paywall
+// being broken. Kept out of `failures` so an empty auth.users doesn't make
+// the run look red for a question it was never able to ask.
+function skip(name: string, reason: string) {
+  console.log(`  skip  ${name} — ${reason}`);
 }
 
 /** Run `fn` as a signed-in user, then roll everything back. */
@@ -99,22 +106,34 @@ async function main() {
       check("unsubscribed is refused a locked route's hazards", hazards.rowCount === 0);
     });
 
-    await c.query("begin");
-    await c.query(
-      `insert into entitlements (user_id, status) values ($1, 'active')
-         on conflict (user_id) do update set status = 'active'`,
-      [SUBSCRIBER],
-    );
-    await c.query("set local role authenticated");
-    await c.query("select set_config('request.jwt.claims', $1, true)", [
-      JSON.stringify({ sub: SUBSCRIBER, role: "authenticated" }),
-    ]);
-    const paidLocked = await c.query("select 1 from route_details where route_id = $1", [lockedId]);
-    check("subscriber reads a locked route's steps", paidLocked.rowCount === 1);
-    const paidHazards = await c.query("select 1 from hazards where route_id = $1", [lockedId]);
-    check("subscriber reads a locked route's hazards", paidHazards.rowCount >= 0);
-    await c.query("rollback");
-    await c.query("reset role");
+    // `entitlements.user_id` references auth.users, so the subscriber this
+    // block impersonates has to be a real row there — a literal fixture UUID
+    // throws a foreign-key violation before any assertion runs. Picking
+    // whichever account happens to exist is fine: the policy under test
+    // reads `entitlements`, not anything about who the user is.
+    const { rows: accounts } = await c.query("select id from auth.users limit 1");
+    const subscriberId: string | undefined = accounts[0]?.id;
+    if (!subscriberId) {
+      skip("subscriber reads a locked route's steps", "no auth.users row to attach an entitlement to");
+      skip("subscriber reads a locked route's hazards", "no auth.users row to attach an entitlement to");
+    } else {
+      await c.query("begin");
+      await c.query(
+        `insert into entitlements (user_id, status) values ($1, 'active')
+           on conflict (user_id) do update set status = 'active'`,
+        [subscriberId],
+      );
+      await c.query("set local role authenticated");
+      await c.query("select set_config('request.jwt.claims', $1, true)", [
+        JSON.stringify({ sub: subscriberId, role: "authenticated" }),
+      ]);
+      const paidLocked = await c.query("select 1 from route_details where route_id = $1", [lockedId]);
+      check("subscriber reads a locked route's steps", paidLocked.rowCount === 1);
+      const paidHazards = await c.query("select 1 from hazards where route_id = $1", [lockedId]);
+      check("subscriber reads a locked route's hazards", paidHazards.rowCount >= 0);
+      await c.query("rollback");
+      await c.query("reset role");
+    }
   }
 
   // ── Entitlements are not self-writable ───────────────────────────────────

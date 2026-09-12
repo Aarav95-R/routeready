@@ -41,9 +41,24 @@ create table if not exists route_details (
   steps jsonb not null default '[]'
 );
 
-insert into route_details (route_id, steps)
-select id, coalesce(steps, '[]'::jsonb) from routes
-on conflict (route_id) do nothing;
+-- Guarded on the column still existing, because this statement reads
+-- `routes.steps` and the last statement in this same file drops it: the
+-- first run backfills from a column that is really there, and a second run
+-- — with the column already gone — has to skip this rather than fail with
+-- `42703: column "steps" does not exist`. PL/pgSQL only plans a branch's SQL
+-- when that branch actually executes, so the `insert` inside the `if` is
+-- never prepared once the column is gone.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'routes' and column_name = 'steps'
+  ) then
+    insert into route_details (route_id, steps)
+    select id, coalesce(steps, '[]'::jsonb) from routes
+    on conflict (route_id) do nothing;
+  end if;
+end $$;
 
 -- ── Who has paid ───────────────────────────────────────────────────────────
 -- Two statuses, not four. RevenueCat distinguishes grace and billing-retry;
