@@ -1,0 +1,75 @@
+// @gorhom/bottom-sheet is not globally mocked (jest.setup.js has no entry for
+// it) and the real library needs native measurement that jsdom cannot give
+// it. practiceScreen.test.tsx and mockScreen.test.tsx each declare this same
+// file-level mock for that reason; this is that shape, extended with the
+// backdrop export PaywallSheet renders. See task-7-sheet-notes.md: Jest
+// cannot see sheet position either way, mocked or not.
+jest.mock("@gorhom/bottom-sheet", () => {
+  const { View } = require("react-native");
+  const { forwardRef } = require("react");
+  const Sheet = forwardRef(({ children }: any, _ref: any) => <View>{children}</View>);
+  Sheet.displayName = "BottomSheet";
+  return {
+    __esModule: true,
+    default: Sheet,
+    BottomSheetView: View,
+    BottomSheetBackdrop: () => null,
+  };
+});
+
+jest.mock("@/services/purchases", () => ({
+  offers: jest.fn().mockResolvedValue([
+    { plan: "weekly", priceString: "£3.00" },
+    { plan: "monthly", priceString: "£9.00" },
+  ]),
+}));
+
+import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { PaywallSheet } from "../PaywallSheet";
+import { useEntitlement } from "@/stores/entitlement";
+
+const props = {
+  visible: true, centreName: "Wood Green", lockedCount: 9,
+  testWindow: "two_weeks" as const, onDismiss: jest.fn(),
+};
+
+test("shows prices from the store, never our own numerals", async () => {
+  const { getByText } = render(<PaywallSheet {...props} />);
+  await waitFor(() => expect(getByText("£3.00")).toBeTruthy());
+  expect(getByText("£9.00")).toBeTruthy();
+});
+
+test("names the centre in the headline", async () => {
+  const { getByText } = render(<PaywallSheet {...props} />);
+  await waitFor(() => expect(getByText("Nine more routes at Wood Green")).toBeTruthy());
+});
+
+test("a two-week test window pre-selects weekly", async () => {
+  const { getByLabelText } = render(<PaywallSheet {...props} />);
+  await waitFor(() => expect(getByLabelText("Weekly plan").props.accessibilityState.selected).toBe(true));
+});
+
+test("buying calls the store with the selected plan", async () => {
+  const purchase = jest.fn().mockResolvedValue(null);
+  useEntitlement.setState({ purchase } as never);
+  const { getByText } = render(<PaywallSheet {...props} />);
+  await waitFor(() => expect(getByText("£3.00")).toBeTruthy());
+  fireEvent.press(getByText("Unlock all routes"));
+  await waitFor(() => expect(purchase).toHaveBeenCalledWith("weekly"));
+});
+
+test("a failed purchase shows the sentence and leaves the sheet open", async () => {
+  const purchase = jest.fn().mockResolvedValue("That didn't go through. Nothing has been charged.");
+  const onDismiss = jest.fn();
+  useEntitlement.setState({ purchase } as never);
+  const { getByText } = render(<PaywallSheet {...props} onDismiss={onDismiss} />);
+  await waitFor(() => expect(getByText("£3.00")).toBeTruthy());
+  fireEvent.press(getByText("Unlock all routes"));
+  await waitFor(() => expect(getByText("That didn't go through. Nothing has been charged.")).toBeTruthy());
+  expect(onDismiss).not.toHaveBeenCalled();
+});
+
+test("restore is always offered", async () => {
+  const { getByText } = render(<PaywallSheet {...props} />);
+  await waitFor(() => expect(getByText("Restore purchases")).toBeTruthy());
+});
