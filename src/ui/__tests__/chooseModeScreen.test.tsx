@@ -1,15 +1,39 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 const mockPush = jest.fn();
+const mockBack = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: mockPush, back: jest.fn() }),
+  useRouter: () => ({ push: mockPush, back: mockBack }),
   useLocalSearchParams: () => ({ id: "r1" }),
 }));
 jest.mock("@/services/routesRepo", () => ({ getRoute: jest.fn() }));
 jest.mock("@/services/progressRepo", () => ({ listProgressByCentre: jest.fn() }));
 
+// @gorhom/bottom-sheet needs native measurement jsdom cannot give it, so this
+// screen's suite carries the same file-level mock centreScreen.test.tsx and
+// paywallSheet.test.tsx both declare for the same reason — the PaywallSheet
+// this screen renders when a route is locked pulls the real library in
+// otherwise.
+jest.mock("@gorhom/bottom-sheet", () => {
+  const { View } = require("react-native");
+  const { forwardRef } = require("react");
+  const Sheet = forwardRef(({ children }: any, _ref: any) => <View>{children}</View>);
+  Sheet.displayName = "BottomSheet";
+  return {
+    __esModule: true,
+    default: Sheet,
+    BottomSheetView: View,
+    BottomSheetBackdrop: () => null,
+  };
+});
+
+jest.mock("@/services/purchases", () => ({
+  offers: jest.fn().mockResolvedValue([]),
+}));
+
 import { getRoute } from "@/services/routesRepo";
 import { listProgressByCentre } from "@/services/progressRepo";
+import { useEntitlement } from "@/stores/entitlement";
 import type { Hazard, ProgressEntry, Route } from "@/types/db";
 import ChooseMode from "../../../app/route/[id]/start";
 
@@ -40,6 +64,11 @@ const mockProgress = listProgressByCentre as jest.MockedFunction<typeof listProg
 
 beforeEach(() => {
   mockPush.mockClear();
+  mockBack.mockClear();
+  // The default fixture route is free, so most tests never touch this — only
+  // the gating tests below set it explicitly. Reset to the safe, honest
+  // default rather than leave whatever the previous test left behind.
+  useEntitlement.setState({ status: "lapsed", product: null, renewsAt: null } as never);
   mockGetRoute.mockResolvedValue({ data: { route, hazards: [] } } as never);
   mockProgress.mockResolvedValue({ data: {} } as never);
 });
@@ -51,10 +80,14 @@ test("names the route it is about to drive, so a mis-tapped card is caught here"
   expect(screen.getByText("18 min")).toBeTruthy();
 });
 
-// The rows carry no route data, so they must not wait on the fetch.
-test("both modes are offered before the route has loaded", () => {
+// The rows carry no route data of their own, so they must not wait on the
+// history fetch — but they do now wait on the route, because whether they
+// render at all depends on the gate, and the gate needs is_free off the
+// route. Nothing can be shown, safely, before that arrives.
+test("both modes are offered once the route has loaded, without waiting on history", async () => {
   render(<ChooseMode />);
-  expect(screen.getByText("Practice drive")).toBeTruthy();
+  expect(screen.queryByText("Practice drive")).toBeNull();
+  expect(await screen.findByText("Practice drive")).toBeTruthy();
   expect(screen.getByText("Mock test")).toBeTruthy();
 });
 
@@ -126,4 +159,29 @@ test("the modes still work when progress cannot be read", async () => {
   await waitFor(() => expect(screen.getByText("Mock test")).toBeTruthy());
   fireEvent.press(screen.getByText("Mock test"));
   expect(mockPush).toHaveBeenCalledWith("/route/r1/mock");
+});
+
+test("a locked route reached directly shows the paywall, not the drive modes", async () => {
+  mockGetRoute.mockResolvedValue({ data: { route: { ...route, is_free: false }, hazards: [] }, stale: false } as never);
+  useEntitlement.setState({ status: "lapsed" } as never);
+  const { findByText, queryByText } = render(<ChooseMode />);
+  expect(await findByText(/more routes/)).toBeTruthy();
+  expect(queryByText("Mock test")).toBeNull();
+});
+
+test("the free route opens for anybody", async () => {
+  mockGetRoute.mockResolvedValue({ data: { route: { ...route, is_free: true }, hazards: [] }, stale: false } as never);
+  useEntitlement.setState({ status: "lapsed" } as never);
+  const { findByText } = render(<ChooseMode />);
+  expect(await findByText("Mock test")).toBeTruthy();
+});
+
+test("entitlement is read once and a later lapse does not close the screen", async () => {
+  mockGetRoute.mockResolvedValue({ data: { route: { ...route, is_free: false }, hazards: [] }, stale: false } as never);
+  useEntitlement.setState({ status: "active" } as never);
+  const { findByText, queryByText } = render(<ChooseMode />);
+  await findByText("Mock test");
+  // A renewal failing mid-session must never take the drive away.
+  act(() => { useEntitlement.setState({ status: "lapsed" } as never); });
+  expect(queryByText("Mock test")).toBeTruthy();
 });
