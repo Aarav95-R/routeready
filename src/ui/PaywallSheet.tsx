@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Linking, Pressable, Text, View } from "react-native";
 import BottomSheet, {
   BottomSheetBackdrop, BottomSheetView, type BottomSheetBackdropProps,
@@ -33,8 +33,10 @@ import { usePressed } from "@/ui/usePressed";
 // once with the whole suite green.
 const SNAP_POINTS = ["62%"];
 
-const TERMS_URL = "https://routeready.app/terms";
-const PRIVACY_URL = "https://routeready.app/privacy";
+// The real pages, from routeready-site's README — not this app's own domain,
+// which doesn't exist. App Review opens both from the paywall.
+const TERMS_URL = "https://aarav95-r.github.io/routeready-site/terms.html";
+const PRIVACY_URL = "https://aarav95-r.github.io/routeready-site/privacy.html";
 
 export function PaywallSheet({
   visible, centreName, lockedCount, testWindow, onDismiss,
@@ -67,6 +69,28 @@ export function PaywallSheet({
     return () => { cancelled = true; };
   }, [visible, testWindow]);
 
+  /**
+   * Fires `onDismiss` at most once per open.
+   *
+   * A successful buy or restore calls this directly. But gorhom also calls
+   * `onClose` on its own once the sheet's index animates to -1 — which is
+   * exactly what happens if the caller's `onDismiss` sets `visible` to false,
+   * since that flips `index` to -1 above. Without this guard the caller would
+   * see `onDismiss` fire twice for one success: once from the direct call,
+   * once from gorhom's own close a beat later. Reset on the next open rather
+   * than left permanently tripped, so a second purchase in the same mounted
+   * instance still dismisses.
+   */
+  const dismissedRef = useRef(false);
+  useEffect(() => {
+    if (visible) dismissedRef.current = false;
+  }, [visible]);
+  const dismissOnce = useCallback(() => {
+    if (dismissedRef.current) return;
+    dismissedRef.current = true;
+    onDismiss();
+  }, [onDismiss]);
+
   const weeklyOffer = planOffers?.find((o) => o.plan === "weekly") ?? null;
   const monthlyOffer = planOffers?.find((o) => o.plan === "monthly") ?? null;
   const selectedOffer = planOffers?.find((o) => o.plan === selectedPlan) ?? null;
@@ -82,8 +106,8 @@ export function PaywallSheet({
     const message = await purchase(selectedPlan);
     setBusy(false);
     if (message) { setError(message); return; }
-    onDismiss();
-  }, [selectedOffer, selectedPlan, busy, purchase, onDismiss]);
+    dismissOnce();
+  }, [selectedOffer, selectedPlan, busy, purchase, dismissOnce]);
 
   const handleRestore = useCallback(async () => {
     if (busy) return;
@@ -92,8 +116,8 @@ export function PaywallSheet({
     const message = await restore();
     setBusy(false);
     if (message) { setError(message); return; }
-    onDismiss();
-  }, [busy, restore, onDismiss]);
+    dismissOnce();
+  }, [busy, restore, dismissOnce]);
 
   const renderBackdrop = useCallback(
     (backdropProps: BottomSheetBackdropProps) => (
@@ -120,7 +144,7 @@ export function PaywallSheet({
       snapPoints={SNAP_POINTS}
       enableDynamicSizing={false}
       enablePanDownToClose
-      onClose={onDismiss}
+      onClose={dismissOnce}
       backdropComponent={renderBackdrop}
       handleIndicatorStyle={{ backgroundColor: colors.separator }}
     >

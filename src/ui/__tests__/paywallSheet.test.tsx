@@ -24,8 +24,10 @@ jest.mock("@/services/purchases", () => ({
   ]),
 }));
 
+import { Linking } from "react-native";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import { PaywallSheet } from "../PaywallSheet";
+import { offers } from "@/services/purchases";
 import { useEntitlement } from "@/stores/entitlement";
 
 const props = {
@@ -72,4 +74,37 @@ test("a failed purchase shows the sentence and leaves the sheet open", async () 
 test("restore is always offered", async () => {
   const { getByText } = render(<PaywallSheet {...props} />);
   await waitFor(() => expect(getByText("Restore purchases")).toBeTruthy());
+});
+
+test("pressing Restore purchases calls the store's restore", async () => {
+  const restore = jest.fn().mockResolvedValue(null);
+  useEntitlement.setState({ restore } as never);
+  const { getByText } = render(<PaywallSheet {...props} />);
+  await waitFor(() => expect(getByText("£3.00")).toBeTruthy());
+  fireEvent.press(getByText("Restore purchases"));
+  await waitFor(() => expect(restore).toHaveBeenCalledTimes(1));
+});
+
+test("Terms and Privacy are offered and open the real routeready-site pages", async () => {
+  const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(undefined as never);
+  const { getByText } = render(<PaywallSheet {...props} />);
+  await waitFor(() => expect(getByText("£3.00")).toBeTruthy());
+
+  expect(getByText("Terms")).toBeTruthy();
+  expect(getByText("Privacy")).toBeTruthy();
+
+  fireEvent.press(getByText("Terms"));
+  expect(openURL).toHaveBeenCalledWith("https://aarav95-r.github.io/routeready-site/terms.html");
+
+  fireEvent.press(getByText("Privacy"));
+  expect(openURL).toHaveBeenCalledWith("https://aarav95-r.github.io/routeready-site/privacy.html");
+
+  openURL.mockRestore();
+});
+
+test("offers() resolving to nothing — today's real behaviour, before Task 10 — disables the CTA", async () => {
+  (offers as jest.Mock).mockResolvedValueOnce([]);
+  const { getByText, getByLabelText } = render(<PaywallSheet {...props} />);
+  await waitFor(() => expect(getByText("Prices unavailable")).toBeTruthy());
+  expect(getByLabelText("Unlock all routes").props.accessibilityState.disabled).toBe(true);
 });
