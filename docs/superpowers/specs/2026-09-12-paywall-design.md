@@ -49,17 +49,28 @@ distinct routes around the centre someone is about to be tested at — and
 withholding it turns a shop window into a shuttered one. You cannot drive from
 a 150-pixel squiggle, so the sell and the security do not conflict.
 
-So `geometry` stays public, alongside name, difficulty, distance and duration:
-everything `RouteCard` draws. What the server withholds is `steps`,
-`speed_profile` and the route's `hazards` — the turn-by-turn instructions, the
-speed envelope, and the hazard set the examiner scores against.
+What the server withholds is exactly two things: **`routes.steps` and the
+route's `hazards`** — the turn-by-turn instructions, and the hazard set the
+examiner scores against. Everything else on the row stays public.
 
-**`observation_zones` stays public, deliberately.** It looks like coaching
-content and half of it is, but it feeds the card as well as the drive:
-`RouteThumbnail` draws a pin per zone, and `plainSummary()` tallies zone kinds
-to write the card's second line — `routeSummary.ts:53`. Gating it would empty
-the exact sentence the locked card exists to sell with ("dual carriageway, box
-junction") and blank the pins, while withholding nothing you could drive from.
+That is a smaller gate than it first looks like it should be, and the reason is
+`plainSummary()`. The card's second line — "Dual carriageway at 70, two
+roundabouts and a crossing" — is *derived*, not stored: `routeSummary.ts:49`
+reads `speed_profile` for the lead clause and `observation_zones` for the
+features. That module's header comment says so outright: both columns "ride
+along with every row `listRoutesByCentre` returns, so a card can describe its
+route offline and without a second round trip."
+
+Gate either one and every locked card collapses to the generic fallback, "A
+steady drive around the area." — emptying the exact sentence the locked card
+exists to sell with, and blanking the thumbnail's zone pins besides. Neither
+column is something anyone can drive from, so both stay public.
+
+**`geometry` stays public too**, for the thumbnail. A determined person could
+follow the drawn line on their own map; they would be doing it without
+turn-by-turn guidance and without the examiner, which is the product. Serving
+a decimated `thumb_geometry` instead is possible and is not worth its build
+here.
 
 ## Shape
 
@@ -80,11 +91,20 @@ Three changes, in one migration.
 `routes.is_free boolean not null default false` — one true per centre, chosen
 in the seed script rather than derived.
 
-`route_details` — a new table keyed by `route_id`, holding `steps` and
-`speed_profile`, moved off `routes` and backfilled. Its policy admits a row
-when the route is free or the caller is subscribed. The `hazards` policy
-changes from `using (true)` to the same condition. `observation_zones` stays on
-`routes`, for the reason above.
+`route_details` — a new table keyed by `route_id`, holding `steps` alone,
+moved off `routes` and backfilled, after which the column is dropped. Its
+policy admits a row when the route is free or the caller is subscribed. The
+`hazards` policy changes from `using (true)` to the same condition.
+
+A one-column table looks like overkill next to a view or an RPC. It is worth
+it: the policy is then an ordinary RLS rule on an ordinary table, which is the
+same mechanism protecting `user_progress` and `favourites` already, rather than
+a second gating idiom this codebase would have to learn.
+
+The column must be dropped rather than left behind. Leaving it means
+`select("*")` keeps serving the thing this whole change exists to withhold, and
+the leak would be invisible — the app would look correct because the client
+reads the new table.
 
 `entitlements` — one row per account: `user_id` (primary key, cascading from
 `auth.users`), `status` in `active | lapsed`, `product`, `renews_at`,
