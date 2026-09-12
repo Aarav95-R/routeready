@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
+import { plainSummary } from "@/lib/routeSummary";
 import type { ProgressEntry, Route } from "@/types/db";
 import { RouteCard } from "../RouteCard";
 
@@ -88,4 +89,45 @@ test("the star toggles favourite", () => {
 test("an already-favourited route offers to remove it", () => {
   setup({ favourite: true });
   expect(screen.getByLabelText("Remove from favourites")).toBeTruthy();
+});
+
+test("a locked card keeps the drawing and the summary, and says how to get in", () => {
+  const { getByText, queryByText, getByTestId } = render(
+    <RouteCard route={route} favourite={false} width={320} locked
+      onOpen={jest.fn()} onStart={jest.fn()} onFavourite={jest.fn()} />,
+  );
+  // The drawing and the description are the sell — they must survive locking.
+  expect(getByText(plainSummary(route))).toBeTruthy();
+  expect(getByTestId("route-badge").props.children).toBe("Locked");
+  expect(getByText("Unlock to drive this route")).toBeTruthy();
+  // History belongs to a route you have driven; a locked one has none.
+  expect(queryByText(/Best/)).toBeNull();
+});
+
+test("a locked card hides the favourite control", () => {
+  const { queryByLabelText } = render(
+    <RouteCard route={route} favourite={false} width={320} locked
+      onOpen={jest.fn()} onStart={jest.fn()} onFavourite={jest.fn()} />,
+  );
+  // Favouriting something you cannot open is a promise the app cannot keep.
+  expect(queryByLabelText("Add to favourites")).toBeNull();
+});
+
+test("a locked card still opens, so the caller can show the paywall", () => {
+  const onOpen = jest.fn();
+  const { getByLabelText } = render(
+    <RouteCard route={route} favourite={false} width={320} locked
+      onOpen={onOpen} onStart={jest.fn()} onFavourite={jest.fn()} />,
+  );
+  fireEvent.press(getByLabelText(/Town loop/i));
+  expect(onOpen).toHaveBeenCalled();
+});
+
+test("an unlocked card is unchanged", () => {
+  const { getByTestId, queryByText } = render(
+    <RouteCard route={route} progress={[]} favourite={false} width={320}
+      onOpen={jest.fn()} onStart={jest.fn()} onFavourite={jest.fn()} />,
+  );
+  expect(getByTestId("route-badge").props.children).not.toBe("Locked");
+  expect(queryByText("Unlock to drive this route")).toBeNull();
 });
