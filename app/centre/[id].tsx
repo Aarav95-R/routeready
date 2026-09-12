@@ -6,12 +6,16 @@ import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeabl
 import Animated from "react-native-reanimated";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+import { canDrive, lockedCount } from "@/lib/gating";
 import { listCentres } from "@/services/centresRepo";
 import { listRoutesByCentre } from "@/services/routesRepo";
 import { listProgressByCentre } from "@/services/progressRepo";
 import { listFavouriteRouteIds, toggleFavourite } from "@/services/favouritesRepo";
+import { selectStatus, useEntitlement } from "@/stores/entitlement";
+import { selectTestWindow, useSession } from "@/stores/sessionStore";
 import type { Centre, ProgressEntry, Route } from "@/types/db";
 import { enterAfter } from "@/ui/motion";
+import { PaywallSheet } from "@/ui/PaywallSheet";
 import { RouteCard } from "@/ui/RouteCard";
 import { Skeleton } from "@/ui/Skeleton";
 import { colors } from "@/ui/theme";
@@ -27,6 +31,9 @@ export default function CentreDetail() {
   const [routes, setRoutes] = useState<Route[] | null>(null);
   const [favs, setFavs] = useState<string[]>([]);
   const [progress, setProgress] = useState<Record<string, ProgressEntry[]>>({});
+  const status = useEntitlement(selectStatus);
+  const testWindow = useSession(selectTestWindow);
+  const [paywall, setPaywall] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -61,6 +68,7 @@ export default function CentreDetail() {
   const typicalMinutes = routes?.length
     ? Math.round(routes.reduce((sum, r) => sum + (r.estimated_minutes ?? 0), 0) / routes.length)
     : null;
+  const locked = routes ? lockedCount(routes, status) : 0;
 
   return (
     <SafeAreaView className="flex-1 bg-surface" edges={["top"]}>
@@ -107,38 +115,82 @@ export default function CentreDetail() {
             ? <View className="gap-3.5"><Skeleton h={200} /><Skeleton h={200} /></View>
             : <Text className="pt-6 text-center text-[13px] text-slate-500">No routes seeded for this centre yet.</Text>
         }
-        renderItem={({ item, index }) => (
-          <ReanimatedSwipeable
-            renderLeftActions={() => (
-              <View className="mr-2 w-20 items-center justify-center rounded-[20px] bg-accent">
-                <Ionicons name="play" size={20} color="#fff" />
-              </View>
-            )}
-            renderRightActions={() => (
-              <View className="ml-2 w-20 items-center justify-center rounded-[20px] bg-warning">
-                <Ionicons name={favs.includes(item.id) ? "star" : "star-outline"} size={20} color="#fff" />
-              </View>
-            )}
-            onSwipeableOpen={(direction) => {
-              if (direction === "left") router.push(`/route/${item.id}/start`);
-              else onFavourite(item.id);
-            }}
-          >
-            <RouteCard
-              route={item}
-              progress={progress[item.id]}
-              favourite={favs.includes(item.id)}
-              width={width - H_PADDING * 2}
-              index={index}
-              // One card, one destination. Tapping the card and tapping Start
-              // used to land on two different screens — the detail page and
-              // the drive — which made the card's own tap a coin toss.
-              onOpen={() => router.push(`/route/${item.id}/start`)}
-              onStart={() => router.push(`/route/${item.id}/start`)}
-              onFavourite={() => onFavourite(item.id)}
-            />
-          </ReanimatedSwipeable>
-        )}
+        renderItem={({ item, index }) => {
+          const drivable = canDrive(item, status);
+          return (
+            <ReanimatedSwipeable
+              renderLeftActions={() => (
+                <View className="mr-2 w-20 items-center justify-center rounded-[20px] bg-accent">
+                  <Ionicons name="play" size={20} color="#fff" />
+                </View>
+              )}
+              renderRightActions={() => (
+                <View className="ml-2 w-20 items-center justify-center rounded-[20px] bg-warning">
+                  <Ionicons name={favs.includes(item.id) ? "star" : "star-outline"} size={20} color="#fff" />
+                </View>
+              )}
+              onSwipeableOpen={(direction) => {
+                if (direction === "left") {
+                  // The swipe shortcut is the same destination as the card's own
+                  // tap, so it owes the same gate — otherwise it is a third way
+                  // to reach a route this person has not paid for.
+                  if (drivable) router.push(`/route/${item.id}/start`);
+                  else setPaywall(true);
+                } else onFavourite(item.id);
+              }}
+            >
+              <RouteCard
+                route={item}
+                progress={progress[item.id]}
+                favourite={favs.includes(item.id)}
+                width={width - H_PADDING * 2}
+                index={index}
+                locked={!drivable}
+                // One card, one destination. Tapping the card and tapping Start
+                // used to land on two different screens — the detail page and
+                // the drive — which made the card's own tap a coin toss. A
+                // locked route keeps that rule: both taps land on the same
+                // place, the paywall, rather than the drive screen.
+                onOpen={() => (drivable ? router.push(`/route/${item.id}/start`) : setPaywall(true))}
+                onStart={() => (drivable ? router.push(`/route/${item.id}/start`) : setPaywall(true))}
+                onFavourite={() => onFavourite(item.id)}
+              />
+            </ReanimatedSwipeable>
+          );
+        }}
+      />
+
+      {/*
+        Below the cards, never above. The locked cards are what makes the case
+        — someone has already seen the nine routes they cannot open — and a
+        panel first would be an advertisement in front of the argument.
+      */}
+      {locked > 0 && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Unlock ${locked} more routes at this centre`}
+          onPress={() => setPaywall(true)}
+          className="mx-4 mb-6 flex-row items-center justify-between rounded-[18px] px-4 py-3.5"
+          style={{ backgroundColor: colors.accent }}
+        >
+          <View>
+            <Text className="text-[15px] text-white" style={{ fontFamily: FACES["700"] }}>
+              {locked} more {locked === 1 ? "route" : "routes"} here
+            </Text>
+            <Text className="mt-0.5 text-[12px] text-white/90" style={{ fontFamily: FACES["400"] }}>
+              Practise every road the examiner might pick
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#fff" />
+        </Pressable>
+      )}
+
+      <PaywallSheet
+        visible={paywall}
+        centreName={centre?.name ?? ""}
+        lockedCount={locked}
+        testWindow={testWindow}
+        onDismiss={() => setPaywall(false)}
       />
     </SafeAreaView>
   );

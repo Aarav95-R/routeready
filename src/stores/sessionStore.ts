@@ -3,7 +3,7 @@ import type { Session } from "@supabase/supabase-js";
 import type { CodeType } from "@/lib/otpCode";
 import { supabase } from "@/lib/supabase";
 import { authError, AUTH_FALLBACK, AUTH_TIMEOUT } from "@/lib/authError";
-import { profileToWrite } from "@/lib/onboarding";
+import { profileToWrite, type TestWindow } from "@/lib/onboarding";
 import { appleCredential, CANCELLED, googleCredential } from "@/lib/socialAuth";
 import { TIMED_OUT, withTimeout } from "@/lib/withTimeout";
 import { clearOutbox, clearUserCache } from "@/services/cache";
@@ -115,6 +115,23 @@ export const SIGN_IN_DEADLINE_MS = 15_000;
 export function selectFullName(s: SessionState): string {
   const value = (s.session?.user?.user_metadata as Record<string, unknown> | undefined)?.full_name;
   return typeof value === "string" ? value.trim() : "";
+}
+
+/** Every value `test_window` can legitimately hold, for narrowing what comes back out of it. */
+const TEST_WINDOWS: readonly TestWindow[] = ["two_weeks", "this_month", "later", "not_booked"];
+
+/**
+ * The interview's answer to "when is your test", or null.
+ *
+ * Same reasoning as `selectFullName`: `user_metadata` is a free-form bag, and
+ * an account created before this question existed has nothing under this key
+ * at all. Narrowed against `TEST_WINDOWS` rather than just checked for
+ * "is it a string" — a stale or hand-edited value that is a string but not one
+ * of the four the interview can produce is exactly as absent as no value.
+ */
+export function selectTestWindow(s: SessionState): TestWindow | null {
+  const value = (s.session?.user?.user_metadata as Record<string, unknown> | undefined)?.test_window;
+  return TEST_WINDOWS.includes(value as TestWindow) ? (value as TestWindow) : null;
 }
 
 /**

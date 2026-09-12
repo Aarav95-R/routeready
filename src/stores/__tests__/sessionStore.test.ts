@@ -32,7 +32,7 @@ import { supabase } from "@/lib/supabase";
 import { appleCredential, CANCELLED, googleCredential } from "@/lib/socialAuth";
 import { authError, AUTH_TIMEOUT } from "@/lib/authError";
 import {
-  SESSION_RESTORE_DEADLINE_MS, SIGN_IN_DEADLINE_MS, selectNeedsInterview, selectUserId, useSession,
+  SESSION_RESTORE_DEADLINE_MS, SIGN_IN_DEADLINE_MS, selectNeedsInterview, selectTestWindow, selectUserId, useSession,
 } from "../sessionStore";
 
 const signedIn = { user: { id: "u1", email: "a@b.com" } } as never;
@@ -869,6 +869,33 @@ describe("selectNeedsInterview", () => {
   // without choosing a centre. It is an absent answer, not an answer.
   test("a null centre is not an answer", () => {
     expect(selectNeedsInterview(state({ user: { user_metadata: { home_centre_id: null } } }))).toBe(true);
+  });
+});
+
+/**
+ * `selectTestWindow` narrows the same way `selectFullName` does:
+ * `user_metadata` is a free-form bag, so a value that is present but not one
+ * of the four the interview can produce is exactly as absent as no value.
+ */
+describe("selectTestWindow", () => {
+  const state = (session: unknown) => ({ session }) as never;
+
+  test("reads back one of the interview's own values", () => {
+    expect(selectTestWindow(state({ user: { user_metadata: { test_window: "two_weeks" } } }))).toBe("two_weeks");
+  });
+
+  // An account made before card 5 asked this question has nothing under this
+  // key at all — the case `toMetadata` at src/lib/onboarding.ts:114 exists for.
+  test("an account that predates the question has no answer", () => {
+    expect(selectTestWindow(state({ user: { user_metadata: {} } }))).toBeNull();
+    expect(selectTestWindow(state({ user: {} }))).toBeNull();
+    expect(selectTestWindow(state(null))).toBeNull();
+  });
+
+  // A stale or hand-edited value that is a string but not one the interview
+  // can produce is not trusted either.
+  test("a value outside the four windows is treated as no answer", () => {
+    expect(selectTestWindow(state({ user: { user_metadata: { test_window: "tomorrow" } } }))).toBeNull();
   });
 });
 
