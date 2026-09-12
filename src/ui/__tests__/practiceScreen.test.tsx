@@ -33,7 +33,11 @@ jest.mock("expo-router", () => ({
 }));
 
 const mockGetRoute = jest.fn();
-jest.mock("@/services/routesRepo", () => ({ getRoute: (...a: unknown[]) => mockGetRoute(...a) }));
+const mockGetRouteSteps = jest.fn();
+jest.mock("@/services/routesRepo", () => ({
+  getRoute: (...a: unknown[]) => mockGetRoute(...a),
+  getRouteSteps: (...a: unknown[]) => mockGetRouteSteps(...a),
+}));
 
 const mockFetchDirections = jest.fn();
 jest.mock("@/services/directions", () => ({ fetchDirections: (...a: unknown[]) => mockFetchDirections(...a) }));
@@ -66,11 +70,14 @@ const route: Route = {
   id: "route-1", centre_id: "centre-1", name: "Route 3 · Sandpit Lane",
   geometry: { type: "LineString", coordinates: LOOP.map((p) => [p.lng, p.lat]) },
   estimated_minutes: 14, distance_km: 4.2, difficulty: 3,
-  speed_profile: [], observation_zones: [],
-  steps: buildNavSteps([
-    osrm(A, "depart"), osrm(B, "turn"), osrm(C, "turn"), osrm(D, "turn"), osrm(A, "arrive", "", 0),
-  ]),
+  speed_profile: [], observation_zones: [], is_free: true,
 };
+
+// The turn-by-turn now lives behind getRouteSteps, its own gated table — see
+// each test's mockGetRouteSteps for what it hands back.
+const ROUTE_STEPS = buildNavSteps([
+  osrm(A, "depart"), osrm(B, "turn"), osrm(C, "turn"), osrm(D, "turn"), osrm(A, "arrive", "", 0),
+]);
 
 // The drive to the start: a short straight run ending on the route's start.
 const APPROACH_LL: LatLng[] = side({ lat: 51.4980, lng: -0.100 }, A, 12);
@@ -91,6 +98,7 @@ beforeEach(() => {
   mockBack.mockClear();
   mockDismissTo.mockClear();
   mockGetRoute.mockResolvedValue({ data: { route, hazards: [] }, stale: false });
+  mockGetRouteSteps.mockResolvedValue({ data: ROUTE_STEPS, stale: false });
   mockFetchDirections.mockResolvedValue(approach);
 });
 
@@ -220,16 +228,10 @@ test("keep driving suppresses the finish prompt until leaving and re-entering", 
 // with it, the end of the route.
 test("a manoeuvre the driver never gets close to does not strand the drive", async () => {
   const OFF = { lat: 51.509, lng: -0.0885 }; // ~130 m off the driven line
-  mockGetRoute.mockResolvedValue({
-    data: {
-      route: {
-        ...route,
-        steps: buildNavSteps([
-          osrm(A, "depart"), osrm(B, "turn"), osrm(OFF, "roundabout"), osrm(D, "turn"), osrm(A, "arrive", "", 0),
-        ]),
-      },
-      hazards: [],
-    },
+  mockGetRouteSteps.mockResolvedValue({
+    data: buildNavSteps([
+      osrm(A, "depart"), osrm(B, "turn"), osrm(OFF, "roundabout"), osrm(D, "turn"), osrm(A, "arrive", "", 0),
+    ]),
     stale: false,
   });
   setLastKnownPosition(A.lat, A.lng);

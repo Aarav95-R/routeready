@@ -11,7 +11,7 @@ const route: Route = {
   estimated_minutes: 18, distance_km: 6.2, difficulty: 2,
   speed_profile: [{ startIdx: 0, endIdx: 3, limitMph: 30 }],
   observation_zones: [{ kind: "roundabout", lat: 51.605, lng: -0.24, radiusM: 30 }],
-  steps: [],
+  is_free: true,
 };
 
 const entry = (score: number | null): ProgressEntry => ({

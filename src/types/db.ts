@@ -45,10 +45,27 @@ export type RoutePhase = {
 export type Route = {
   id: string; centre_id: string; name: string; geometry: GeoLineString;
   estimated_minutes: number | null; distance_km: number | null; difficulty: 1 | 2 | 3 | 4 | 5;
-  speed_profile: SpeedProfileSegment[]; observation_zones: ObservationZone[]; steps: NavStep[];
+  speed_profile: SpeedProfileSegment[]; observation_zones: ObservationZone[];
+  /**
+   * Whether this is the route its centre gives away. Public on purpose: a card
+   * has to be able to draw its own locked state without a second round trip,
+   * and knowing which route is free tells an unsubscribed reader nothing they
+   * could drive with.
+   */
+  is_free: boolean;
   /** Empty for every route seeded before the phase planner existed. */
   phases?: RoutePhase[];
 };
+
+/**
+ * The half of a route that is behind the paywall.
+ *
+ * Separate from `Route` because it is a separate *table* — RLS is row-level, so
+ * the turn-by-turn had to leave the routes row to be withheld at all. Keeping
+ * the types apart is what stops a screen destructuring `route.steps` and
+ * getting `undefined` from a server that quietly refused.
+ */
+export type RouteDetails = { route_id: string; steps: NavStep[] };
 export type Hazard = {
   id: string; route_id: string; lat: number; lng: number;
   type: "roundabout" | "zebra" | "narrow" | "junction"; description: string;

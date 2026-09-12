@@ -1,12 +1,13 @@
 const mockOrder = jest.fn();
 const mockEq = jest.fn();
 const mockSingle = jest.fn();
+const mockMaybeSingle = jest.fn();
 const mockInsert = jest.fn();
 const mockDel = jest.fn();
 jest.mock("@/lib/supabase", () => ({
   supabase: {
     from: jest.fn(() => ({
-      select: jest.fn(() => ({ order: mockOrder, eq: mockEq.mockReturnValue({ order: mockOrder, single: mockSingle }) })),
+      select: jest.fn(() => ({ order: mockOrder, eq: mockEq.mockReturnValue({ order: mockOrder, single: mockSingle, maybeSingle: mockMaybeSingle }) })),
       insert: mockInsert,
       delete: mockDel.mockReturnValue({ match: jest.fn().mockResolvedValue({ error: null }) }),
     })),
@@ -17,10 +18,12 @@ jest.mock("@react-native-async-storage/async-storage", () =>
   require("@react-native-async-storage/async-storage/jest/async-storage-mock"));
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { supabase } from "@/lib/supabase";
 import { listCentres } from "../centresRepo";
 import { listManoeuvres } from "../manoeuvresRepo";
 import { listQuestions } from "../quizRepo";
 import { saveProgress, flushProgress } from "../progressRepo";
+import { getRouteSteps, listRoutesByCentre } from "../routesRepo";
 
 beforeEach(() => { jest.clearAllMocks(); return AsyncStorage.clear(); });
 
@@ -99,4 +102,28 @@ test("the quiz and the manoeuvres do not share a cache entry", async () => {
   await listQuestions();
   mockOrder.mockResolvedValueOnce({ data: null, error: { message: "offline" } });
   await expect(listManoeuvres()).rejects.toThrow();
+});
+
+test("listRoutesByCentre asks for named columns, never *", async () => {
+  mockOrder.mockResolvedValue({ data: [{ id: "r1", name: "Loop", is_free: true }], error: null });
+  await listRoutesByCentre("c1");
+  const select = (supabase.from as jest.Mock).mock.results[0].value.select as jest.Mock;
+  expect(select).toHaveBeenCalled();
+  expect(select.mock.calls[0][0]).not.toBe("*");
+  expect(select.mock.calls[0][0]).toContain("is_free");
+  expect(select.mock.calls[0][0]).not.toContain("steps");
+});
+
+test("getRouteSteps returns the steps when the server serves them", async () => {
+  mockMaybeSingle.mockResolvedValue({ data: { steps: [{ instruction: "Turn left" }] }, error: null });
+  const r = await getRouteSteps("r1");
+  expect(r.data).toHaveLength(1);
+});
+
+test("getRouteSteps returns null when the policy refuses the row", async () => {
+  // RLS does not error — it returns no rows. Null and [] must stay distinct:
+  // a route can legitimately have no steps.
+  mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+  const r = await getRouteSteps("r2");
+  expect(r.data).toBeNull();
 });

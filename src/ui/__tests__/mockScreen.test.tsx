@@ -70,8 +70,7 @@ const route: Route = {
   id: "route-1", centre_id: "centre-1", name: "Route 3 · Sandpit Lane",
   geometry: { type: "LineString", coordinates: LOOP.map((p) => [p.lng, p.lat]) },
   estimated_minutes: 14, distance_km: 4.2, difficulty: 3,
-  speed_profile: [], observation_zones: [],
-  steps: buildNavSteps([osrm(A, "depart"), osrm(B, "turn"), osrm(A, "arrive", "", 0)]),
+  speed_profile: [], observation_zones: [], is_free: true,
 };
 
 const APPROACH_LL: LatLng[] = side({ lat: 51.4980, lng: -0.100 }, A, 12);

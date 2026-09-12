@@ -9,7 +9,7 @@ import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
 import BottomSheet, { BottomSheetView } from "@gorhom/bottom-sheet";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { getRoute } from "@/services/routesRepo";
+import { getRoute, getRouteSteps } from "@/services/routesRepo";
 import { fetchDirections, Directions } from "@/services/directions";
 import { advance, ANNOUNCE_M, AT_START_M, formatDistance, NAV_ZOOM_FAR, NAV_ZOOM_MID, rebaseRouteCursor, remainingM, routeProgress } from "@/lib/navigation";
 import { cumulativeM, haversineM, iconRotationDeg, LatLng, mpsToMph, smoothHeading, snapToPath } from "@/lib/geo";
@@ -55,6 +55,7 @@ export default function Practice() {
   useKeepAwake();
 
   const [route, setRoute] = useState<Route | null>(null);
+  const [steps, setSteps] = useState<NavStep[] | null>(null);
   const [hazards, setHazards] = useState<Hazard[]>([]);
   const [selectedHazard, setSelectedHazard] = useState<Hazard | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -134,7 +135,17 @@ export default function Practice() {
   const lifecycleRef = useRef(createRouteLifecycle());
 
   useEffect(() => {
-    getRoute(id).then((r) => { setRoute(r.data.route); setHazards(r.data.hazards); }).catch(() => {});
+    let alive = true;
+    (async () => {
+      const r = await getRoute(id).catch(() => null);
+      if (!r) return;
+      if (alive) { setRoute(r.data.route); setHazards(r.data.hazards); }
+      // Separate table, separate request: a locked route still resolves this
+      // far, and the policy answers with zero rows rather than an error.
+      const s = await getRouteSteps(id).catch(() => null);
+      if (alive) setSteps(s?.data ?? null);
+    })();
+    return () => { alive = false; };
   }, [id]);
 
   const routeLL = useMemo(
@@ -144,7 +155,7 @@ export default function Practice() {
   // Stitched on the way in. The rows in Supabase were written by flattening
   // OSRM's legs, so a loop planned through three waypoints carries three
   // mid-route "You have reached the end of the route" steps — see stitchLegs.
-  const routeSteps = useMemo(() => stitchLegs(route?.steps ?? []), [route]);
+  const routeSteps = useMemo(() => stitchLegs(steps ?? []), [steps]);
   const routeCum = useMemo(() => cumulativeM(routeLL), [routeLL]);
   const isLoop = useMemo(
     () => routeLL.length > 1 && haversineM(routeLL[0], routeLL[routeLL.length - 1]) < LOOP_CLOSE_M,
@@ -580,10 +591,11 @@ export default function Practice() {
     }
 
     if (!steps.length) {
-      // A leg can legitimately arrive with no steps (routes.steps defaults to
-      // '[]' in the schema, and an approach fetch can come back with none).
-      // Skip only the step-dependent work: the camera still has to follow, or
-      // the driver watches their puck walk off a frozen map.
+      // A leg can legitimately arrive with no steps (route_details.steps
+      // defaults to '[]' in the schema, a locked route's fetch resolves to
+      // null and gets coalesced above, and an approach fetch can come back
+      // with none). Skip only the step-dependent work: the camera still has
+      // to follow, or the driver watches their puck walk off a frozen map.
       mapRef.current?.pushCamera(p, mapBearingRef.current, zoomRef.current);
       return;
     }

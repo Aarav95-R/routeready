@@ -15,7 +15,7 @@ const route = (over: Partial<Route> = {}): Route => ({
   id: "r1", centre_id: "c1", name: "Route 1 · Town loop",
   geometry: { type: "LineString", coordinates: [] },
   estimated_minutes: 18, distance_km: 6.2, difficulty: 2,
-  speed_profile: [], observation_zones: [], steps: [],
+  speed_profile: [], observation_zones: [], is_free: true,
   ...over,
 });
 
