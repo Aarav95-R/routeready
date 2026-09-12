@@ -10,7 +10,8 @@
     "lint": "expo lint",
     "test": "jest",
     "seed": "tsx scripts/seed/generate.ts",
-    "check:map-style": "tsx scripts/check-map-style.ts"
+    "check:map-style": "tsx scripts/check-map-style.ts",
+    "check:paywall": "tsx scripts/check-paywall.ts"
   },
   "jest": {
     "preset": "jest-expo",
