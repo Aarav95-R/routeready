@@ -90,6 +90,7 @@ async function main() {
     `select
        (select count(*) from test_centres)    as centres,
        (select count(*) from routes)          as routes,
+       (select count(*) from route_details)   as route_details,
        (select count(*) from hazards)         as hazards,
        (select count(*) from show_me_tell_me) as questions,
        (select count(*) from manoeuvres)      as manoeuvres;`
