@@ -28,11 +28,18 @@ create unique index if not exists routes_one_free_per_centre
 -- An interim pick so no centre is fully locked between this migration and the
 -- next seed run. The seed script chooses deliberately; this only has to be
 -- deterministic and present.
-update routes set is_free = true
-where id in (
-  select distinct on (centre_id) id
-  from routes
-  order by centre_id, difficulty, name
+--
+-- Guarded to centres that have none yet: a re-run after the seed script's
+-- deliberate `pickFreeRoute` has already chosen one must not revert that
+-- choice back to the lowest-difficulty route with no error to show for it.
+update routes r set is_free = true
+where r.id in (
+  select distinct on (r2.centre_id) r2.id
+  from routes r2
+  where not exists (
+    select 1 from routes r3 where r3.centre_id = r2.centre_id and r3.is_free
+  )
+  order by r2.centre_id, r2.difficulty, r2.name
 );
 
 -- ── The gated half of a route ──────────────────────────────────────────────

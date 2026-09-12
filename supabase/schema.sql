@@ -184,7 +184,11 @@ create policy "Free or subscribed" on route_details
     or is_subscribed()
   );
 
--- Replaces hazards' old "Public read" policy from above.
+-- Postgres combines permissive policies for the same command with OR, so
+-- leaving hazards' Phase 1 "Public read" policy in place would make this
+-- policy's condition irrelevant: `using (true) OR (...)` is always true.
+-- Dropped here, matching the migration, not left as a comment saying so.
+drop policy if exists "Public read" on hazards;
 create policy "Free or subscribed" on hazards
   for select to anon, authenticated
   using (

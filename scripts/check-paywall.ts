@@ -85,12 +85,20 @@ async function main() {
     `${centres.rows[0].n} centres have none or several`);
 
   // ── The gate ─────────────────────────────────────────────────────────────
+  // `locked_hazard_id` is a locked route known to actually have hazard rows —
+  // picking any locked route for the hazards checks would let a route with
+  // zero hazards pass "unsubscribed is refused" for the wrong reason (there
+  // was nothing to refuse), and would leave "subscriber reads" with nothing
+  // to assert `> 0` about.
   const { rows: sample } = await c.query(
     `select
        (select id from routes where is_free limit 1) as free_id,
-       (select id from routes where not is_free limit 1) as locked_id`,
+       (select id from routes where not is_free limit 1) as locked_id,
+       (select r.id from routes r
+          where not r.is_free and exists (select 1 from hazards h where h.route_id = r.id)
+          limit 1) as locked_hazard_id`,
   );
-  const { free_id: freeId, locked_id: lockedId } = sample[0];
+  const { free_id: freeId, locked_id: lockedId, locked_hazard_id: lockedHazardId } = sample[0];
   if (!freeId || !lockedId) {
     check("database has both a free and a locked route", false, "seed it first");
   } else {
@@ -102,8 +110,12 @@ async function main() {
       check("unsubscribed is refused a locked route's steps", locked.rowCount === 0,
         "the paywall does not hold");
 
-      const hazards = await c.query("select 1 from hazards where route_id = $1", [lockedId]);
-      check("unsubscribed is refused a locked route's hazards", hazards.rowCount === 0);
+      if (!lockedHazardId) {
+        skip("unsubscribed is refused a locked route's hazards", "no locked route has hazards to test against");
+      } else {
+        const hazards = await c.query("select 1 from hazards where route_id = $1", [lockedHazardId]);
+        check("unsubscribed is refused a locked route's hazards", hazards.rowCount === 0);
+      }
     });
 
     // `entitlements.user_id` references auth.users, so the subscriber this
@@ -117,22 +129,34 @@ async function main() {
       skip("subscriber reads a locked route's steps", "no auth.users row to attach an entitlement to");
       skip("subscriber reads a locked route's hazards", "no auth.users row to attach an entitlement to");
     } else {
+      // Matches asUser's own begin/finally/rollback shape: the docstring at
+      // the top of this file promises every check runs inside a transaction
+      // that is rolled back, and a manual begin/rollback with no `finally`
+      // breaks that promise the moment anything between them throws.
       await c.query("begin");
-      await c.query(
-        `insert into entitlements (user_id, status) values ($1, 'active')
-           on conflict (user_id) do update set status = 'active'`,
-        [subscriberId],
-      );
-      await c.query("set local role authenticated");
-      await c.query("select set_config('request.jwt.claims', $1, true)", [
-        JSON.stringify({ sub: subscriberId, role: "authenticated" }),
-      ]);
-      const paidLocked = await c.query("select 1 from route_details where route_id = $1", [lockedId]);
-      check("subscriber reads a locked route's steps", paidLocked.rowCount === 1);
-      const paidHazards = await c.query("select 1 from hazards where route_id = $1", [lockedId]);
-      check("subscriber reads a locked route's hazards", paidHazards.rowCount >= 0);
-      await c.query("rollback");
-      await c.query("reset role");
+      try {
+        await c.query(
+          `insert into entitlements (user_id, status) values ($1, 'active')
+             on conflict (user_id) do update set status = 'active'`,
+          [subscriberId],
+        );
+        await c.query("set local role authenticated");
+        await c.query("select set_config('request.jwt.claims', $1, true)", [
+          JSON.stringify({ sub: subscriberId, role: "authenticated" }),
+        ]);
+        const paidLocked = await c.query("select 1 from route_details where route_id = $1", [lockedId]);
+        check("subscriber reads a locked route's steps", paidLocked.rowCount === 1);
+
+        if (!lockedHazardId) {
+          skip("subscriber reads a locked route's hazards", "no locked route has hazards to test against");
+        } else {
+          const paidHazards = await c.query("select 1 from hazards where route_id = $1", [lockedHazardId]);
+          check("subscriber reads a locked route's hazards", paidHazards.rowCount > 0);
+        }
+      } finally {
+        await c.query("rollback");
+        await c.query("reset role");
+      }
     }
   }
 
