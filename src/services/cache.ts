@@ -16,9 +16,14 @@ export async function cachedFetch<T>(key: string, fetcher: () => Promise<T>): Pr
 
 /**
  * Everything cached under `cache:` that belongs to a person rather than to the
- * country. Centres and routes are the same whoever is signed in and stay put;
- * `progress:<centreId>` holds that user's own mock-test rows, scoped by RLS on
- * the way in and by nothing at all once written to disk.
+ * country. `progress:<centreId>` holds that user's own mock-test rows, scoped
+ * by RLS on the way in and by nothing at all once written to disk.
+ *
+ * Routes are deliberately *not* here, and that is no longer because they belong
+ * to everybody — since the paywall they do not. It is because sign-out is not
+ * the event that should drop them: the same person signs back in and their
+ * subscription is unchanged. `clearRouteCache` below is the one that runs when
+ * the entitlement is what changed.
  */
 const USER_CACHE_PREFIX = "cache:progress:";
 
@@ -33,6 +38,30 @@ export async function clearUserCache(): Promise<void> {
   const keys = await AsyncStorage.getAllKeys();
   const mine = keys.filter((k) => k.startsWith(USER_CACHE_PREFIX));
   if (mine.length > 0) await AsyncStorage.multiRemove([...mine]);
+}
+
+/**
+ * Take every cached route off the device, because the subscription that paid
+ * for them has ended.
+ *
+ * Without this the paywall has a hole with a clear shape: subscribe, open nine
+ * centres so their routes and turn-by-turn land on disk, cancel, and keep
+ * driving all of them offline for as long as the install lasts. The server
+ * would refuse every one of those reads; nothing would ever ask it.
+ *
+ * One prefix covers all three shapes the routes repo writes — `cache:routes:`,
+ * `cache:route:` and `cache:route-steps:` — because all three begin with
+ * `cache:route`.
+ *
+ * Separate from `clearUserCache` rather than a flag on it, matching how
+ * `clearOutbox` is separate: sign-out wants one of these, a lapse wants the
+ * other, and a boolean argument would put that decision at the call site of a
+ * function whose whole job is to not need one.
+ */
+export async function clearRouteCache(): Promise<void> {
+  const keys = await AsyncStorage.getAllKeys();
+  const routes = keys.filter((k) => k.startsWith("cache:route"));
+  if (routes.length > 0) await AsyncStorage.multiRemove([...routes]);
 }
 
 /**

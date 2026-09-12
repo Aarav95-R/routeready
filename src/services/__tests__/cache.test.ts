@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { cachedFetch, clearOutbox, clearUserCache, drainQueue, enqueue } from "../cache";
+import { cachedFetch, clearOutbox, clearRouteCache, clearUserCache, drainQueue, enqueue } from "../cache";
 
 beforeEach(() => AsyncStorage.clear());
 
@@ -74,4 +74,29 @@ test("outbox enqueues and drains FIFO, keeping failures", async () => {
   expect(flushed).toBe(2);
   expect(sent).toEqual([{ a: 1 }, { a: 2 }]);
   expect(await drainQueue("progress_outbox", async () => {})).toBe(0);
+});
+
+test("clearRouteCache takes every route key and leaves the rest", async () => {
+  await AsyncStorage.setItem("cache:routes:c1", "[]");
+  await AsyncStorage.setItem("cache:route:r1", "{}");
+  await AsyncStorage.setItem("cache:route-steps:r1", "[]");
+  await AsyncStorage.setItem("cache:centres", "[]");
+  await AsyncStorage.setItem("cache:progress:c1", "[]");
+
+  await clearRouteCache();
+
+  expect(await AsyncStorage.getItem("cache:routes:c1")).toBeNull();
+  expect(await AsyncStorage.getItem("cache:route:r1")).toBeNull();
+  expect(await AsyncStorage.getItem("cache:route-steps:r1")).toBeNull();
+  // Centres are free and stay free; the person's own rows are clearUserCache's job.
+  expect(await AsyncStorage.getItem("cache:centres")).not.toBeNull();
+  expect(await AsyncStorage.getItem("cache:progress:c1")).not.toBeNull();
+});
+
+test("clearUserCache still leaves route keys alone", async () => {
+  await AsyncStorage.setItem("cache:routes:c1", "[]");
+  await AsyncStorage.setItem("cache:progress:c1", "[]");
+  await clearUserCache();
+  expect(await AsyncStorage.getItem("cache:routes:c1")).not.toBeNull();
+  expect(await AsyncStorage.getItem("cache:progress:c1")).toBeNull();
 });
