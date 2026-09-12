@@ -119,6 +119,7 @@ export default function CentreDetail() {
           const drivable = canDrive(item, status);
           return (
             <ReanimatedSwipeable
+              testID={`swipe-${item.id}`}
               renderLeftActions={() => (
                 <View className="mr-2 w-20 items-center justify-center rounded-[20px] bg-accent">
                   <Ionicons name="play" size={20} color="#fff" />
@@ -130,13 +131,21 @@ export default function CentreDetail() {
                 </View>
               )}
               onSwipeableOpen={(direction) => {
+                // Both swipe directions are shortcuts to something the card
+                // itself already gates — the drive screen on the left, the
+                // favourite star on the right (RouteCard hides that star when
+                // locked precisely because favouriting a route you cannot
+                // open is a promise the app cannot keep). Neither gesture
+                // gets to make a promise the tap interface refuses to.
                 if (direction === "left") {
-                  // The swipe shortcut is the same destination as the card's own
-                  // tap, so it owes the same gate — otherwise it is a third way
-                  // to reach a route this person has not paid for.
                   if (drivable) router.push(`/route/${item.id}/start`);
                   else setPaywall(true);
-                } else onFavourite(item.id);
+                } else if (drivable) {
+                  onFavourite(item.id);
+                }
+                // A locked route's swipe-right does nothing: a paywall
+                // prompt in response to a favourite gesture would be a
+                // non-sequitur.
               }}
             >
               <RouteCard
