@@ -1,0 +1,1057 @@
+<title>RouteReady Paywall</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+
+<style>
+:root {
+  --ground:      #F5F0E8;
+  --cell:        #FFFFFF;
+  --cell-sunk:   #EDEBE4;
+  --ink:         #1C1917;
+  --ink-2:       #574F49;
+  --ink-3:       #6B635B;
+  --rule:        #E4DFD8;
+  --rule-soft:   #EFEAE3;
+  --green:       #1A875E;
+  --green-ink:   #146B4A;
+  --green-tint:  #E7F2ED;
+  --clay:        #B8624A;
+  --clay-ink:    #7A3A28;
+  --clay-tint:   #F7E6DB;
+  --warn:        #D97706;
+  --danger:      #B4332F;
+  --danger-tint: #FBE9E9;
+  --shadow:      0 5px 14px rgba(34,31,28,.10);
+  --shadow-lg:   0 18px 48px rgba(34,31,28,.16);
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #15120F;
+    --cell:        #221E19;
+    --cell-sunk:   #2A251F;
+    --ink:         #F2EDE5;
+    --ink-2:       #C6BDB2;
+    --ink-3:       #9A9088;
+    --rule:        #332D26;
+    --rule-soft:   #292420;
+    --green:       #4FC08C;
+    --green-ink:   #7FD6AC;
+    --green-tint:  #16302690;
+    --clay:        #DD8E72;
+    --clay-ink:    #EDB39C;
+    --clay-tint:   #37231B;
+    --warn:        #E8A33C;
+    --danger:      #E8736C;
+    --danger-tint: #38201E;
+    --shadow:      0 5px 14px rgba(0,0,0,.45);
+    --shadow-lg:   0 18px 48px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"] {
+  --ground:      #15120F;
+  --cell:        #221E19;
+  --cell-sunk:   #2A251F;
+  --ink:         #F2EDE5;
+  --ink-2:       #C6BDB2;
+  --ink-3:       #9A9088;
+  --rule:        #332D26;
+  --rule-soft:   #292420;
+  --green:       #4FC08C;
+  --green-ink:   #7FD6AC;
+  --green-tint:  #16302690;
+  --clay:        #DD8E72;
+  --clay-ink:    #EDB39C;
+  --clay-tint:   #37231B;
+  --warn:        #E8A33C;
+  --danger:      #E8736C;
+  --danger-tint: #38201E;
+  --shadow:      0 5px 14px rgba(0,0,0,.45);
+  --shadow-lg:   0 18px 48px rgba(0,0,0,.6);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1.6;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page { max-width: 1080px; margin: 0 auto; padding: 0 28px 120px; }
+.col  { max-width: 660px; }
+
+/* ── Masthead ─────────────────────────────────────── */
+.masthead { padding: 88px 0 0; }
+.kicker {
+  font-size: 12px; font-weight: 700; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--green); margin: 0 0 22px;
+}
+h1 {
+  font-size: clamp(40px, 6.4vw, 62px); font-weight: 800; line-height: 1.03;
+  letter-spacing: -.033em; margin: 0 0 24px; text-wrap: balance;
+}
+.standfirst {
+  font-size: 20px; line-height: 1.55; color: var(--ink-2);
+  margin: 0; max-width: 620px; text-wrap: pretty;
+}
+.standfirst strong { color: var(--ink); font-weight: 700; }
+
+.meta {
+  display: flex; flex-wrap: wrap; gap: 10px 28px; margin: 40px 0 0;
+  padding: 20px 0 0; border-top: 1px solid var(--rule);
+  font-size: 13px; color: var(--ink-3);
+}
+.meta b { color: var(--ink); font-weight: 700; }
+
+/* ── Sections ─────────────────────────────────────── */
+section { margin: 88px 0 0; }
+.eyebrow {
+  display: flex; align-items: baseline; gap: 14px;
+  margin: 0 0 10px; font-size: 12px; font-weight: 700;
+  letter-spacing: .15em; text-transform: uppercase; color: var(--ink-3);
+}
+.eyebrow::after {
+  content: ""; flex: 1; height: 1px; background: var(--rule);
+  transform: translateY(-3px);
+}
+h2 {
+  font-size: clamp(27px, 3.4vw, 35px); font-weight: 800; letter-spacing: -.025em;
+  line-height: 1.15; margin: 0 0 16px; text-wrap: balance;
+}
+h3 {
+  font-size: 19px; font-weight: 700; letter-spacing: -.012em;
+  margin: 40px 0 10px; text-wrap: balance;
+}
+h4 {
+  font-size: 13px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--ink-3); margin: 0 0 12px;
+}
+p { margin: 0 0 18px; text-wrap: pretty; }
+a { color: var(--green-ink); }
+strong { font-weight: 700; }
+code {
+  font-family: var(--mono); font-size: .855em;
+  background: var(--cell-sunk); border: 1px solid var(--rule);
+  padding: .1em .38em; border-radius: 5px; white-space: nowrap;
+}
+
+ul.notes { margin: 0 0 18px; padding: 0; list-style: none; display: grid; gap: 12px; }
+ul.notes li { position: relative; padding-left: 22px; }
+ul.notes li::before {
+  content: ""; position: absolute; left: 4px; top: .62em;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+}
+
+/* ── The split table ──────────────────────────────── */
+.split {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+  border: 1px solid var(--rule); border-radius: 16px; overflow: hidden;
+  background: var(--cell); box-shadow: var(--shadow); margin: 28px 0 0;
+}
+.split > div { padding: 26px 26px 30px; }
+.split > div:first-child { border-right: 1px solid var(--rule); }
+.split-head {
+  display: flex; align-items: center; gap: 9px; margin: 0 0 4px;
+  font-size: 12px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.free .split-head { color: var(--green); }
+.free .dot { background: var(--green); }
+.paid .split-head { color: var(--clay); }
+.paid .dot { background: var(--clay); }
+.split-price {
+  font-size: 15px; color: var(--ink-3); margin: 0 0 20px; font-weight: 600;
+}
+.split ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 11px; }
+.split li {
+  font-size: 15.5px; line-height: 1.45; color: var(--ink-2);
+  padding-left: 26px; position: relative;
+}
+.split li b { color: var(--ink); font-weight: 700; }
+.split li::before {
+  position: absolute; left: 0; top: 0; font-weight: 700; font-size: 14px;
+}
+.free li::before { content: "✓"; color: var(--green); }
+.paid li::before { content: "◆"; color: var(--clay); font-size: 11px; top: 2px; }
+
+@media (max-width: 640px) {
+  .split { grid-template-columns: 1fr; }
+  .split > div:first-child { border-right: 0; border-bottom: 1px solid var(--rule); }
+}
+
+/* ── Price logic callout ──────────────────────────── */
+.maths {
+  margin: 28px 0 0; padding: 24px 26px; border-radius: 14px;
+  background: var(--clay-tint); border: 1px solid color-mix(in srgb, var(--clay) 26%, transparent);
+}
+.maths h4 { color: var(--clay-ink); }
+.maths p { margin: 0; color: var(--clay-ink); font-size: 15.5px; line-height: 1.55; }
+.maths p + p { margin-top: 12px; }
+.maths b { font-weight: 700; }
+
+/* ── Phone mockups ────────────────────────────────── */
+.stage {
+  margin: 34px 0 0; padding: 48px 32px 40px; border-radius: 20px;
+  background: var(--cell-sunk); border: 1px solid var(--rule);
+  display: flex; gap: 44px; justify-content: center; flex-wrap: wrap;
+}
+.shot { width: 300px; max-width: 100%; }
+.shot-cap {
+  margin: 20px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-3); text-align: left;
+}
+.shot-cap b { color: var(--ink); font-weight: 700; display: block; margin-bottom: 3px; font-size: 13px; letter-spacing: .02em; }
+
+.phone {
+  background: var(--ground); border-radius: 30px; padding: 12px 10px 16px;
+  box-shadow: var(--shadow-lg); border: 1px solid var(--rule);
+  overflow: hidden;
+}
+.statusbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 2px 12px 12px; font-size: 11.5px; font-weight: 700; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.navbar {
+  display: flex; align-items: center; gap: 8px; padding: 0 10px 12px;
+  font-size: 13px; font-weight: 700; color: var(--green);
+}
+.screen-title {
+  padding: 0 12px 2px; font-size: 25px; font-weight: 800; letter-spacing: -.03em;
+}
+.screen-sub {
+  padding: 0 12px 16px; font-size: 12.5px; color: var(--ink-3); font-weight: 500;
+}
+
+/* Route card */
+.rcard {
+  background: var(--cell); border-radius: 17px; overflow: hidden;
+  box-shadow: var(--shadow); margin: 0 6px 13px;
+}
+.rthumb {
+  position: relative; background: var(--cell-sunk); height: 108px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.rthumb svg { display: block; width: 100%; height: 100%; }
+.chip {
+  position: absolute; top: 9px; right: 9px;
+  background: var(--cell); border-radius: 999px; padding: 3px 9px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .04em;
+  display: flex; align-items: center; gap: 5px;
+  box-shadow: 0 1px 3px rgba(34,31,28,.16);
+}
+.chip.driven { color: var(--green); }
+.chip.driven .dot { width: 5px; height: 5px; background: var(--green); }
+.chip.locked { color: var(--ink-3); }
+.star {
+  position: absolute; top: 8px; left: 8px; width: 25px; height: 25px;
+  background: var(--cell); border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 3px rgba(34,31,28,.16); font-size: 12px; color: var(--ink-3);
+}
+.rbody { padding: 11px 13px 13px; }
+.rname { font-size: 15px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 3px; }
+.rsum  { font-size: 12px; color: var(--ink-3); margin: 0; line-height: 1.4; }
+.rhist { font-size: 11.5px; color: var(--green); font-weight: 700; margin: 5px 0 0; }
+.rlock {
+  display: flex; align-items: center; gap: 7px; margin: 9px 0 0;
+  font-size: 11.5px; font-weight: 700; color: var(--clay);
+}
+
+/* the locked card's ghosting */
+.locked-card .rthumb { background: var(--cell-sunk); }
+.locked-card .rname { color: var(--ink-2); }
+.locked-card .rsum  { color: var(--ink-3); }
+
+.lockrow {
+  margin: 4px 6px 0; padding: 13px 15px; border-radius: 14px;
+  background: var(--green); color: #fff; display: flex;
+  align-items: center; justify-content: space-between; gap: 10px;
+  box-shadow: var(--shadow);
+}
+.lockrow b { font-size: 14px; font-weight: 800; letter-spacing: -.01em; }
+.lockrow span { font-size: 11.5px; opacity: .88; display: block; margin-top: 1px; font-weight: 500; }
+
+/* Paywall sheet */
+.sheet {
+  background: var(--cell); border-radius: 22px 22px 30px 30px; margin: 0 2px;
+  padding: 10px 16px 18px; box-shadow: 0 -6px 22px rgba(34,31,28,.09);
+}
+.grabber {
+  width: 34px; height: 4px; border-radius: 2px; background: var(--rule);
+  margin: 0 auto 16px;
+}
+.sheet-title {
+  font-size: 21px; font-weight: 800; letter-spacing: -.028em; line-height: 1.2;
+  margin: 0 0 7px; text-wrap: balance;
+}
+.sheet-sub { font-size: 12.5px; color: var(--ink-3); margin: 0 0 17px; line-height: 1.45; }
+.sheet-sub b { color: var(--clay); font-weight: 700; }
+
+.seg {
+  display: flex; background: var(--cell-sunk); border-radius: 9px; padding: 2px; gap: 2px;
+  margin: 0 0 11px;
+}
+.seg > div {
+  flex: 1; text-align: center; padding: 8px 4px 9px; border-radius: 7px;
+  font-size: 12px; font-weight: 700; color: var(--ink-3);
+}
+.seg > div.on {
+  background: var(--cell); color: var(--ink);
+  box-shadow: 0 1px 2.5px rgba(34,31,28,.14);
+}
+.seg .amt { display: block; font-size: 17px; font-weight: 800; letter-spacing: -.02em; margin-bottom: 1px; }
+.seg .per { display: block; font-size: 10px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
+.seg-note {
+  font-size: 11.5px; color: var(--ink-3); text-align: center; margin: 0 0 16px; font-weight: 600;
+}
+.sheet-list { margin: 0 0 17px; padding: 0; list-style: none; display: grid; gap: 9px; }
+.sheet-list li {
+  font-size: 12.5px; color: var(--ink-2); padding-left: 21px; position: relative; line-height: 1.4;
+}
+.sheet-list li::before {
+  content: "✓"; position: absolute; left: 0; top: -1px; color: var(--green); font-weight: 800; font-size: 12px;
+}
+.cta {
+  background: var(--green); color: #fff; border-radius: 13px; text-align: center;
+  padding: 14px; font-size: 15px; font-weight: 800; letter-spacing: -.01em;
+}
+.sheet-foot {
+  display: flex; justify-content: center; gap: 16px; margin: 13px 0 0;
+  font-size: 10.5px; color: var(--ink-3); font-weight: 600;
+}
+.sheet-legal {
+  font-size: 9.5px; color: var(--ink-3); text-align: center; margin: 9px 0 0; line-height: 1.45;
+}
+
+/* ── Trigger ladder ───────────────────────────────── */
+.ladder { margin: 28px 0 0; display: grid; gap: 0; }
+.rung {
+  display: grid; grid-template-columns: 66px 1fr; gap: 22px; align-items: start;
+  padding: 20px 0; border-top: 1px solid var(--rule);
+}
+.rung:last-child { border-bottom: 1px solid var(--rule); }
+.heat {
+  font-size: 10.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
+  padding: 4px 0 0; text-align: right;
+}
+.heat.hi  { color: var(--green); }
+.heat.mid { color: var(--clay); }
+.heat.lo  { color: var(--ink-3); }
+.rung h5 { margin: 0 0 5px; font-size: 16px; font-weight: 700; letter-spacing: -.012em; }
+.rung p { margin: 0; font-size: 14.5px; color: var(--ink-2); line-height: 1.5; }
+@media (max-width: 560px) {
+  .rung { grid-template-columns: 1fr; gap: 6px; }
+  .heat { text-align: left; }
+}
+
+/* ── Architecture diagram ─────────────────────────── */
+.diagram {
+  margin: 30px 0 0; padding: 30px 24px; border-radius: 18px;
+  background: var(--cell); border: 1px solid var(--rule); box-shadow: var(--shadow);
+  overflow-x: auto;
+}
+.diagram svg { display: block; min-width: 620px; width: 100%; height: auto; }
+
+/* ── Hazards ──────────────────────────────────────── */
+.hazard {
+  margin: 22px 0 0; border-radius: 15px; overflow: hidden;
+  border: 1px solid var(--rule); background: var(--cell); box-shadow: var(--shadow);
+}
+.hazard-top {
+  padding: 16px 22px 14px; border-bottom: 1px solid var(--rule);
+  background: var(--danger-tint);
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+}
+.hazard-top h5 {
+  margin: 0; font-size: 16.5px; font-weight: 700; letter-spacing: -.015em; color: var(--ink);
+}
+.hazard-top code {
+  background: color-mix(in srgb, var(--cell) 70%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 25%, transparent);
+  color: var(--danger); font-size: 11.5px;
+}
+.hazard-body { padding: 18px 22px 20px; }
+.hazard-body p { margin: 0 0 12px; font-size: 15px; line-height: 1.55; color: var(--ink-2); }
+.hazard-body p:last-child { margin: 0; }
+.fix {
+  display: block; font-size: 11px; font-weight: 800; letter-spacing: .11em;
+  text-transform: uppercase; color: var(--green); margin: 0 0 5px;
+}
+
+/* ── Build order ──────────────────────────────────── */
+.phase {
+  display: grid; grid-template-columns: 44px 1fr; gap: 20px;
+  padding: 24px 0; border-top: 1px solid var(--rule);
+}
+.phase:last-of-type { border-bottom: 1px solid var(--rule); }
+.pnum {
+  font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--green);
+  padding-top: 3px; font-variant-numeric: tabular-nums;
+}
+.phase h5 { margin: 0 0 6px; font-size: 17px; font-weight: 700; letter-spacing: -.015em; }
+.phase p { margin: 0 0 10px; font-size: 14.5px; color: var(--ink-2); line-height: 1.5; }
+.phase p:last-child { margin: 0; }
+.files {
+  display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0;
+}
+.files code { font-size: 11px; white-space: nowrap; }
+
+/* ── Checklist ────────────────────────────────────── */
+.check { margin: 26px 0 0; padding: 0; list-style: none; display: grid; gap: 0; }
+.check li {
+  display: grid; grid-template-columns: 26px 1fr; gap: 12px; align-items: start;
+  padding: 13px 0; border-top: 1px solid var(--rule-soft); font-size: 15px; line-height: 1.5;
+  color: var(--ink-2);
+}
+.check li:last-child { border-bottom: 1px solid var(--rule-soft); }
+.check li::before {
+  content: "☐"; color: var(--ink-3); font-size: 15px; line-height: 1.5;
+}
+.check b { color: var(--ink); font-weight: 700; }
+
+.closer {
+  margin: 80px 0 0; padding: 32px 30px; border-radius: 18px;
+  background: var(--green-tint); border: 1px solid color-mix(in srgb, var(--green) 28%, transparent);
+}
+.closer h3 { margin: 0 0 12px; color: var(--green-ink); font-size: 20px; }
+.closer p { margin: 0 0 14px; color: var(--ink-2); font-size: 15.5px; }
+.closer p:last-child { margin: 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .rcard, .lockrow { transition: transform .18s ease; }
+}
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="kicker">RouteReady · Monetisation design</p>
+    <h1>One gate, nine routes behind it</h1>
+    <p class="standfirst">
+      The whole paywall is a single sentence: <strong>every test centre gives you one route free, and
+      a subscription opens the other nine.</strong> Nothing else in the app is locked — not the centres,
+      not the pass rates, not the quiz, not the manoeuvres, not your own record.
+    </p>
+    <div class="meta">
+      <span><b>£3</b> weekly</span>
+      <span><b>£9</b> monthly</span>
+      <span><b>10</b> routes per centre</span>
+      <span><b>1</b> free at each</span>
+      <span>Rails: <b>RevenueCat → Supabase</b></span>
+    </div>
+  </header>
+
+  <section>
+    <p class="eyebrow">The split</p>
+    <h2>What's free, what's paid</h2>
+    <div class="col">
+      <p>
+        The free route is <em>complete</em> — turn-by-turn navigation, the hazards, the examiner,
+        the mark sheet, the verdict. A learner can drive it, be marked on it, and see exactly what
+        the app is for without paying anything. That is deliberate: the product sells itself far
+        better than a feature list does.
+      </p>
+    </div>
+
+    <div class="split">
+      <div class="free">
+        <p class="split-head"><span class="dot"></span>Free, forever</p>
+        <p class="split-price">No account cost, no trial timer</p>
+        <ul>
+          <li><b>One complete route at every centre</b> — practice drive and full mock test, marked</li>
+          <li><b>Every test centre</b>, the map, and all pass-rate history</li>
+          <li><b>The whole quiz</b> — every show-me/tell-me question</li>
+          <li><b>Every manoeuvre</b> diagram and its steps</li>
+          <li><b>Your record</b> — scores, fault bars, the next-step verdict</li>
+          <li><b>Favourites</b>, offline caching, and your account</li>
+        </ul>
+      </div>
+      <div class="paid">
+        <p class="split-head"><span class="dot"></span>RouteReady Full</p>
+        <p class="split-price">£3 / week &nbsp;·&nbsp; £9 / month</p>
+        <ul>
+          <li><b>The other nine routes</b> at every centre in the country</li>
+          <li>Which, at 10 routes per centre, is <b>90% of the driving content</b></li>
+          <li>Cancel any time, in Settings or the App Store</li>
+          <li>Restores free across every device on the same Apple ID</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="maths">
+      <h4>Why two prices, and why these two</h4>
+      <p>
+        £3 a week works out at <b>£13 a month</b>. £9 a month works out at <b>£2.08 a week</b>.
+        The weekly option is not really there to be chosen — it's there to make the monthly one
+        look obvious, and it does that arithmetic for the reader the moment both are on screen.
+      </p>
+      <p>
+        It also earns its place honestly. A learner whose test is on Thursday genuinely only needs
+        six days, and charging them £9 for it would be the wrong answer. The sign-up interview
+        already knows which of the two they are — <code>testWindow</code> is captured on card 2 —
+        so the sheet can pre-select the right one rather than making them work it out.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">The gate</p>
+    <h2>Nine locked cards do the selling</h2>
+    <div class="col">
+      <p>
+        A learner opens their home centre and sees ten route cards. One is open. Nine are not.
+        That list <em>is</em> the paywall — it arrives at the exact moment someone has decided to
+        practise, which is the highest-intent moment the app has.
+      </p>
+      <p>
+        The important call here: <strong>locked cards keep their route drawing.</strong> The thumbnail
+        is the argument — nine real, distinct routes around the centre they're about to be tested at.
+        Withholding it would turn a shop window into a shuttered one. What the server actually
+        withholds is the <em>drivable</em> part: the turn-by-turn steps, the speed envelope and the
+        hazards. You cannot drive a route from a 150-pixel squiggle, so the sell and the security
+        don't conflict.
+      </p>
+      <p>
+        The observation zones stay public with the geometry, which looks like a mistake and isn't:
+        they feed the card as well as the drive. <code>plainSummary()</code> tallies them to write
+        the locked card's second line — the "dual carriageway, box junction" that is doing the
+        selling — and the thumbnail draws a pin for each. Gating them would empty the exact sentence
+        the locked card exists for, while withholding nothing anyone could drive from.
+      </p>
+    </div>
+
+    <div class="stage">
+      <div class="shot">
+        <div class="phone">
+          <div class="statusbar"><span>9:41</span><span>Wood Green</span></div>
+          <div class="navbar">‹ Centres</div>
+          <p class="screen-title">Wood Green</p>
+          <p class="screen-sub">48% pass rate · 10 routes · 1 open</p>
+
+          <div class="rcard">
+            <div class="rthumb">
+              <svg viewBox="0 0 280 108" aria-label="Route drawing">
+                <path d="M26 86 C 58 40, 96 30, 132 48 S 200 78, 252 34"
+                      fill="none" stroke="#1A875E" stroke-width="3.4"
+                      stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="26" cy="86" r="5.5" fill="#1A875E"/>
+                <circle cx="252" cy="34" r="5.5" fill="#fff" stroke="#1A875E" stroke-width="3"/>
+              </svg>
+              <div class="star">☆</div>
+              <div class="chip driven"><span class="dot"></span>Driven 2×</div>
+            </div>
+            <div class="rbody">
+              <p class="rname">Bounds Green loop</p>
+              <p class="rsum">6.2 km · 18 min · two roundabouts, one hill start</p>
+              <p class="rhist">Best 82 · last drive 4 days ago</p>
+            </div>
+          </div>
+
+          <div class="rcard locked-card">
+            <div class="rthumb">
+              <svg viewBox="0 0 280 108" aria-label="Locked route drawing">
+                <path d="M32 34 C 70 78, 108 88, 148 66 S 214 30, 250 74"
+                      fill="none" stroke="#B9AFA3" stroke-width="3.4"
+                      stroke-linecap="round" stroke-linejoin="round"
+                      stroke-dasharray="1 9"/>
+                <circle cx="32" cy="34" r="5.5" fill="#B9AFA3"/>
+                <circle cx="250" cy="74" r="5.5" fill="#EDEBE4" stroke="#B9AFA3" stroke-width="3"/>
+              </svg>
+              <div class="chip locked">Locked</div>
+            </div>
+            <div class="rbody">
+              <p class="rname">Alexandra Palace circuit</p>
+              <p class="rsum">8.1 km · 24 min · dual carriageway, box junction</p>
+              <p class="rlock">Unlock to drive this route ›</p>
+            </div>
+          </div>
+
+          <div class="lockrow">
+            <div>
+              <b>9 more routes here</b>
+              <span>From £2.08 a week</span>
+            </div>
+            <div style="font-size:17px;">›</div>
+          </div>
+        </div>
+        <p class="shot-cap">
+          <b>Centre detail</b>
+          The free route looks exactly as it does today. Locked ones keep the drawing and the
+          honest summary — distance, time, what's on it — and trade the history line for a way in.
+          One accent panel after the visible cards, not a banner above them.
+        </p>
+      </div>
+
+      <div class="shot">
+        <div class="phone" style="padding-bottom:10px;">
+          <div class="statusbar"><span>9:41</span><span>Wood Green</span></div>
+          <div style="height:76px; display:flex; align-items:center; justify-content:center; color:var(--ink-3); font-size:12px; font-weight:600;">
+            Centre dimmed behind the sheet
+          </div>
+          <div class="sheet">
+            <div class="grabber"></div>
+            <p class="sheet-title">Nine more routes at Wood Green</p>
+            <p class="sheet-sub">
+              <b>Your test is in under two weeks.</b> Every route you drive is one fewer
+              road the examiner can surprise you with.
+            </p>
+
+            <div class="seg">
+              <div class="on">
+                <span class="amt">£3</span>
+                <span class="per">a week</span>
+              </div>
+              <div>
+                <span class="amt">£9</span>
+                <span class="per">a month</span>
+              </div>
+            </div>
+            <p class="seg-note">Billed weekly · cancel any time</p>
+
+            <ul class="sheet-list">
+              <li>All 10 routes at Wood Green, and at every other centre</li>
+              <li>Full mock test and mark sheet on each one</li>
+              <li>Works offline once a route is downloaded</li>
+            </ul>
+
+            <div class="cta">Unlock all routes</div>
+            <div class="sheet-foot">
+              <span>Restore purchases</span>
+              <span>Terms</span>
+              <span>Privacy</span>
+            </div>
+            <p class="sheet-legal">
+              Renews automatically until cancelled. Manage in Settings.
+            </p>
+          </div>
+        </div>
+        <p class="shot-cap">
+          <b>The paywall sheet</b>
+          A <code>@gorhom/bottom-sheet</code>, which the app already uses for the examiner panel —
+          so it's a familiar object, not a new kind of screen. The headline names the centre they
+          were just looking at. The interview's answer to "when is your test" picks the
+          pre-selected price and writes the second line.
+        </p>
+      </div>
+    </div>
+
+    <div class="col">
+      <h3>Three rules the sheet follows</h3>
+      <ul class="notes">
+        <li>
+          <strong>It names the centre.</strong> "Nine more routes at Wood Green" outperforms
+          "Upgrade to Premium" because it describes something the person was already trying to do.
+        </li>
+        <li>
+          <strong>No second green.</strong> Per the palette rules, green stays the route-and-action
+          colour — it's on the CTA and the free route's drawing, nowhere else on the sheet. Clay
+          carries the personal line about the test date. The locked state is neutral stone, not red:
+          a locked route isn't an error.
+        </li>
+        <li>
+          <strong>It can always be dismissed.</strong> No full-screen takeover, no delayed close
+          button. The sheet is a door, not a wall — and App Review treats it that way too.
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Placement</p>
+    <h2>Where the sheet is allowed to appear</h2>
+    <div class="col">
+      <p>
+        Ranked by how much intent the person has already shown. The top two carry the conversion;
+        the rest exist so nobody hits a dead end.
+      </p>
+    </div>
+
+    <div class="ladder">
+      <div class="rung">
+        <div class="heat hi">Highest</div>
+        <div>
+          <h5>Tapping a locked route card</h5>
+          <p>
+            They picked a specific route at a specific centre. This is the moment — the sheet opens
+            with that route's name and drawing still visible behind it.
+          </p>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="heat hi">High</div>
+        <div>
+          <h5>The panel under the route list</h5>
+          <p>
+            "9 more routes here." Browsing rather than committing, but still on the centre screen
+            with intent. One tap to the same sheet.
+          </p>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="heat mid">Medium</div>
+        <div>
+          <h5>After a mock test verdict on the free route</h5>
+          <p>
+            They've just been marked and told what to work on. The result screen's next step should
+            point at a route that drills the leading fault — and that route is usually locked.
+            Worth doing, worth doing gently: this lands on someone who just failed something.
+          </p>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="heat mid">Medium</div>
+        <div>
+          <h5>Home's next-step card</h5>
+          <p>
+            <code>nextStep()</code> in <code>homeView.ts</code> already computes what to practise from
+            the fault record. When its recommendation is a locked route, the card says so plainly
+            rather than sending them to a wall.
+          </p>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="heat lo">Low</div>
+        <div>
+          <h5>Settings</h5>
+          <p>
+            A subscription row: status, renewal date, manage, and restore. Not a sales surface —
+            App Review requires restore to be findable, and a lapsed subscriber needs somewhere to go.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <h3>And where it is not allowed</h3>
+      <p>
+        Never during a drive. Never on launch. Never over the quiz or the manoeuvres. Never more
+        than once per screen visit. A learner mid-mock-test who loses their subscription
+        <em>finishes the mock test</em> — more on that below.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Architecture</p>
+    <h2>How it's wired</h2>
+    <div class="col">
+      <p>
+        RevenueCat wraps StoreKit and hands you receipt validation, renewals, billing retries,
+        refunds and cross-device restore. It's free below $2.5k a month. With a weekly product
+        you'd otherwise be writing 52 renewal events a year of edge-case handling yourself.
+      </p>
+      <p>
+        The truth about who has paid lives in Supabase, written by a RevenueCat webhook, and is
+        enforced by row-level security — not by the client. The app reads it, but the app is never
+        what decides.
+      </p>
+    </div>
+
+    <div class="diagram">
+      <svg viewBox="0 0 700 300" role="img" aria-label="Purchase flows from the app through RevenueCat to the App Store; RevenueCat's webhook writes an entitlements row in Supabase; row-level security on route details decides what the app can read back.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="Plus Jakarta Sans, sans-serif" font-size="12.5">
+
+          <!-- App -->
+          <rect x="14" y="112" width="126" height="76" rx="12" fill="var(--cell-sunk)" stroke="var(--rule)"/>
+          <text x="77" y="140" text-anchor="middle" font-weight="700" fill="var(--ink)">RouteReady</text>
+          <text x="77" y="158" text-anchor="middle" fill="var(--ink-3)" font-size="11">iOS app</text>
+          <text x="77" y="174" text-anchor="middle" fill="var(--ink-3)" font-size="10.5">dev build, not Expo Go</text>
+
+          <!-- RevenueCat -->
+          <rect x="208" y="112" width="126" height="76" rx="12" fill="var(--cell-sunk)" stroke="var(--rule)"/>
+          <text x="271" y="140" text-anchor="middle" font-weight="700" fill="var(--ink)">RevenueCat</text>
+          <text x="271" y="158" text-anchor="middle" fill="var(--ink-3)" font-size="11">receipts, renewals</text>
+          <text x="271" y="174" text-anchor="middle" fill="var(--ink-3)" font-size="10.5">restore, grace periods</text>
+
+          <!-- App Store -->
+          <rect x="208" y="16" width="126" height="56" rx="12" fill="var(--cell-sunk)" stroke="var(--rule)"/>
+          <text x="271" y="40" text-anchor="middle" font-weight="700" fill="var(--ink)">App Store</text>
+          <text x="271" y="57" text-anchor="middle" fill="var(--ink-3)" font-size="10.5">weekly · monthly</text>
+
+          <!-- Supabase -->
+          <rect x="402" y="112" width="140" height="76" rx="12" fill="var(--green-tint)" stroke="var(--green)"/>
+          <text x="472" y="140" text-anchor="middle" font-weight="700" fill="var(--ink)">Supabase</text>
+          <text x="472" y="158" text-anchor="middle" fill="var(--ink-3)" font-size="11">entitlements table</text>
+          <text x="472" y="174" text-anchor="middle" fill="var(--ink-3)" font-size="10.5">one row per account</text>
+
+          <!-- Edge fn -->
+          <rect x="402" y="16" width="140" height="56" rx="12" fill="var(--cell-sunk)" stroke="var(--rule)"/>
+          <text x="472" y="40" text-anchor="middle" font-weight="700" fill="var(--ink)">Edge Function</text>
+          <text x="472" y="57" text-anchor="middle" fill="var(--ink-3)" font-size="10.5">revenuecat-webhook</text>
+
+          <!-- RLS -->
+          <rect x="586" y="112" width="100" height="76" rx="12" fill="var(--cell-sunk)" stroke="var(--rule)"/>
+          <text x="636" y="140" text-anchor="middle" font-weight="700" fill="var(--ink)">RLS</text>
+          <text x="636" y="158" text-anchor="middle" fill="var(--ink-3)" font-size="10.5">route_details</text>
+          <text x="636" y="174" text-anchor="middle" fill="var(--ink-3)" font-size="10.5">hazards</text>
+
+          <!-- arrows -->
+          <g stroke="var(--ink-3)" fill="none" stroke-width="1.6" color="var(--ink-3)">
+            <path d="M142 150 L204 150" marker-end="url(#ar)"/>
+            <path d="M271 110 L271 76" marker-end="url(#ar)"/>
+            <path d="M336 138 C 366 138, 372 60, 398 46" marker-end="url(#ar)"/>
+            <path d="M472 76 L472 108" marker-end="url(#ar)"/>
+            <path d="M544 150 L582 150" marker-end="url(#ar)"/>
+          </g>
+          <path d="M634 196 C 634 244, 200 250, 80 194" stroke="var(--green)" stroke-width="1.8"
+                fill="none" marker-end="url(#ar)" color="var(--green)"/>
+
+          <g font-size="10.5" fill="var(--ink-3)" font-weight="600">
+            <text x="173" y="142" text-anchor="middle">buy</text>
+            <text x="280" y="96" text-anchor="start">StoreKit</text>
+            <text x="376" y="90" text-anchor="middle">webhook</text>
+            <text x="563" y="142" text-anchor="middle">checks</text>
+          </g>
+          <text x="356" y="268" text-anchor="middle" font-size="11" font-weight="700" fill="var(--green)">
+            steps, hazards and zones come back only for a free route or a paying account
+          </text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="col">
+      <h3>The data changes</h3>
+      <p>
+        Three of them, and the middle one is the load-bearing idea.
+      </p>
+      <ul class="notes">
+        <li>
+          <strong><code>routes.is_free</code></strong> — a boolean, hand-picked one per centre rather
+          than "whichever sorts first". The free route is the demo, so it should be a representative
+          mid-difficulty one, not an alphabetical accident.
+        </li>
+        <li>
+          <strong>A new <code>route_details</code> table</strong> holding <code>steps</code> and
+          <code>speed_profile</code>, moved off <code>routes</code>. This is what makes column-level
+          gating possible at all: RLS is row-level, so the fields that must be withheld have to live
+          in rows of their own. <code>routes</code> keeps name, geometry, observation zones,
+          difficulty, distance and duration — everything a card draws, all public.
+        </li>
+        <li>
+          <strong>An <code>entitlements</code> table</strong>, one row per account, written only by
+          the webhook's service role and readable only by its owner. Plus an
+          <code>is_subscribed()</code> SQL helper that both the <code>route_details</code> and
+          <code>hazards</code> policies call.
+        </li>
+      </ul>
+
+      <h3>On the client</h3>
+      <p>
+        A <code>useEntitlement</code> store alongside the existing <code>sessionStore</code>, holding
+        <code>active | lapsed | unknown</code>. It mirrors RevenueCat's cached customer info to
+        AsyncStorage so a learner with no signal still opens the app entitled, and it exposes one
+        selector the screens actually use: <code>canDrive(route)</code>.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Risks found in the code</p>
+    <h2>Three things that will bite</h2>
+    <div class="col">
+      <p>
+        These came out of reading the existing services rather than from a checklist. Each one is
+        cheap to handle now and expensive to discover in TestFlight.
+      </p>
+    </div>
+
+    <div class="hazard">
+      <div class="hazard-top">
+        <h5>Cached routes survive a lapsed subscription</h5>
+        <code>src/services/cache.ts</code>
+      </div>
+      <div class="hazard-body">
+        <p>
+          <code>cachedFetch</code> writes every route list to AsyncStorage under
+          <code>cache:routes:&lt;centreId&gt;</code>, and <code>clearUserCache()</code> deliberately
+          sweeps only <code>cache:progress:</code> — its comment explains why: routes "belong to the
+          country, not the person." That reasoning is correct today and <em>stops being correct</em>
+          the moment routes are entitlement-scoped. Without a change, someone subscribes, caches
+          nine routes, cancels, and keeps driving them offline indefinitely.
+        </p>
+        <p>
+          <span class="fix">Fix</span>
+          Sweep <code>cache:route</code> keys when entitlement drops to lapsed, and update that
+          comment — it encodes an assumption this feature invalidates, and leaving it there will
+          mislead whoever reads it next.
+        </p>
+      </div>
+    </div>
+
+    <div class="hazard">
+      <div class="hazard-top">
+        <h5>The route list ships everything it has</h5>
+        <code>src/services/routesRepo.ts</code>
+      </div>
+      <div class="hazard-body">
+        <p>
+          Both <code>listRoutesByCentre</code> and <code>getRoute</code> call
+          <code>select("*")</code>. A gate built only in the UI would leave the full turn-by-turn
+          payload sitting in the response of an unlocked query — bypassable by anyone who opens a
+          proxy, and quietly cached to disk besides.
+        </p>
+        <p>
+          <span class="fix">Fix</span>
+          The <code>route_details</code> split above, plus naming the columns explicitly instead of
+          <code>*</code>. Then the gate is enforced by Postgres and the client is merely
+          <em>reflecting</em> it — which is the only arrangement worth trusting.
+        </p>
+      </div>
+    </div>
+
+    <div class="hazard">
+      <div class="hazard-top">
+        <h5>A subscription can lapse mid-drive</h5>
+        <code>app/route/[id]/mock.tsx</code>
+      </div>
+      <div class="hazard-body">
+        <p>
+          A mock test runs for twenty-odd minutes with the screen awake and location streaming. If a
+          renewal fails or a token refresh returns lapsed while someone is on a roundabout being
+          marked, a naive gate revokes the route out from under them and bins the run.
+        </p>
+        <p>
+          <span class="fix">Fix</span>
+          Entitlement is read <em>once</em>, when a drive starts, and never re-checked until it ends.
+          An unresolved status falls back to the device's last known answer, and only a device that
+          has never resolved one at all counts as lapsed — which is harmless, since it has no cached
+          route details either. Losing a few pence to a grace case is nothing against destroying a
+          learner's mock test, and the result still writes through the existing progress outbox
+          either way.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Build order</p>
+    <h2>Five phases, each shippable</h2>
+    <div class="col">
+      <p>
+        Ordered so the risky, un-testable-in-simulator parts come after the parts that can be
+        proven with Jest. Nothing here touches the drive screens until phase four.
+      </p>
+    </div>
+
+    <div class="phase">
+      <div class="pnum">01</div>
+      <div>
+        <h5>The data split</h5>
+        <p>
+          Migration: <code>is_free</code>, the <code>route_details</code> table, the
+          <code>entitlements</code> table, <code>is_subscribed()</code>, and the two new policies.
+          Backfill details off <code>routes</code>, pick a free route per centre in the seed script.
+          Provable with SQL tests before a line of app code moves.
+        </p>
+        <div class="files">
+          <code>supabase/migrations/</code><code>supabase/schema.sql</code><code>scripts/seed/generate.ts</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="pnum">02</div>
+      <div>
+        <h5>Entitlement state, with no purchase behind it</h5>
+        <p>
+          The <code>useEntitlement</code> store, the AsyncStorage mirror, the fail-open rule, the
+          cache sweep, and <code>canDrive()</code>. Driven entirely by a fake — flip the flag in a
+          test and assert what the screens do. This is where the logic actually gets proven.
+        </p>
+        <div class="files">
+          <code>src/stores/entitlement.ts</code><code>src/lib/gating.ts</code><code>src/services/cache.ts</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="pnum">03</div>
+      <div>
+        <h5>The locked states</h5>
+        <p>
+          <code>RouteCard</code> gains a locked variant, the centre screen gains the unlock panel,
+          and the paywall sheet gets built against the fake from phase two. Real prices come later;
+          the layout can be finished now. Verify on the simulator — Jest can't see sheet position.
+        </p>
+        <div class="files">
+          <code>src/ui/RouteCard.tsx</code><code>src/ui/PaywallSheet.tsx</code><code>app/centre/[id].tsx</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="pnum">04</div>
+      <div>
+        <h5>RevenueCat and the real transaction</h5>
+        <p>
+          SDK into the dev build, both products in App Store Connect, the webhook Edge Function,
+          and prices read from StoreKit rather than hard-coded. Sandbox-test purchase, restore,
+          renewal, cancellation and lapse. The drive screens get their start-of-drive read here.
+        </p>
+        <div class="files">
+          <code>supabase/functions/revenuecat-webhook/</code><code>app.config.js</code><code>app/route/[id]/</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="phase">
+      <div class="pnum">05</div>
+      <div>
+        <h5>Settings, restore, and the edges</h5>
+        <p>
+          Subscription row in Settings, restore-purchases, lapsed-state copy, and the home and
+          result screens learning to point at routes a person can actually drive.
+        </p>
+        <div class="files">
+          <code>app/settings.tsx</code><code>src/lib/homeView.ts</code><code>app/route/[id]/result.tsx</code>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">Before submission</p>
+    <h2>What App Review will look for</h2>
+    <ul class="check">
+      <li><b>Restore purchases</b> reachable without an account action — on the sheet and in Settings.</li>
+      <li><b>Prices read from StoreKit</b>, never the £3 and £9 hard-coded in the app. Storefronts differ.</li>
+      <li><b>Terms and Privacy</b> linked from the paywall itself. Both already exist in <code>docs/</code> and on the site.</li>
+      <li><b>Renewal terms stated</b> next to the button: what it costs, how often, that it auto-renews, how to stop it.</li>
+      <li><b>The sheet is dismissible</b> at any time, with no timed delay on the close control.</li>
+      <li><b>Account deletion still works</b> with an active subscription — and says plainly that deleting doesn't cancel billing.</li>
+      <li><b>Sandbox-tested end to end</b>: buy, restore on a second device, cancel, let it lapse, resubscribe.</li>
+    </ul>
+  </section>
+
+  <div class="closer">
+    <h3>What I'd want your call on</h3>
+    <p>
+      <strong>The free route per centre is more generous than it sounds, and that's fine.</strong>
+      Almost everyone only ever cares about one centre, so in practice it's one free route — but it
+      <em>reads</em> as an offer rather than a restriction, and it costs nothing to say it the
+      generous way.
+    </p>
+    <p>
+      <strong>No free trial is proposed.</strong> At £3 a week, the weekly product already is the
+      trial, and it collects a card instead of a cancellation reminder. Worth revisiting if
+      conversion disappoints, but starting without one keeps phase four much simpler.
+    </p>
+    <p>
+      If this looks right, the next step is the written spec, then the implementation plan — no code
+      until you've seen both.
+    </p>
+  </div>
+
+</div>
