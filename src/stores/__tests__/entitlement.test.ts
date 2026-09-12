@@ -76,6 +76,24 @@ test("going from active to lapsed sweeps the cached routes", async () => {
   expect(await AsyncStorage.getItem("cache:route-steps:r1")).toBeNull();
 });
 
+test("a cancellation discovered on a cold start still sweeps the cached routes", async () => {
+  // The in-memory store starts every fresh process at "unknown" — there is no
+  // persist middleware — so this reproduces reopening the app days after
+  // cancelling through the App Store: the mirror still says "active" from the
+  // last session, nobody has been running init()/refresh() in between, and
+  // the very first apply() of the new process is the one that has to notice
+  // the loss and sweep.
+  await AsyncStorage.setItem(MIRROR_KEY, "active");
+  useEntitlement.setState({ status: "unknown", product: null, renewsAt: null });
+  await AsyncStorage.setItem("cache:routes:c1", "[]");
+
+  mockCurrentInfo.mockResolvedValue(LAPSED);
+  await useEntitlement.getState().init();
+
+  expect(useEntitlement.getState().status).toBe("lapsed");
+  expect(await AsyncStorage.getItem("cache:routes:c1")).toBeNull();
+});
+
 test("staying lapsed does not sweep repeatedly", async () => {
   mockCurrentInfo.mockResolvedValue(LAPSED);
   await useEntitlement.getState().init();

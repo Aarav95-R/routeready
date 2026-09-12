@@ -57,11 +57,22 @@ export const useEntitlement = create<EntitlementState>((set, get) => {
    * practice for somebody who never paid anything and never did anything wrong.
    * And an unresolved status must never sweep: that is the offline case, where
    * the mirror is the only thing keeping a paying learner in.
+   *
+   * "Previous" is read from the *mirror*, not from `get().status`. The
+   * in-memory field starts every fresh process at "unknown" — this store has
+   * no `persist` middleware, only `MIRROR_KEY` survives a restart — and an
+   * ordinary cancellation almost never happens while this screen is open to
+   * see it. Somebody cancels through the App Store days later, then reopens
+   * the app: `init()` calls this with the first `apply` of the new process,
+   * `get().status` is still "unknown", and keying the transition off it would
+   * make `lost` false forever for exactly the case `clearRouteCache` exists
+   * for. The mirror is the one thing that remembers "active" across that gap.
    */
   const apply = async (answer: Entitlement | null) => {
     const live: EntitlementStatus = answer === null ? "unknown" : answer.active ? "active" : "lapsed";
-    const status = resolveStatus(live, await readMirror());
-    const lost = get().status === "active" && status === "lapsed";
+    const mirrored = await readMirror();
+    const status = resolveStatus(live, mirrored);
+    const lost = mirrored === "active" && status === "lapsed";
 
     set({
       status,
