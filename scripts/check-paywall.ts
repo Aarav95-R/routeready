@@ -151,7 +151,7 @@ async function main() {
           skip("subscriber reads a locked route's hazards", "no locked route has hazards to test against");
         } else {
           const paidHazards = await c.query("select 1 from hazards where route_id = $1", [lockedHazardId]);
-          check("subscriber reads a locked route's hazards", paidHazards.rowCount > 0);
+          check("subscriber reads a locked route's hazards", (paidHazards.rowCount ?? 0) > 0);
         }
       } finally {
         await c.query("rollback");
