@@ -9,6 +9,7 @@ import { TIMED_OUT, withTimeout } from "@/lib/withTimeout";
 import { clearOutbox, clearUserCache } from "@/services/cache";
 import { forgetWelcome } from "@/services/welcome";
 import { deleteAccountError } from "@/lib/deleteError";
+import { useEntitlement } from "@/stores/entitlement";
 
 /**
  * Every action that can fail returns a sentence written for the person, or
@@ -552,6 +553,10 @@ export const useSession = create<SessionState>((set, get) => ({
     // A full disk is not a reason to stay signed in, so the sweep cannot
     // strand anyone either.
     try { await clearUserCache(); } catch { /* the session below is what matters */ }
+    // Logs the purchase account out too. Without it the next person to sign in
+    // on this phone inherits the last one's entitlement until RevenueCat is
+    // asked again, which is the one direction this gate must never fail in.
+    try { await useEntitlement.getState().reset(); } catch { /* the session below is what matters */ }
 
     set({ session: null, recovering: false });
   },
@@ -582,7 +587,12 @@ export const useSession = create<SessionState>((set, get) => ({
     if (error) return deleteAccountError(error.message);
 
     // Past this line the account is gone and this is only tidying.
-    for (const sweep of [clearUserCache, clearOutbox, () => forgetWelcome(userId)]) {
+    for (const sweep of [
+      clearUserCache,
+      clearOutbox,
+      () => forgetWelcome(userId),
+      () => useEntitlement.getState().reset(),
+    ]) {
       try { await sweep(); } catch { /* a full disk is not a reason to stay signed in */ }
     }
     try { await supabase.auth.signOut(); } catch { /* the session below is the part that matters */ }

@@ -170,3 +170,96 @@ Two things to know about the bank. The rebalance this file used to promise is do
 The four options under each question are **not DVSA content**. The agency publishes the questions and the model answers only, because the real test is verbal and offers nobody a choice of four. Every wrong option was written for this app, each bending one real detail out of true — a threshold, a condition, a dashboard symbol. They live in `scripts/seed/questions.ts` and are worth reading before release.
 
 Manoeuvres is built: four manoeuvres, each with a top-down diagram whose car moves to whichever step you tap or scroll to. It is a reference only \u2014 nothing is saved, so there is no ticking, no confidence rating and no per-user state.
+
+## 7. Subscriptions (RevenueCat)
+
+The app takes money through RevenueCat, which sits in front of StoreKit so that
+the entitlement is one question with one answer on every platform. Everything
+RevenueCat-shaped in this codebase lives behind the seven functions in
+`src/services/purchases.ts`; nothing else imports the SDK.
+
+Until `EXPO_PUBLIC_REVENUECAT_IOS_KEY` is set, all seven are no-ops that report
+an unknown entitlement. That is a supported build, not a broken one — the
+paywall sheet renders with no plans rather than crashing — so you can do the
+steps below in any order and the app keeps running throughout.
+
+**None of this works in Expo Go or on the simulator.** StoreKit purchases need a
+real device, a dev build, and a sandbox Apple ID. See `docs/dev-build.md`.
+
+### 7.1 App Store Connect: the two products
+
+Under **My Apps → RouteReady → Subscriptions**, create one subscription group
+(call it `RouteReady Full`) with two auto-renewable subscriptions in it:
+
+| Product ID | Duration | Price |
+|---|---|---|
+| `routeready_weekly` | 1 week | £3.00 |
+| `routeready_monthly` | 1 month | £9.00 |
+
+Both need a localised display name, a description, and a review screenshot
+before Apple will let them leave "Missing Metadata". They do **not** need to be
+approved for sandbox testing — "Ready to Submit" is enough.
+
+You also need the **App-Specific Shared Secret** (App Store Connect → your app →
+General → App Information → App-Specific Shared Secret). RevenueCat needs it to
+validate receipts.
+
+### 7.2 RevenueCat: project, entitlement, offering
+
+1. Create a project and add an **App Store** app to it, with the bundle
+   identifier `com.sumeetraheja.routeready`. Paste the shared secret from 7.1.
+2. **Products**: import or add `routeready_weekly` and `routeready_monthly`.
+3. **Entitlements**: create one with the identifier **`full`** — exactly that
+   string, it is `ENTITLEMENT_ID` in `src/services/purchases.ts` and the thing
+   the Postgres policies key off. Attach both products to it.
+4. **Offerings**: create an offering named **`default`** and mark it current.
+   Add two packages to it: **`$rc_weekly`** → `routeready_weekly`, and
+   **`$rc_monthly`** → `routeready_monthly`.
+
+The package identifiers matter: `offers()` reads `current.weekly` and
+`current.monthly`, which RevenueCat populates only for those two reserved
+identifiers. A custom package identifier produces an offering the sheet renders
+as empty.
+
+### 7.3 The key
+
+RevenueCat → **Project Settings → API keys** → the **public app-specific** key
+for the iOS app (it starts `appl_`). Put it in `.env`:
+
+```
+EXPO_PUBLIC_REVENUECAT_IOS_KEY=appl_...
+```
+
+For TestFlight and production builds, set the same name on EAS — the cloud
+bundles the JS, so a value only in your local `.env` never reaches those builds:
+
+```bash
+eas env:create --name EXPO_PUBLIC_REVENUECAT_IOS_KEY --value appl_... --environment production
+```
+
+### 7.4 The webhook
+
+RevenueCat → **Integrations → Webhooks**, pointed at the Supabase Edge Function
+that writes the `entitlements` table. That function is Task 11 of the paywall
+plan and is **not built yet** — until it exists, the `entitlements` table stays
+empty, which means the server-side RLS gate treats everyone as unsubscribed
+even after a successful purchase. The client will unlock (it asks RevenueCat
+directly), but `route_details` and `hazards` will not be served.
+
+In other words: 7.1–7.3 make the purchase work; Task 11 makes it stick.
+
+### 7.5 Sandbox testing, on a device
+
+1. Create a **Sandbox Apple ID** in App Store Connect → Users and Access →
+   Sandbox → Test Accounts. Use an address you control that is not an existing
+   Apple ID.
+2. On the iPhone: Settings → App Store → Sandbox Account, sign in with it.
+3. Build and install the dev client (`docs/dev-build.md`), then
+   `npx expo start --dev-client`.
+4. Walk it: buy weekly, confirm the locked routes unlock. Kill and relaunch,
+   confirm it persisted. Cancel in the sandbox account and confirm the lapse
+   sweeps the cached routes. Sandbox renewals are accelerated — a week renews
+   in a few minutes — so a cancellation lands fast enough to watch.
+
+Never test with your real Apple ID. Sandbox purchases are free; real ones are
+not.

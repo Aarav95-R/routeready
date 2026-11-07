@@ -26,6 +26,31 @@ jest.mock("@react-native-google-signin/google-signin", () => ({
   GoogleSignin: { configure: jest.fn(), signIn: jest.fn(), signOut: jest.fn() },
 }));
 
+// Same fix again, for `react-native-purchases`. It reads native constants at
+// import time exactly as google-signin does above, so every suite that mounts a
+// screen touching the entitlement store — which is most of them, now that the
+// paywall reaches the centre screen and the drive gate — would go red without
+// this. Suites testing the wrapper for real declare their own file-level mock,
+// which still wins.
+//
+// `setLogLevel` is here because `configure()` calls it under `__DEV__`, and
+// `__DEV__` is true under Jest. Without it that call throws, which `init()`
+// happens to swallow but the wrapper's own suite would not.
+jest.mock("react-native-purchases", () => ({
+  __esModule: true,
+  default: {
+    configure: jest.fn(),
+    setLogLevel: jest.fn().mockResolvedValue(undefined),
+    logIn: jest.fn().mockResolvedValue({ customerInfo: { entitlements: { active: {} } } }),
+    logOut: jest.fn(),
+    getCustomerInfo: jest.fn().mockResolvedValue({ entitlements: { active: {} } }),
+    getOfferings: jest.fn().mockResolvedValue({ current: null }),
+    purchasePackage: jest.fn(),
+    restorePurchases: jest.fn().mockResolvedValue({ entitlements: { active: {} } }),
+  },
+  LOG_LEVEL: { VERBOSE: "VERBOSE", DEBUG: "DEBUG", INFO: "INFO", WARN: "WARN", ERROR: "ERROR" },
+}));
+
 // useSafeAreaInsets() throws without a <SafeAreaProvider> ancestor. Screens
 // that call it directly (the centres screen among them) render standalone
 // under test, so every suite gets the library's own frame-0 stand-in rather

@@ -10,6 +10,7 @@ import Mapbox from "@rnmapbox/maps";
 import { nextAuthRoute } from "@/lib/authRoute";
 import { selectNeedsInterview, useSession } from "@/stores/sessionStore";
 import { useNetwork } from "@/stores/networkStore";
+import { useEntitlement } from "@/stores/entitlement";
 import { colors } from "@/ui/theme";
 import { ErrorBoundary } from "@/ui/ErrorBoundary";
 
@@ -28,7 +29,23 @@ export default function RootLayout() {
   const segments = useSegments();
   const router = useRouter();
 
-  useEffect(() => { init(); useNetwork.getState().init(); }, [init]);
+  useEffect(() => {
+    init();
+    useNetwork.getState().init();
+    // Configures RevenueCat and resolves the entitlement from the mirror, so a
+    // paying learner with no signal is not locked out before the first network
+    // answer arrives. Runs before the identify below can need it: `configure`
+    // reaches RevenueCat synchronously, by design — see services/purchases.ts.
+    useEntitlement.getState().init();
+  }, [init]);
+
+  // Called on every session rather than only at sign-in: the id is what the
+  // RevenueCat webhook keys the entitlements row on, and a session restored
+  // from disk never passed through signIn.
+  useEffect(() => {
+    const id = session?.user?.id;
+    if (id) useEntitlement.getState().identify(id);
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (!initialized) return;
