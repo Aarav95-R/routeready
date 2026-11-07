@@ -58,10 +58,32 @@ export function PaywallSheet({
   // Re-read the interview's answer and re-fetch prices each time the sheet is
   // asked to open, rather than once on mount — the centre and the test window
   // can both change under an instance the caller keeps mounted.
+  //
+  // The reset happens *during render*, not in an effect. Both are reactions to
+  // a prop changing, but an effect commits the stale plan to the screen first
+  // and then schedules a second render to correct it; setting state while
+  // rendering re-runs this component before anything is committed, so there is
+  // no intermediate frame showing last time's choice. It is also what the
+  // react-hooks/set-state-in-effect rule is pointing at.
+  //
+  // The remembered pair is the guard: an unguarded setState in a render body
+  // never terminates. Both halves are tracked because the original effect
+  // depended on both — a test window that changes while the sheet is open
+  // re-defaults the plan, and reopening after a close must reset even when the
+  // window did not change.
+  const [opened, setOpened] = useState({ visible, testWindow });
+  if (opened.visible !== visible || opened.testWindow !== testWindow) {
+    setOpened({ visible, testWindow });
+    if (visible) {
+      setSelectedPlan(defaultPlan(testWindow));
+      setError(null);
+    }
+  }
+
+  // The fetch stays an effect, because it is the one part that talks to an
+  // external system — which is what effects are for.
   useEffect(() => {
     if (!visible) return;
-    setSelectedPlan(defaultPlan(testWindow));
-    setError(null);
     let cancelled = false;
     fetchOffers()
       .then((o) => { if (!cancelled) setPlanOffers(o); })

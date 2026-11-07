@@ -108,3 +108,36 @@ test("offers() resolving to nothing — today's real behaviour, before Task 10 �
   await waitFor(() => expect(getByText("Prices unavailable")).toBeTruthy());
   expect(getByLabelText("Unlock all routes").props.accessibilityState.disabled).toBe(true);
 });
+
+// The two below pin the reset-on-reopen behaviour. The sheet is kept mounted
+// by its caller and reopened, so without an explicit reset a second opening
+// would inherit the first's chosen plan and its failed-purchase sentence.
+// Nothing asserted them until now, which made the effect doing the resetting
+// unsafe to touch.
+test("reopening restores the test window's default plan, not the last one picked", async () => {
+  const { getByLabelText, rerender } = render(<PaywallSheet {...props} />);
+  await waitFor(() => expect(getByLabelText("Weekly plan").props.accessibilityState.selected).toBe(true));
+
+  fireEvent.press(getByLabelText("Monthly plan"));
+  await waitFor(() => expect(getByLabelText("Monthly plan").props.accessibilityState.selected).toBe(true));
+
+  rerender(<PaywallSheet {...props} visible={false} />);
+  rerender(<PaywallSheet {...props} visible />);
+
+  await waitFor(() => expect(getByLabelText("Weekly plan").props.accessibilityState.selected).toBe(true));
+});
+
+test("reopening clears the previous attempt's failure", async () => {
+  const message = "That didn't go through. Nothing has been charged.";
+  useEntitlement.setState({ purchase: jest.fn().mockResolvedValue(message) } as never);
+  const { getByText, queryByText, rerender } = render(<PaywallSheet {...props} />);
+  await waitFor(() => expect(getByText("£3.00")).toBeTruthy());
+
+  fireEvent.press(getByText("Unlock all routes"));
+  await waitFor(() => expect(getByText(message)).toBeTruthy());
+
+  rerender(<PaywallSheet {...props} visible={false} />);
+  rerender(<PaywallSheet {...props} visible />);
+
+  await waitFor(() => expect(queryByText(message)).toBeNull());
+});
