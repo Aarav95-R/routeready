@@ -142,13 +142,35 @@ the push. A half-finished setup fails silently: signups appear to work and no co
    Check the **From** line reads `RouteReady <noreply@getticker.dev>` and that
    the mail lands in the inbox rather than spam.
 
-## 5. Run in Expo Go
+## 5. Run the app
+
+**Not in Expo Go.** The maps are native Mapbox and the purchases are native
+RevenueCat, neither of which exists in Expo Go. There are two ways to run it,
+and which you need depends on what you are testing.
+
+### On the iOS simulator — for everything except buying
+
+Builds locally. Needs Xcode and the `MAPBOX_DOWNLOAD_TOKEN` in `.env` (the pod
+is fetched at build time).
 
 ```bash
-npm install      # if you haven't already
-npx expo start
+npm install                              # if you haven't already
+npm run ios -- --device "iPhone 17 Pro"  # first build 5-15 min; drop --device to be prompted
 ```
-Scan the QR code with the Camera app on an iPhone that has **Expo Go** installed. (iOS only — the maps use Apple Maps.)
+
+After the first build, `npx expo start` and press `i` is enough — JS changes
+live-reload. Rebuild with `npm run ios` only when something native changes (a
+new native module, a plugin in `app.config.js`, a pod update).
+
+The simulator has no GPS and no StoreKit. Set a location by hand with
+*Features → Location → Custom Location* (the seed is all UK, so something like
+51.7520, -0.3360), and see below for purchases.
+
+### On a physical iPhone — required for purchases
+
+StoreKit sandbox does not run on the simulator, so testing a real subscription
+means a dev build on a real device. `docs/dev-build.md` is the runbook; section
+7.5 below covers the sandbox account.
 
 ## 6. Manual QA checklist (the Phase-1 review)
 
@@ -157,7 +179,7 @@ Walk through these on the device:
 1. **Auth** — sign up, confirm by typing the six-digit code from the email, sign in → lands on the Centres tab. Kill and relaunch the app → still signed in (session persists in the iOS keychain). Then, from the sign-in screen, tap "Forgot your password?", request a reset, type the emailed code → lands on "Set a new password" (not straight into the app), set one, and confirm the new password signs you in.
 2. **Centres** — search narrows the list; the Nearest / Pass rate / Manual / Auto segmented control filters and sorts; pull-to-refresh works. Turn on Airplane Mode and relaunch → cached list shows with the amber "Offline" banner.
 3. **Centre detail** — pass-rate sparkline renders; swipe a route card right to start practice, left to favourite (the amber star persists after relaunch).
-4. **Route detail** — this is the **map-look checkpoint**: real Apple Maps in `mutedStandard`, the emerald route line following actual roads, amber hazard pins. Stats and hazards match the seed data.
+4. **Route detail** — this is the **map-look checkpoint**: the Mapbox `navigation-day-v1` cartography, the emerald route line following actual roads, amber hazard pins. Stats and hazards match the seed data. On a route that is not the centre's free one, expect the paywall sheet in place of the drive row and the hazard list — that is the gate working, not a failure to load.
 5. **Practice** — the blue dot follows you; approaching a turn speaks the instruction once in a British voice; tapping a hazard pin opens the bottom sheet (drag between 25/50/90%); "End practice" cleans up (no voice after leaving). Best tested walking or driving a short loop.
 6. **Mock test** — the timer ticks; entering a seeded observation zone lights the green "Mirrors" button with a haptic; "Finish test" → animated PASS/FAIL result with the fault breakdown → a row appears in Supabase `user_progress` (or queues offline and syncs on reconnect).
 
