@@ -492,6 +492,19 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# RevenueCat signs its webhook with an Authorization header it is configured
+# with, not with a Supabase JWT, so the platform's own check would reject every
+# delivery before the function ran. Turning it off is what makes the
+# constant-time shared-secret comparison inside the function load-bearing: it is
+# the only thing standing between a public URL and the ability to grant
+# subscriptions. See supabase/functions/revenuecat-webhook/index.ts.
+#
+# Deliberately scoped to this one function. delete-account and link-apple both
+# keep the default verify_jwt = true, because both read whose account to act on
+# out of the caller's token.
+[functions.revenuecat-webhook]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

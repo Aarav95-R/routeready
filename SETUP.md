@@ -261,14 +261,85 @@ eas env:create --name EXPO_PUBLIC_REVENUECAT_IOS_KEY --value appl_... --environm
 
 ### 7.4 The webhook
 
-RevenueCat → **Integrations → Webhooks**, pointed at the Supabase Edge Function
-that writes the `entitlements` table. That function is Task 11 of the paywall
-plan and is **not built yet** — until it exists, the `entitlements` table stays
-empty, which means the server-side RLS gate treats everyone as unsubscribed
-even after a successful purchase. The client will unlock (it asks RevenueCat
-directly), but `route_details` and `hazards` will not be served.
+`supabase/functions/revenuecat-webhook/` writes the `entitlements` table, and is
+the only thing that may — the app can never write its own entitlement, because
+an app that could is an app that can grant itself a subscription.
 
-In other words: 7.1–7.3 make the purchase work; Task 11 makes it stick.
+Until this is deployed and pointed at, `entitlements` stays empty and the RLS
+policies treat everyone as unsubscribed. The client still unlocks after a
+purchase, because it asks RevenueCat directly — but `route_details` and
+`hazards` are not served, so the unlock does not survive a reinstall. **7.1–7.3
+make the purchase work; this makes it stick.**
+
+Deploying it and setting its secret are release steps, not development ones:
+they publish a live endpoint and write a credential to the shared project. Do
+them in this order.
+
+**1. Generate a secret** — any long random string; this is the whole security
+of the endpoint:
+
+```bash
+openssl rand -hex 32
+```
+
+**2. Give it to Supabase, then deploy:**
+
+```bash
+npx supabase secrets set REVENUECAT_WEBHOOK_SECRET=<the string from step 1>
+npx supabase functions deploy revenuecat-webhook
+```
+
+The deploy prints the function URL. It looks like:
+`https://cbbkkpcyuqrfwfztcddf.supabase.co/functions/v1/revenuecat-webhook`
+
+**3. Point RevenueCat at it.** RevenueCat → **Integrations → Webhooks** → add:
+
+| Field | Value |
+|---|---|
+| Webhook URL | the URL from step 2 |
+| Authorization header | the **same** string from step 1, verbatim |
+
+The header value must match the secret exactly — no `Bearer ` prefix, no
+trailing whitespace. The function compares the whole header in constant time.
+
+**4. Verify it, in this order.** Substitute your URL, your secret, and a real
+`auth.users` id for `<uuid>`.
+
+a. **A purchase writes the row.**
+
+```bash
+curl -i -X POST "<url>" -H "Authorization: <secret>" -H "Content-Type: application/json" \
+  -d '{"event":{"type":"INITIAL_PURCHASE","app_user_id":"<uuid>",
+       "product_id":"routeready_monthly","event_timestamp_ms":1760000000000,
+       "expiration_at_ms":1762678400000}}'
+```
+Expect `200 ok`, then in SQL: `select * from entitlements where user_id = '<uuid>';`
+→ one row, `status = 'active'`.
+
+b. **A wrong secret is refused.** Same call with `-H "Authorization: wrong"`
+→ `401 unauthorized`, and no row written.
+
+c. **A late event cannot revoke a live subscription.** This is the one worth
+testing hardest, because it is the failure nobody would ever report — a
+subscriber whose access vanished looks, from outside, exactly like a subscriber
+who cancelled. Send an `EXPIRATION` carrying an `event_timestamp_ms` *older*
+than the row you just wrote:
+
+```bash
+curl -i -X POST "<url>" -H "Authorization: <secret>" -H "Content-Type: application/json" \
+  -d '{"event":{"type":"EXPIRATION","app_user_id":"<uuid>",
+       "event_timestamp_ms":1759000000000}}'
+```
+Expect `200 stale`, and the row **unchanged at `active`**.
+
+d. **A real expiry does revoke.** Same `EXPIRATION` with an
+`event_timestamp_ms` *newer* than the row → `200 ok`, row flips to `lapsed`.
+
+e. **RevenueCat's own test.** In the webhook settings, press **Send test
+event**. Expect `200 ignored` — `TEST` is not an access-changing event, and 200
+is deliberate so RevenueCat does not retry something we have decided to drop.
+
+Logs for all of the above: `npx supabase functions logs revenuecat-webhook`.
 
 ### 7.5 Sandbox testing, on a device
 
