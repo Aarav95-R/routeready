@@ -56,9 +56,18 @@ export function lockedCount(routes: Pick<Route, "is_free">[], status: Entitlemen
 /**
  * The first route this person could actually drive.
  *
- * Home and the result screen use it so that a recommendation never points at a
- * wall. Generic in its element type so a caller keeps whatever else its rows
- * carry — an id, a name — rather than getting back a bare `{ is_free }`.
+ * Nothing calls this yet, and that is not an oversight: no screen currently
+ * names a particular route to drive next. Home's next step sends people to
+ * the centres list, and the result screen sends them back to the route they
+ * just drove — neither picks one out of a list, so neither can point at a
+ * wall. `listRoutesByCentre` has a single caller, the centre screen, and that
+ * one gates every card it draws.
+ *
+ * It is kept because the moment any screen does recommend a route — "drive
+ * this one next", a shortcut on Home, a suggestion after a failed test — this
+ * is the function it must go through, and the rule is easier to apply than to
+ * remember. Generic in its element type so a caller keeps whatever else its
+ * rows carry — an id, a name — rather than getting back a bare `{ is_free }`.
  */
 export function firstDrivable<T extends Pick<Route, "is_free">>(
   routes: T[], status: EntitlementStatus,

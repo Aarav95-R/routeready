@@ -14,6 +14,7 @@
 //          npx supabase secrets set REVENUECAT_WEBHOOK_SECRET=<generated>
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { accessFor } from "./access.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -39,31 +40,6 @@ function secretMatches(given: string): boolean {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/**
- * What each event means for access — which is not the same as what it means for
- * billing, and the gap is where this would go wrong if it were written from the
- * event names alone.
- *
- * CANCELLATION maps to `active` on purpose. In Apple's vocabulary a
- * cancellation is auto-renew being switched off, not access ending: somebody
- * who cancels on day two of a month has twenty-eight days paid for. Taking the
- * routes away at CANCELLATION would be taking away something already bought.
- * EXPIRATION is the event that actually ends it.
- *
- * BILLING_ISSUE is the grace period — the card failed and Apple is retrying.
- * The person is still owed their routes while that plays out.
- */
-const ACCESS: Record<string, "active" | "lapsed"> = {
-  INITIAL_PURCHASE: "active",
-  RENEWAL: "active",
-  UNCANCELLATION: "active",
-  PRODUCT_CHANGE: "active",
-  SUBSCRIPTION_EXTENDED: "active",
-  CANCELLATION: "active",
-  BILLING_ISSUE: "active",
-  EXPIRATION: "lapsed",
-};
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
@@ -81,7 +57,7 @@ Deno.serve(async (req) => {
 
   const type = String(event.type ?? "");
   const userId = String(event.app_user_id ?? "");
-  const status = ACCESS[type];
+  const status = accessFor(event);
 
   // 200 rather than 4xx for everything understood-but-ignored. A non-200 makes
   // RevenueCat retry, and retrying an event we have decided to drop just means
