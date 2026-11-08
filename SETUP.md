@@ -339,7 +339,9 @@ e. **RevenueCat's own test.** In the webhook settings, press **Send test
 event**. Expect `200 ignored` — `TEST` is not an access-changing event, and 200
 is deliberate so RevenueCat does not retry something we have decided to drop.
 
-Logs for all of the above: `npx supabase functions logs revenuecat-webhook`.
+Logs for all of the above are in the dashboard —
+**Project → Edge Functions → revenuecat-webhook → Logs**. There is no
+`supabase functions logs` subcommand in CLI 2.x.
 
 ### 7.5 Sandbox testing, on a device
 
