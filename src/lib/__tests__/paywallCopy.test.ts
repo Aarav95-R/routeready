@@ -16,6 +16,15 @@ describe("paywallHeadline", () => {
   test("falls back when the centre is not known yet", () => {
     expect(paywallHeadline("", 9)).toBe("Nine more routes to drive");
   });
+
+  // Settings opens the sheet with neither a centre nor a count — there is no
+  // centre on screen to name and nothing has been counted. Zero would
+  // otherwise fall through NUMBERS[0], which is the empty string, and render
+  // as " more routes to drive".
+  test("with no centre and nothing counted, it describes the offer itself", () => {
+    expect(paywallHeadline("", 0)).toBe("Every route, at every test centre");
+    expect(paywallHeadline("Wood Green", 0)).toBe("Every route, at every test centre");
+  });
 });
 
 describe("defaultPlan", () => {

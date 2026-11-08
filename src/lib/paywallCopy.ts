@@ -23,6 +23,12 @@ const NUMBERS = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eig
  * same reason there: words read worse than digits once they get long.
  */
 export function paywallHeadline(centreName: string, lockedCount: number): string {
+  // Settings opens this sheet from nowhere in particular: no centre on screen
+  // to name, and nothing counted. Counting is the whole shape of the sentence
+  // everywhere else, so with no count there is no sentence to make — it
+  // describes the offer instead. Falling through would read " more routes to
+  // drive", because NUMBERS[0] is the empty string.
+  if (lockedCount <= 0) return "Every route, at every test centre";
   const n = lockedCount < 10 ? NUMBERS[lockedCount] : String(lockedCount);
   const noun = lockedCount === 1 ? "route" : "routes";
   if (!centreName) return `${n} more ${noun} to drive`;

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Animated from "react-native-reanimated";
@@ -7,9 +7,12 @@ import Constants from "expo-constants";
 import * as Haptics from "expo-haptics";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { initialsFor } from "@/lib/accountIdentity";
+import { MANAGE_URL, planLabel, renewalLine } from "@/lib/subscription";
 import { useDevPreview } from "@/stores/devPreview";
-import { selectFullName, useSession } from "@/stores/sessionStore";
+import { selectEntitled, useEntitlement } from "@/stores/entitlement";
+import { selectFullName, selectTestWindow, useSession } from "@/stores/sessionStore";
 import { enterFrom } from "@/ui/motion";
+import { PaywallSheet } from "@/ui/PaywallSheet";
 import { colors } from "@/ui/theme";
 import { FACES } from "@/ui/type";
 
@@ -79,6 +82,42 @@ export default function Settings() {
    */
   const [signingOut, setSigningOut] = useState(false);
 
+  /**
+   * The subscription half of this screen.
+   *
+   * Read from the store rather than asked of RevenueCat here: `init()` and
+   * `identify()` in the root layout have already settled it, and a Settings
+   * screen that opens its own network request shows a spinner for something
+   * the app already knows.
+   */
+  const entitled = useEntitlement(selectEntitled);
+  const product = useEntitlement((s) => s.product);
+  const renewsAt = useEntitlement((s) => s.renewsAt);
+  const restore = useEntitlement((s) => s.restore);
+  const testWindow = useSession(selectTestWindow);
+
+  const [paywall, setPaywall] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
+
+  /**
+   * Offered whether or not there is a subscription on this account.
+   *
+   * App Review requires it findable either way, and the requirement is the
+   * right one: somebody who has reinstalled has no subscription *on this
+   * device*, which is the entire case restore exists for. Hiding it from the
+   * not-subscribed state would hide it from exactly the person who needs it.
+   */
+  const handleRestore = async () => {
+    if (restoring) return;
+    setRestoring(true);
+    setRestoreMessage(null);
+    const message = await restore();
+    setRestoring(false);
+    // Null means it worked, and the row above has already changed to say so.
+    if (message) setRestoreMessage(message);
+  };
+
   const confirmSignOut = () => {
     if (signingOut) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -137,6 +176,70 @@ export default function Settings() {
             <Text className="mt-1 text-[16px] text-slate-500">Signed in with email</Text>
           </View>
         </Animated.View>
+
+        {/* Above the account details on purpose: this is the only thing on
+            this screen with money attached, and the one row somebody arrives
+            here to find. */}
+        <Animated.View entering={enterFrom(1)} className="mx-5 mb-3 rounded-[19px] bg-card px-5" style={{ shadowColor: "#221F1C", shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
+          {entitled ? (
+            <>
+              <View className="flex-row items-center py-[17px]">
+                <View className="flex-1">
+                  <Text maxFontSizeMultiplier={DISPLAY_SCALE} className="text-[18px] text-primary">
+                    {planLabel(product) ?? "Subscribed"}
+                  </Text>
+                  {renewalLine(renewsAt) && (
+                    <Text className="mt-1 text-[15px] text-slate-500">{renewalLine(renewsAt)}</Text>
+                  )}
+                </View>
+                <View className="rounded-full bg-[#E8F3EC] px-3 py-1">
+                  <Text className="text-[14px] font-semibold text-accent">Active</Text>
+                </View>
+              </View>
+              <View className="h-px bg-slate-200" />
+              {/* Linking rather than an in-app browser: this URL hands off to
+                  the App Store app, which is the only place a subscription can
+                  actually be cancelled. In a web view it is a dead end. */}
+              <Pressable
+                onPress={() => { void Linking.openURL(MANAGE_URL); }}
+                accessibilityRole="button"
+                className="flex-row items-center py-[17px] active:opacity-70"
+              >
+                <Text maxFontSizeMultiplier={DISPLAY_SCALE} className="text-[18px] text-primary">Manage subscription</Text>
+                <Ionicons name="open-outline" size={17} color={colors.ink3} style={{ marginLeft: "auto" }} />
+              </Pressable>
+            </>
+          ) : (
+            <Pressable
+              testID="unlock-routes"
+              onPress={() => setPaywall(true)}
+              accessibilityRole="button"
+              className="flex-row items-center py-[17px] active:opacity-70"
+            >
+              <View className="flex-1">
+                <Text maxFontSizeMultiplier={DISPLAY_SCALE} className="text-[18px] text-primary">Unlock all routes</Text>
+                <Text className="mt-1 text-[15px] text-slate-500">Every route, at every test centre.</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={17} color={colors.ink3} />
+            </Pressable>
+          )}
+          <View className="h-px bg-slate-200" />
+          <Pressable
+            testID="restore-purchases"
+            onPress={() => { void handleRestore(); }}
+            disabled={restoring}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: restoring, busy: restoring }}
+            className={`flex-row items-center py-[17px] ${restoring ? "" : "active:opacity-70"}`}
+          >
+            <Text maxFontSizeMultiplier={DISPLAY_SCALE} className="text-[18px] text-primary">Restore purchases</Text>
+            {restoring && <ActivityIndicator color={colors.ink3} style={{ marginLeft: "auto" }} />}
+          </Pressable>
+        </Animated.View>
+
+        {restoreMessage && (
+          <Text className="mx-5 mb-3 -mt-1 text-[15px] font-semibold text-danger">{restoreMessage}</Text>
+        )}
 
         <Animated.View entering={enterFrom(1)} className="mx-5 rounded-[19px] bg-card px-5" style={{ shadowColor: "#221F1C", shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }}>
           {/* Editable in place. Accounts made before sign-up asked for a name
@@ -236,6 +339,25 @@ export default function Settings() {
         </Animated.View>
 
       </ScrollView>
+
+      {/* Mounted only while it is open, unlike the centre screen which keeps
+          one instance alive across route taps. There is one entry point here
+          and no reason to hold a sheet — and an always-mounted sheet puts a
+          second "Restore purchases" and a second plan name into the tree,
+          which is confusing for anything reading the screen, assistive
+          technology included.
+
+          No centre to name and nothing counted: paywallHeadline handles that
+          by describing the offer rather than counting toward it. */}
+      {paywall && (
+        <PaywallSheet
+          visible
+          centreName=""
+          lockedCount={0}
+          testWindow={testWindow}
+          onDismiss={() => setPaywall(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }

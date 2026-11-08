@@ -1,4 +1,4 @@
-import { Alert } from "react-native";
+import { Alert, Linking } from "react-native";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 
 const mockBack = jest.fn();
@@ -6,8 +6,27 @@ const mockPush = jest.fn();
 jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush, back: mockBack }) }));
 jest.mock("expo-constants", () => ({ __esModule: true, default: { expoConfig: { version: "1.0.0" } } }));
 
+// Settings renders the paywall sheet for the not-subscribed case, and the real
+// @gorhom/bottom-sheet needs native measurement jsdom cannot give it. Same
+// file-level mock paywallSheet.test.tsx declares, for the same reason.
+jest.mock("@gorhom/bottom-sheet", () => {
+  const { View } = require("react-native");
+  const { forwardRef } = require("react");
+  const Sheet = forwardRef(({ children }: any, _ref: any) => <View>{children}</View>);
+  Sheet.displayName = "BottomSheet";
+  return { __esModule: true, default: Sheet, BottomSheetView: View, BottomSheetBackdrop: () => null };
+});
+
+jest.mock("@/services/purchases", () => ({
+  offers: jest.fn().mockResolvedValue([
+    { plan: "weekly", priceString: "£2.99" },
+    { plan: "monthly", priceString: "£9.99" },
+  ]),
+}));
+
 import { useSession } from "@/stores/sessionStore";
 import { useDevPreview } from "@/stores/devPreview";
+import { useEntitlement } from "@/stores/entitlement";
 import Settings from "../../../app/settings";
 
 const signedInAs = (email: string, full_name?: string) =>
@@ -22,8 +41,9 @@ const confirmButton = (spy: jest.SpyInstance) => {
   return buttons.find((b) => b.text === "Sign out")!;
 };
 
-/** The store's own action, put back after any test that stands in for it. */
+/** The stores' own actions, put back after any test that stands in for them. */
 const realSignOut = useSession.getState().signOut;
+const realRestore = useEntitlement.getState().restore;
 
 beforeEach(() => {
   mockBack.mockClear();
@@ -31,6 +51,9 @@ beforeEach(() => {
   signedInAs("sumeet.raheja@yahoo.com");
   useDevPreview.setState({ firstRun: false });
   useSession.setState({ signOut: realSignOut });
+  useEntitlement.setState({
+    status: "unknown", product: null, renewsAt: null, restore: realRestore,
+  });
 });
 
 test("the account you are about to leave is named on the screen", () => {
@@ -222,4 +245,83 @@ test("deleting opens its own screen rather than acting from here", () => {
   expect(spy).not.toHaveBeenCalled();
   expect(useSession.getState().session).not.toBeNull();
   spy.mockRestore();
+});
+
+// ── The subscription group ────────────────────────────────────────────────
+//
+// Settings renders the paywall sheet for the not-subscribed case, and the
+// sheet needs @gorhom/bottom-sheet, which the real library cannot give under
+// jsdom. Same file-level mock paywallSheet.test.tsx declares, for the same
+// reason. See task-7-sheet-notes.md.
+
+test("an active subscription shows its plan and renewal date", async () => {
+  useEntitlement.setState({
+    status: "active", product: "routeready_monthly", renewsAt: "2026-10-12T00:00:00Z",
+  });
+  render(<Settings />);
+  expect(await screen.findByText("Monthly")).toBeTruthy();
+  expect(screen.getByText("Renews 12 October")).toBeTruthy();
+});
+
+// The live product identifier really is capitalised this way, and cannot be
+// renamed — so this is the string Settings will actually be handed.
+test("a capitalised store identifier still reads as a plan name", async () => {
+  useEntitlement.setState({
+    status: "active", product: "Routeready_weekly", renewsAt: "2026-10-12T00:00:00Z",
+  });
+  render(<Settings />);
+  expect(await screen.findByText("Weekly")).toBeTruthy();
+});
+
+test("a subscriber is sent to the App Store to manage it", async () => {
+  const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(undefined as never);
+  useEntitlement.setState({
+    status: "active", product: "routeready_monthly", renewsAt: "2026-10-12T00:00:00Z",
+  });
+  render(<Settings />);
+  fireEvent.press(await screen.findByText("Manage subscription"));
+  expect(openURL).toHaveBeenCalledWith("https://apps.apple.com/account/subscriptions");
+  openURL.mockRestore();
+});
+
+test("a non-subscriber is offered the way in", async () => {
+  useEntitlement.setState({ status: "lapsed", product: null, renewsAt: null });
+  render(<Settings />);
+  expect(await screen.findByText("Unlock all routes")).toBeTruthy();
+});
+
+/**
+ * App Review requires restore to be findable whether or not the person is
+ * currently subscribed — somebody reinstalling has no subscription *on this
+ * device*, which is the entire case restore exists for.
+ */
+test("restore is offered in both states", async () => {
+  useEntitlement.setState({ status: "lapsed", product: null, renewsAt: null });
+  const lapsed = render(<Settings />);
+  expect(await lapsed.findByText("Restore purchases")).toBeTruthy();
+  lapsed.unmount();
+
+  useEntitlement.setState({
+    status: "active", product: "routeready_monthly", renewsAt: "2026-10-12T00:00:00Z",
+  });
+  const active = render(<Settings />);
+  expect(await active.findByText("Restore purchases")).toBeTruthy();
+});
+
+test("restore reports when there is nothing to restore", async () => {
+  const restore = jest.fn().mockResolvedValue("No subscription found on this Apple ID.");
+  useEntitlement.setState({ status: "lapsed", product: null, renewsAt: null, restore } as never);
+  render(<Settings />);
+  fireEvent.press(await screen.findByText("Restore purchases"));
+  await waitFor(() =>
+    expect(screen.getByText("No subscription found on this Apple ID.")).toBeTruthy());
+});
+
+test("a successful restore says nothing rather than reporting an error", async () => {
+  const restore = jest.fn().mockResolvedValue(null);
+  useEntitlement.setState({ status: "lapsed", product: null, renewsAt: null, restore } as never);
+  render(<Settings />);
+  fireEvent.press(await screen.findByText("Restore purchases"));
+  await waitFor(() => expect(restore).toHaveBeenCalledTimes(1));
+  expect(screen.queryByText("No subscription found on this Apple ID.")).toBeNull();
 });

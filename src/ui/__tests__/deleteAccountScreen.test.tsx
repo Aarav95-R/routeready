@@ -161,3 +161,19 @@ test("the back control returns to the account screen", () => {
   fireEvent.press(screen.getByLabelText("Back"));
   expect(mockBack).toHaveBeenCalled();
 });
+
+/**
+ * Deleting the Supabase account does nothing to an Apple subscription — Apple
+ * owns that, and it renews whether or not the account it was bought for still
+ * exists. Somebody who deletes expecting the billing to stop with it finds out
+ * a month later, by being charged. The warning belongs on the screen rather
+ * than in the confirmation alert, for the reason this screen exists at all:
+ * nobody reads an alert.
+ */
+test("the screen says deleting does not cancel the subscription", () => {
+  signedInAs("sumeet.raheja@yahoo.com");
+  render(<DeleteAccount />);
+  expect(
+    screen.getByText(/Deleting your account does not cancel your subscription/),
+  ).toBeTruthy();
+});

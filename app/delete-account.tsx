@@ -131,6 +131,16 @@ export default function DeleteAccount() {
           Signing up again with the same email starts from nothing.
         </Text>
 
+        {/* Apple owns the subscription, not this app, and it renews whether or
+            not the account it was bought for still exists. Somebody who
+            deletes expecting the billing to stop finds out a month later by
+            being charged — so this is on the screen, beside the thing it
+            qualifies, rather than in the confirmation alert nobody reads. */}
+        <Text className="px-5 pt-3 text-[16px] leading-[22px] text-label-secondary">
+          Deleting your account does not cancel your subscription. Cancel it in
+          the App Store.
+        </Text>
+
         {/* Above the button rather than below it: this is the thing that has to
             be read before the next tap, not a receipt for the last one. */}
         {error && (
